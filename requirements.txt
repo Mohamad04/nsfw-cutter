@@ -1,2 +1,3 @@
 PySide6 == 6.11.0
 sqlalchemy == 2.0.49
+argon2-cffi == 25.1.0

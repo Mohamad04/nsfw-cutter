@@ -1,3 +1,3 @@
-from sqlalchemy import Column, Float, Integer, String, Text
-from database.base import Base
+from models.video_cut import VideoCut
 
+__all__ = ["VideoCut"]

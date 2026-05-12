@@ -6,11 +6,13 @@ from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtQuickControls2 import QQuickStyle
 
 from controllers.app_controller import AppController
+from database.init_db import init_database
 
 
 def main():
     # Force a deterministic controls style to avoid platform hover artifacts.
     QQuickStyle.setStyle("Basic")
+    init_database()
     app = QGuiApplication(sys.argv)
 
     engine = QQmlApplicationEngine()
@@ -18,7 +20,7 @@ def main():
     controller = AppController()
     engine.rootContext().setContextProperty("appController", controller)
 
-    qml_file = Path(__file__).resolve().parent / "frontend" / "qml" / "Main.qml"
+    qml_file = Path(__file__).resolve().parent / "vue" / "qml" / "Main.qml"
     engine.load(str(qml_file))
 
     if not engine.rootObjects():

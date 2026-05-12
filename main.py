@@ -3,11 +3,14 @@ from pathlib import Path
 
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtQml import QQmlApplicationEngine
+from PySide6.QtQuickControls2 import QQuickStyle
 
 from controllers.app_controller import AppController
 
 
 def main():
+    # Force a deterministic controls style to avoid platform hover artifacts.
+    QQuickStyle.setStyle("Basic")
     app = QGuiApplication(sys.argv)
 
     engine = QQmlApplicationEngine()

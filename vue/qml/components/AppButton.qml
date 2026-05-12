@@ -43,8 +43,26 @@ Button {
         if (variant === "success") return "#15803D"
         if (variant === "danger") return "#991B1B"
         if (variant === "control") return "#1E293B"
-        if (variant === "ghost") return "transparent"
+        if (variant === "ghost") return "#101826"
         return "#243244"
+    }
+
+    function hoverColor() {
+        if (variant === "primary") return "#2A6CF0"
+        if (variant === "success") return "#169247"
+        if (variant === "danger") return "#AB2020"
+        if (variant === "control") return "#243244"
+        if (variant === "ghost") return "#121C2C"
+        return "#2A3A4E"
+    }
+
+    function pressedColor() {
+        if (variant === "primary") return "#1E40AF"
+        if (variant === "success") return "#14532D"
+        if (variant === "danger") return "#651313"
+        if (variant === "control") return "#0F172A"
+        if (variant === "ghost") return "#0B1324"
+        return "#172033"
     }
 
     function borderColor() {
@@ -56,42 +74,51 @@ Button {
         return "#334155"
     }
 
+    function hoverOverlayOpacity() {
+        if (!root.hovered || root.down || !root.enabled) return 0.0
+        if (variant === "ghost") return 0.0
+        if (variant === "primary") return 0.02
+        if (variant === "success") return 0.018
+        if (variant === "danger") return 0.018
+        return 0.015
+    }
+
+    function hoverOverlayColor() {
+        if (variant === "primary") return "#1E3A8A"
+        if (variant === "success") return "#14532D"
+        if (variant === "danger") return "#7F1D1D"
+        if (variant === "ghost") return "#1E293B"
+        return "#334155"
+    }
+
     background: Rectangle {
         radius: root.radiusValue
-        color: root.baseColor()
+        color: !root.enabled ? root.baseColor() : (root.down ? root.pressedColor() : (root.hovered ? root.hoverColor() : root.baseColor()))
         border.color: root.borderColor()
         border.width: 1
         opacity: root.enabled ? 1.0 : 0.45
 
-        // Subtle hover layer
         Rectangle {
             anchors.fill: parent
             radius: parent.radius
-            color: "#FFFFFF"
-            opacity: root.hovered ? 0.07 : 0.0
+            color: root.hoverOverlayColor()
+            opacity: root.hoverOverlayOpacity()
 
             Behavior on opacity {
                 NumberAnimation {
-                    duration: 120
+                    duration: root.down ? 80 : 120
                     easing.type: Easing.OutQuad
                 }
             }
         }
 
-        // Press layer
-        Rectangle {
-            anchors.fill: parent
-            radius: parent.radius
-            color: "#000000"
-            opacity: root.down ? 0.14 : 0.0
-
-            Behavior on opacity {
-                NumberAnimation {
-                    duration: 80
-                    easing.type: Easing.OutQuad
-                }
+        Behavior on color {
+            ColorAnimation {
+                duration: root.down ? 80 : 120
+                easing.type: Easing.OutQuad
             }
         }
+
     }
 
     contentItem: Text {

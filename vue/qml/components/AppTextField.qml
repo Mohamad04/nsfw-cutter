@@ -8,9 +8,9 @@ TextField {
     placeholderTextColor: "#64748B"
     selectionColor: "#2563EB"
     selectedTextColor: "#FFFFFF"
-    font.pixelSize: 14
-    implicitHeight: 42
-    padding: 12
+    font.pixelSize: 13
+    implicitHeight: 38
+    padding: 10
 
     background: Rectangle {
         radius: 12

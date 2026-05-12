@@ -8,8 +8,8 @@ TextArea {
     placeholderTextColor: "#64748B"
     selectionColor: "#2563EB"
     selectedTextColor: "#FFFFFF"
-    font.pixelSize: 14
-    padding: 12
+    font.pixelSize: 13
+    padding: 10
     wrapMode: TextArea.Wrap
 
     background: Rectangle {

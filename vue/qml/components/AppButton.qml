@@ -13,20 +13,20 @@ Button {
     property int radiusValue: size === "icon" ? 14 : 12
 
     implicitHeight: {
-        if (size === "sm") return 36
-        if (size === "lg") return 48
-        if (size === "icon") return 56
-        return 42
+        if (size === "sm") return 32
+        if (size === "lg") return 44
+        if (size === "icon") return 44
+        return 38
     }
 
     implicitWidth: {
-        if (size === "sm") return 112
-        if (size === "lg") return 180
-        if (size === "icon") return 82
-        return 140
+        if (size === "sm") return 92
+        if (size === "lg") return 160
+        if (size === "icon") return 70
+        return 124
     }
 
-    font.pixelSize: size === "sm" ? 13 : 14
+    font.pixelSize: size === "sm" ? 12 : 13
     font.weight: Font.Medium
 
     scale: down ? 0.985 : 1.0

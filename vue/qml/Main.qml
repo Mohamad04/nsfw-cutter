@@ -31,6 +31,7 @@ ApplicationWindow {
     property color primary: "#2563EB"
     property color success: "#15803D"
     property color danger: "#991B1B"
+    property int listScrollbarGutter: 14
 
     MediaPlayer {
         id: player
@@ -196,10 +197,18 @@ ApplicationWindow {
                     }
 
                     AppButton {
-                        text: "Browse"
+                        text: "File"
                         variant: "primary"
                         size: "md"
-                        Layout.preferredWidth: root.compactMode ? 104 : 118
+                        Layout.preferredWidth: root.compactMode ? 82 : 92
+                        onClicked: appController.browseVideoFile()
+                    }
+
+                    AppButton {
+                        text: "Folder"
+                        variant: "secondary"
+                        size: "md"
+                        Layout.preferredWidth: root.compactMode ? 86 : 102
                         onClicked: appController.browseFolder()
                     }
 
@@ -274,15 +283,14 @@ ApplicationWindow {
                 }
             }
 
-            RowLayout {
+            ColumnLayout {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 spacing: root.compactMode ? 8 : 10
 
-                ColumnLayout {
+                RowLayout {
                     Layout.fillWidth: true
                     Layout.fillHeight: true
-                    Layout.preferredWidth: 900
                     spacing: root.compactMode ? 8 : 10
 
                     Panel {
@@ -546,6 +554,206 @@ ApplicationWindow {
                     }
 
                     Panel {
+                        id: cutEditorPanel
+                        Layout.preferredWidth: root.narrowMode ? 300 : 320
+                        Layout.minimumWidth: 290
+                        Layout.alignment: Qt.AlignTop
+                        Layout.preferredHeight: cutEditorContent.implicitHeight + (root.compactMode ? 24 : 32)
+                        panelColor: root.panel
+                        strokeColor: "#21324D"
+
+                        ColumnLayout {
+                            id: cutEditorContent
+                            anchors.top: parent.top
+                            anchors.left: parent.left
+                            anchors.right: parent.right
+                            anchors.margins: root.compactMode ? 12 : 16
+                            spacing: root.compactMode ? 8 : 10
+
+                            RowLayout {
+                                Layout.fillWidth: true
+
+                                ColumnLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 2
+
+                                    Text {
+                                        text: "FAST CUT"
+                                        color: root.accent
+                                        font.pixelSize: 15
+                                        font.bold: true
+                                        font.letterSpacing: 0.6
+                                    }
+
+                                    Text {
+                                        text: "Mark time, type context, add"
+                                        color: root.textMuted
+                                        font.pixelSize: 12
+                                    }
+                                }
+
+                                Rectangle {
+                                    Layout.preferredHeight: 28
+                                    Layout.preferredWidth: 78
+                                    radius: 14
+                                    color: "#12223A"
+                                    border.color: "#284566"
+
+                                    Text {
+                                        anchors.centerIn: parent
+                                        text: "Manual"
+                                        color: root.textMuted
+                                        font.pixelSize: 12
+                                    }
+                                }
+                            }
+
+                            Rectangle {
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: 1
+                                color: "#1F2F4A"
+                            }
+
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: 8
+
+                                Text {
+                                    text: "Start"
+                                    color: root.textMain
+                                    font.pixelSize: 12
+                                    Layout.preferredWidth: 40
+                                }
+
+                                AppTextField {
+                                    id: startInput
+                                    Layout.fillWidth: true
+                                    placeholderText: "00:00:00"
+                                    text: "00:00:00"
+                                }
+
+                                AppButton {
+                                    text: "Now"
+                                    variant: "ghost"
+                                    size: "sm"
+                                    Layout.preferredWidth: 58
+                                    onClicked: setStartFromVideo()
+                                }
+                            }
+
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: 8
+
+                                Text {
+                                    text: "End"
+                                    color: root.textMain
+                                    font.pixelSize: 12
+                                    Layout.preferredWidth: 40
+                                }
+
+                                AppTextField {
+                                    id: endInput
+                                    Layout.fillWidth: true
+                                    placeholderText: "00:00:00"
+                                    text: "00:00:00"
+                                    onAccepted: addCut("Manual", "--")
+                                }
+
+                                AppButton {
+                                    text: "Now"
+                                    variant: "ghost"
+                                    size: "sm"
+                                    Layout.preferredWidth: 58
+                                    onClicked: setEndFromVideo()
+                                }
+                            }
+
+                            Text { text: "Reason"; color: root.textMain; font.pixelSize: 12 }
+
+                            AppTextArea {
+                                id: reasonInput
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: Math.min(root.shortMode ? 92 : 128, Math.max(38, contentHeight + topPadding + bottomPadding))
+                                placeholderText: "Reason for this cut..."
+                            }
+
+                            Text { text: "Tags"; color: root.textMain; font.pixelSize: 12 }
+
+                            AppTextField {
+                                id: tagsInput
+                                Layout.fillWidth: true
+                                placeholderText: "kissing, romance, nsfw"
+                                onAccepted: addCut("Manual", "--")
+                            }
+
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: 8
+
+                                AppButton {
+                                    text: "+ Add Cut"
+                                    variant: "primary"
+                                    size: "lg"
+                                    Layout.fillWidth: true
+                                    onClicked: addCut("Manual", "--")
+                                }
+
+                                AppButton {
+                                    text: "Reset"
+                                    variant: "danger"
+                                    size: "md"
+                                    Layout.preferredWidth: 80
+                                    onClicked: clearCutEditor()
+                                }
+                            }
+
+                            AppButton {
+                                text: appController.exportBusy ? "Generating..." : "Generate New Video"
+                                variant: "success"
+                                size: "lg"
+                                Layout.fillWidth: true
+                                enabled: !appController.exportBusy && appController.selectedVideoPath.length > 0
+                                onClicked: appController.startLosslessExport()
+                            }
+
+                            ProgressBar {
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: 8
+                                visible: appController.exportBusy
+                                from: 0
+                                to: 1
+                                value: appController.exportProgress / 100
+
+                                background: Rectangle {
+                                    radius: 4
+                                    color: "#111827"
+                                }
+
+                                contentItem: Item {
+                                    Rectangle {
+                                        width: parent.width * appController.exportProgress / 100
+                                        height: parent.height
+                                        radius: 4
+                                        color: root.accent
+                                    }
+                                }
+                            }
+
+                            Text {
+                                Layout.fillWidth: true
+                                text: appController.exportStatus
+                                color: appController.exportStatus.indexOf("failed") >= 0 ? "#FCA5A5" : root.textMuted
+                                font.pixelSize: 12
+                                elide: Text.ElideRight
+                                visible: appController.exportBusy || appController.exportStatus !== "No export running"
+                            }
+                        }
+                    }
+
+                }
+
+                    Panel {
                         Layout.fillWidth: true
                         Layout.preferredHeight: root.shortMode ? 168 : 218
                         panelColor: root.panel
@@ -555,6 +763,112 @@ ApplicationWindow {
                             anchors.fill: parent
                             anchors.margins: root.compactMode ? 10 : 12
                             spacing: root.compactMode ? 8 : 10
+
+                            Rectangle {
+                                Layout.preferredWidth: root.narrowMode ? 220 : 260
+                                Layout.fillHeight: true
+                                radius: 12
+                                color: "#08111F"
+                                border.color: "#1F2F4A"
+                                clip: true
+
+                                ColumnLayout {
+                                    anchors.fill: parent
+                                    anchors.margins: 10
+                                    spacing: 8
+
+                                    RowLayout {
+                                        Layout.fillWidth: true
+                                        Text {
+                                            text: "FOUND VIDEOS"
+                                            color: root.accent
+                                            font.pixelSize: 13
+                                            font.bold: true
+                                        }
+                                        Item { Layout.fillWidth: true }
+                                        Text {
+                                            text: appController.availableVideos.length
+                                            color: root.textMuted
+                                            font.pixelSize: 12
+                                        }
+                                    }
+
+                                    Rectangle {
+                                        Layout.fillWidth: true
+                                        Layout.fillHeight: true
+                                        radius: 10
+                                        color: "#050B14"
+                                        border.color: "#142033"
+                                        clip: true
+
+                                        Text {
+                                            anchors.centerIn: parent
+                                            visible: appController.availableVideos.length === 0
+                                            text: "No folder results"
+                                            color: root.textMuted
+                                            font.pixelSize: 12
+                                        }
+
+                                        ListView {
+                                            id: availableVideosListView
+                                            anchors.fill: parent
+                                            visible: appController.availableVideos.length > 0
+                                            model: appController.availableVideos
+                                            clip: true
+                                            spacing: 2
+                                            ScrollBar.vertical: DarkScrollBar {}
+
+                                            delegate: Rectangle {
+                                                required property int index
+
+                                                width: availableVideosListView.width - root.listScrollbarGutter
+                                                height: root.shortMode ? 38 : 44
+                                                color: modelData.path === appController.selectedVideoPath ? "#102A43" : (index % 2 === 0 ? "#0B1324" : "#0E1728")
+                                                border.color: modelData.path === appController.selectedVideoPath ? root.accent : "#142033"
+
+                                                RowLayout {
+                                                    anchors.fill: parent
+                                                    anchors.leftMargin: 8
+                                                    anchors.rightMargin: 8
+                                                    spacing: 8
+
+                                                    ColumnLayout {
+                                                        Layout.fillWidth: true
+                                                        spacing: 1
+
+                                                        Text {
+                                                            text: modelData.name
+                                                            color: root.textMain
+                                                            font.pixelSize: 12
+                                                            font.weight: Font.DemiBold
+                                                            elide: Text.ElideRight
+                                                            Layout.fillWidth: true
+                                                        }
+
+                                                        Text {
+                                                            text: modelData.subtitle_found ? modelData.subtitle_name : "No subtitle"
+                                                            color: modelData.subtitle_found ? "#86EFAC" : root.textMuted
+                                                            font.pixelSize: 11
+                                                            elide: Text.ElideRight
+                                                            Layout.fillWidth: true
+                                                            visible: !root.shortMode
+                                                        }
+                                                    }
+
+                                                    AppButton {
+                                                        text: "Load"
+                                                        variant: "primary"
+                                                        size: "sm"
+                                                        Layout.preferredWidth: 56
+                                                        onClicked: appController.selectAvailableVideo(index)
+                                                    }
+                                                }
+
+                                            }
+                                        }
+                                    }
+                                }
+                            }
 
                             Rectangle {
                                 Layout.fillWidth: true
@@ -603,7 +917,7 @@ ApplicationWindow {
                                             required property string score
                                             required property string tags
 
-                                            width: aiListView.width
+                                            width: aiListView.width - root.listScrollbarGutter
                                             height: root.shortMode ? 44 : 50
                                             radius: 10
                                             color: "#0A1120"
@@ -688,11 +1002,12 @@ ApplicationWindow {
                                         }
                                         Item { Layout.fillWidth: true }
                                         AppButton {
-                                            text: "Clear form"
+                                            text: "Clear list"
                                             variant: "ghost"
                                             size: "sm"
                                             Layout.preferredWidth: 82
-                                            onClicked: clearCutEditor()
+                                            enabled: cutsModel.count > 0
+                                            onClicked: cutsModel.clear()
                                         }
                                     }
 
@@ -750,7 +1065,7 @@ ApplicationWindow {
                                             required property string reason
                                             required property string score
 
-                                            width: cutsListView.width
+                                            width: cutsListView.width - root.listScrollbarGutter
                                             height: 38
                                                 color: index % 2 === 0 ? "#0B1324" : "#0E1728"
                                                 border.color: "#142033"
@@ -783,220 +1098,6 @@ ApplicationWindow {
                         }
                     }
                 }
-
-                Panel {
-                    id: cutEditorPanel
-                    Layout.preferredWidth: root.narrowMode ? 330 : 380
-                    Layout.minimumWidth: 320
-                    Layout.fillHeight: true
-                    panelColor: root.panel
-                    strokeColor: "#21324D"
-
-                    ColumnLayout {
-                        anchors.fill: parent
-                        anchors.margins: root.compactMode ? 12 : 16
-                        spacing: root.compactMode ? 8 : 10
-
-                        RowLayout {
-                            Layout.fillWidth: true
-
-                            ColumnLayout {
-                                Layout.fillWidth: true
-                                spacing: 2
-
-                                Text {
-                                    text: "FAST CUT"
-                                    color: root.accent
-                                    font.pixelSize: 15
-                                    font.bold: true
-                                    font.letterSpacing: 0.6
-                                }
-
-                                Text {
-                                    text: "Mark time, type context, add"
-                                    color: root.textMuted
-                                    font.pixelSize: 12
-                                }
-                            }
-
-                            Rectangle {
-                                Layout.preferredHeight: 28
-                                Layout.preferredWidth: 78
-                                radius: 14
-                                color: "#12223A"
-                                border.color: "#284566"
-
-                                Text {
-                                    anchors.centerIn: parent
-                                    text: "Manual"
-                                    color: root.textMuted
-                                    font.pixelSize: 12
-                                }
-                            }
-                        }
-
-                        Rectangle {
-                            Layout.fillWidth: true
-                            Layout.preferredHeight: 1
-                            color: "#1F2F4A"
-                        }
-
-                        RowLayout {
-                            Layout.fillWidth: true
-                            spacing: 8
-
-                            Text {
-                                text: "Start"
-                                color: root.textMain
-                                font.pixelSize: 12
-                                Layout.preferredWidth: 40
-                            }
-
-                            AppTextField {
-                                id: startInput
-                                Layout.fillWidth: true
-                                placeholderText: "00:00:00"
-                                text: "00:00:00"
-                            }
-
-                            AppButton {
-                                text: "Now"
-                                variant: "ghost"
-                                size: "sm"
-                                Layout.preferredWidth: 58
-                                onClicked: setStartFromVideo()
-                            }
-                        }
-
-                        RowLayout {
-                            Layout.fillWidth: true
-                            spacing: 8
-
-                            Text {
-                                text: "End"
-                                color: root.textMain
-                                font.pixelSize: 12
-                                Layout.preferredWidth: 40
-                            }
-
-                            AppTextField {
-                                id: endInput
-                                Layout.fillWidth: true
-                                placeholderText: "00:00:00"
-                                text: "00:00:00"
-                                onAccepted: addCut("Manual", "--")
-                            }
-
-                            AppButton {
-                                text: "Now"
-                                variant: "ghost"
-                                size: "sm"
-                                Layout.preferredWidth: 58
-                                onClicked: setEndFromVideo()
-                            }
-                        }
-
-                        Text { text: "Reason"; color: root.textMain; font.pixelSize: 12 }
-
-                        AppTextArea {
-                            id: reasonInput
-                            Layout.fillWidth: true
-                            Layout.preferredHeight: Math.min(root.shortMode ? 92 : 128, Math.max(38, contentHeight + topPadding + bottomPadding))
-                            placeholderText: "Reason for this cut..."
-                        }
-
-                        Text { text: "Tags"; color: root.textMain; font.pixelSize: 12 }
-
-                        AppTextField {
-                            id: tagsInput
-                            Layout.fillWidth: true
-                            placeholderText: "kissing, romance, nsfw"
-                            onAccepted: addCut("Manual", "--")
-                        }
-
-                        RowLayout {
-                            Layout.fillWidth: true
-                            spacing: 8
-
-                            AppButton {
-                                text: "+ Add Cut"
-                                variant: "primary"
-                                size: "lg"
-                                Layout.fillWidth: true
-                                onClicked: addCut("Manual", "--")
-                            }
-
-                            AppButton {
-                                text: "Reset"
-                                variant: "danger"
-                                size: "md"
-                                Layout.preferredWidth: 80
-                                onClicked: clearCutEditor()
-                            }
-                        }
-
-                        Rectangle {
-                            Layout.fillWidth: true
-                            Layout.preferredHeight: 1
-                            color: "#1F2F4A"
-                        }
-
-                        Rectangle {
-                            Layout.fillWidth: true
-                            Layout.preferredHeight: root.shortMode ? 92 : 120
-                            radius: 12
-                            color: "#0A1120"
-                            border.color: "#1F2F4A"
-                            clip: true
-
-                            ColumnLayout {
-                                anchors.fill: parent
-                                anchors.margins: 10
-                                spacing: 5
-
-                                Text {
-                                    text: "STATUS"
-                                    color: root.accent
-                                    font.pixelSize: 12
-                                    font.bold: true
-                                }
-
-                                Text {
-                                    text: "Output: MKV without re-encoding"
-                                    color: root.textMuted
-                                    font.pixelSize: 12
-                                    elide: Text.ElideRight
-                                    Layout.fillWidth: true
-                                }
-
-                                Text {
-                                    text: "Subtitle sync: enabled"
-                                    color: root.textMuted
-                                    font.pixelSize: 12
-                                    elide: Text.ElideRight
-                                    Layout.fillWidth: true
-                                }
-
-                                Text {
-                                    text: "Autosave ON"
-                                    color: "#22C55E"
-                                    font.pixelSize: 12
-                                    font.weight: Font.DemiBold
-                                }
-                            }
-                        }
-
-                        Item { Layout.fillHeight: true }
-
-                        AppButton {
-                            text: "Generate New Video"
-                            variant: "success"
-                            size: "lg"
-                            Layout.fillWidth: true
-                        }
-                    }
-                }
             }
         }
     }
-}

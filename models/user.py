@@ -2,7 +2,7 @@ from sqlalchemy import Column, DateTime, Integer, String
 from sqlalchemy.orm import relationship, validates
 
 from database.base import Base
-from models._validation import clean_string, utc_now, validate_email
+from schemas._validation import clean_string, utc_now, validate_email
 
 
 class User(Base):

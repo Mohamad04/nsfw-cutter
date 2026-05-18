@@ -12,14 +12,7 @@ def utc_now():
     return datetime.now(timezone.utc)
 
 
-def clean_string(
-    value: str | None,
-    field_name: str,
-    *,
-    min_length: int = 0,
-    max_length: int | None = None,
-    required: bool = False,
-) -> str | None:
+def clean_string(value: str | None, field_name: str, *, min_length: int = 0, max_length: int | None = None, required: bool = False) -> str | None:
     if value is None:
         if required:
             raise ValueError(f"{field_name} is required")

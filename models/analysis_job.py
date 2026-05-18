@@ -2,7 +2,7 @@ from sqlalchemy import CheckConstraint, Column, DateTime, ForeignKey, Index, Int
 from sqlalchemy.orm import relationship, validates
 
 from database.base import Base
-from schemas._validation import ALLOWED_JOB_STATUSES, clean_string
+from models._validation import ALLOWED_JOB_STATUSES, clean_string
 
 
 class AnalysisJob(Base):

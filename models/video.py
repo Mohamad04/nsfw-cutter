@@ -2,7 +2,7 @@ from sqlalchemy import Column, DateTime, Float, ForeignKey, Index, Integer, Stri
 from sqlalchemy.orm import relationship, validates
 
 from database.base import Base
-from schemas._validation import clean_string, utc_now, validate_video_path
+from models._validation import clean_string, utc_now, validate_video_path
 
 
 class Video(Base):

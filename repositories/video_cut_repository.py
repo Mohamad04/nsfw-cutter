@@ -35,12 +35,3 @@ def delete_cut(db: Session, video_cut_id: int) -> bool:
     db.delete(cut)
     db.flush()
     return True
-
-
-def clear_cuts_for_video(db: Session, video_id: int) -> int:
-    cuts = db.query(VideoCut).filter(VideoCut.video_id == video_id).all()
-    count = len(cuts)
-    for cut in cuts:
-        db.delete(cut)
-    db.flush()
-    return count

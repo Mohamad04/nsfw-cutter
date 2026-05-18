@@ -2,4 +2,14 @@
 .venv/
 __pycache__/
 *.py[cod]
+*.pyc
+*.pyo
+*.db
+*.sqlite
+*.sqlite3
+.pytest_cache/
+.qtc*
+.qtcreator/
+sqlalchemy_database/
 
+sqlalchemy_database_codex_instructions.md

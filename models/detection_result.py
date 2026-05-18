@@ -2,7 +2,7 @@ from sqlalchemy import CheckConstraint, Column, DateTime, Float, ForeignKey, Ind
 from sqlalchemy.orm import relationship, validates
 
 from database.base import Base
-from models._validation import clean_string, utc_now, validate_non_negative, validate_time_range
+from schemas._validation import clean_string, utc_now, validate_non_negative, validate_time_range
 
 
 class DetectionResult(Base):

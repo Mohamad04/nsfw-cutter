@@ -13,3 +13,4 @@ __pycache__/
 sqlalchemy_database/
 
 sqlalchemy_database_codex_instructions.md
+CODEX_BACKGROUND_JOB_SYSTEM.md

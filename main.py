@@ -1,12 +1,14 @@
 import sys
-from pathlib import Path
 
 from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtQuickControls2 import QQuickStyle
 from PySide6.QtWidgets import QApplication
 
 from controllers.app_controller import AppController
+from controllers.settings_controller import SettingsController
+from core.paths import get_resource_path
 from database.init_db import init_database
+from services.settings_service import SettingsService
 
 
 def main():
@@ -17,11 +19,18 @@ def main():
 
     engine = QQmlApplicationEngine()
 
-    controller = AppController()
+    settings_service = SettingsService()
+    controller = AppController(settings_service=settings_service)
     controller.setParent(app)
     engine.rootContext().setContextProperty("appController", controller)
 
-    qml_file = Path(__file__).resolve().parent / "vue" / "qml" / "Main.qml"
+    settings_controller = SettingsController(settings_service=settings_service)
+    settings_controller.setParent(app)
+    engine.rootContext().setContextProperty("settingsController", settings_controller)
+
+    controller.restoreLastVideo()
+
+    qml_file = get_resource_path("vue/qml/Main.qml")
     engine.load(str(qml_file))
 
     if not engine.rootObjects():

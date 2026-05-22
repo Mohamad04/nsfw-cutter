@@ -1,13 +1,12 @@
-from pathlib import Path
+from core.paths import get_database_path, get_json_data_dir, get_resource_path
 
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-DATA_DIR = PROJECT_ROOT / "data"
-JSON_DATA_DIR = DATA_DIR / "json"
-DATABASE_PATH = DATA_DIR / "nsfw_app.db"
+DATA_DIR = get_database_path().parent
+JSON_DATA_DIR = get_json_data_dir()
+DATABASE_PATH = get_database_path()
 
 METADATA_JSON_DIR = JSON_DATA_DIR / "metadata"
 SUBTITLES_JSON_DIR = JSON_DATA_DIR / "subtitles"
 EXPORT_JOBS_JSON_DIR = JSON_DATA_DIR / "export_jobs"
 
-LOCAL_FFPROBE_PATH = PROJECT_ROOT / "tools" / "ffmpeg" / "bin" / "ffprobe.exe"
+LOCAL_FFPROBE_PATH = get_resource_path("tools/ffmpeg/bin/ffprobe.exe")

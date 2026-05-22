@@ -67,14 +67,28 @@ class FakePrepareWorker:
         self.signals = WorkerSignals()
 
 
+class FakeSettingsService:
+    def __init__(self, last_video=None):
+        self.last_video = last_video
+        self.saved_videos = []
+
+    def get_last_video(self):
+        return self.last_video
+
+    def save_last_video(self, path):
+        self.saved_videos.append(path)
+
+
 class AppControllerTests(unittest.TestCase):
     def setUp(self):
         self.thread_pool = FakeThreadPool()
+        self.settings_service = FakeSettingsService()
         self.controller = AppController(
             video_import_service=FakeVideoImportService(),
             thread_pool=self.thread_pool,
             worker_factory=FakeExportWorker,
             prepare_worker_factory=FakePrepareWorker,
+            settings_service=self.settings_service,
         )
 
     def test_controller_configures_default_thread_limit(self):
@@ -88,6 +102,7 @@ class AppControllerTests(unittest.TestCase):
             thread_pool=thread_pool,
             worker_factory=FakeExportWorker,
             max_thread_count=4,
+            settings_service=FakeSettingsService(),
         )
 
         self.assertEqual(thread_pool.max_thread_count, 4)
@@ -112,6 +127,21 @@ class AppControllerTests(unittest.TestCase):
         self.assertEqual(self.controller.subtitleStatus, "Subtitle: not detected")
         self.assertEqual(self.controller.projectStatus, "Video loaded")
         self.assertEqual(self.controller.selectedVideoPath, "/tmp/a.mp4")
+        self.assertEqual(self.settings_service.saved_videos, ["/tmp/a.mp4"])
+
+    def test_restore_last_video_loads_existing_settings_path(self):
+        controller = AppController(
+            video_import_service=FakeVideoImportService(),
+            thread_pool=FakeThreadPool(),
+            worker_factory=FakeExportWorker,
+            prepare_worker_factory=FakePrepareWorker,
+            settings_service=FakeSettingsService(last_video=Path("/tmp/a.mp4")),
+        )
+
+        controller.restoreLastVideo()
+
+        self.assertEqual(controller.videoName, "a.mp4")
+        self.assertEqual(controller.selectedVideoPath, "/tmp/a.mp4")
 
     def test_load_video_file_invalid_does_not_crash(self):
         self.controller.loadVideoFile("invalid")

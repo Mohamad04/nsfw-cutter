@@ -6,6 +6,7 @@ from PySide6.QtCore import QObject, Property, QThreadPool, Signal, Slot
 from PySide6.QtWidgets import QFileDialog
 
 from core.job_registry import JobRegistry
+from services.settings_service import SettingsService
 from services.video_import_service import VideoImportService
 from workers.prepare_export_job_worker import PrepareExportJobWorker
 from workers.video_export_worker import VideoExportWorker
@@ -40,9 +41,11 @@ class AppController(QObject):
         worker_factory=None,
         max_thread_count=None,
         prepare_worker_factory=None,
+        settings_service=None,
     ):
         super().__init__()
         self.video_import_service = video_import_service or VideoImportService()
+        self.settings_service = settings_service or SettingsService()
         self._thread_pool = thread_pool or QThreadPool.globalInstance()
         self._max_thread_count = (
             self.DEFAULT_MAX_THREAD_COUNT if max_thread_count is None else int(max_thread_count)
@@ -153,17 +156,6 @@ class AppController(QObject):
             self.availableVideosChanged.emit()
             self._set_project_status("Unexpected error while loading folder")
 
-    @Slot()
-    def browseVideoFile(self):
-        file_path, _selected_filter = QFileDialog.getOpenFileName(
-            None,
-            "Select video file",
-            "",
-            "Video files (*.mp4 *.mkv)",
-        )
-        if file_path:
-            self.loadVideoFile(file_path)
-
     @Slot(str)
     def loadVideoFile(self, file_path: str):
         try:
@@ -174,6 +166,12 @@ class AppController(QObject):
         except Exception:
             logger.exception("Unexpected error while loading video")
             self._set_project_status("Unexpected error while loading video")
+
+    @Slot()
+    def restoreLastVideo(self):
+        last_video = self.settings_service.get_last_video()
+        if last_video:
+            self.loadVideoFile(str(last_video))
 
     @Slot(int)
     def selectAvailableVideo(self, index: int):
@@ -416,6 +414,12 @@ class AppController(QObject):
         self.subtitleStatusChanged.emit()
         self.projectStatusChanged.emit()
         self.selectedVideoPathChanged.emit()
+
+        if self._selected_video_path:
+            try:
+                self.settings_service.save_last_video(self._selected_video_path)
+            except OSError:
+                logger.exception("Unable to persist last opened video")
 
     def _set_project_status(self, status: str):
         self._project_status = status

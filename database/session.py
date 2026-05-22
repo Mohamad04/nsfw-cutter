@@ -8,7 +8,7 @@ from core.config import DATA_DIR, DATABASE_PATH
 
 
 DATA_DIR.mkdir(parents=True, exist_ok=True)
-DATABASE_URL = f"sqlite:///{DATABASE_PATH}"
+DATABASE_URL = f"sqlite:///{DATABASE_PATH.as_posix()}"
 
 engine = create_engine(
     DATABASE_URL,

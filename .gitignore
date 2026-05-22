@@ -11,6 +11,13 @@ __pycache__/
 .qtc*
 .qtcreator/
 sqlalchemy_database/
+tools/ffmpeg/
+tools/sqlite/
+data/json/
+data/*.sqlite
+data/*.sqlite3
+data/*.db
 
 sqlalchemy_database_codex_instructions.md
 CODEX_BACKGROUND_JOB_SYSTEM.md
+CODEX_BACKEND_PIPELINE_V1_METADATA_SUBTITLES_EXPORT_JOB.md

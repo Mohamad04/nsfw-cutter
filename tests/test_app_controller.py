@@ -1,4 +1,7 @@
+import json
+import tempfile
 import unittest
+from pathlib import Path
 
 from controllers.app_controller import AppController
 from workers.worker_signals import WorkerSignals
@@ -56,6 +59,14 @@ class FakeExportWorker:
         self.signals = WorkerSignals()
 
 
+class FakePrepareWorker:
+    def __init__(self, job_key, input_path, output_path):
+        self.job_key = job_key
+        self.input_path = input_path
+        self.output_path = output_path
+        self.signals = WorkerSignals()
+
+
 class AppControllerTests(unittest.TestCase):
     def setUp(self):
         self.thread_pool = FakeThreadPool()
@@ -63,7 +74,23 @@ class AppControllerTests(unittest.TestCase):
             video_import_service=FakeVideoImportService(),
             thread_pool=self.thread_pool,
             worker_factory=FakeExportWorker,
+            prepare_worker_factory=FakePrepareWorker,
         )
+
+    def test_controller_configures_default_thread_limit(self):
+        self.assertEqual(self.thread_pool.max_thread_count, AppController.DEFAULT_MAX_THREAD_COUNT)
+
+    def test_controller_accepts_custom_thread_limit(self):
+        thread_pool = FakeThreadPool()
+
+        AppController(
+            video_import_service=FakeVideoImportService(),
+            thread_pool=thread_pool,
+            worker_factory=FakeExportWorker,
+            max_thread_count=4,
+        )
+
+        self.assertEqual(thread_pool.max_thread_count, 4)
 
     def test_load_folder_populates_available_videos(self):
         self.controller.loadFolder("folder")
@@ -144,6 +171,88 @@ class AppControllerTests(unittest.TestCase):
 
         self.assertFalse(self.controller.exportBusy)
         self.assertEqual(self.controller.exportStatus, "Export failed: bad input")
+
+    def test_prepare_export_job_updates_state_and_starts_worker(self):
+        self.controller.prepareExportJob("/tmp/a.mp4", "")
+
+        self.assertTrue(self.controller.backendPreparationBusy)
+        self.assertEqual(self.controller.backendPreparationProgress, 0)
+        self.assertEqual(self.controller.backendPreparationStatus, "Starting backend preparation")
+        self.assertEqual(len(self.thread_pool.workers), 1)
+        self.assertIsInstance(self.thread_pool.workers[0], FakePrepareWorker)
+
+    def test_prepare_export_job_finished_records_job_metadata(self):
+        self.controller.prepareExportJob("/tmp/a.mp4", "")
+        result = {
+            "export_job": {"job_id": "export_1"},
+            "json_artifacts": {"export_job_json_path": "data/json/export_jobs/export_1.json"},
+        }
+
+        self.controller._on_backend_preparation_finished("prepare_export:/tmp/a.mp4:", result)
+
+        self.assertFalse(self.controller.backendPreparationBusy)
+        self.assertEqual(self.controller.backendPreparationProgress, 100)
+        self.assertEqual(self.controller.backendPreparationStatus, "Preparation completed")
+        self.assertEqual(self.controller.currentExportJobId, "export_1")
+        self.assertEqual(self.controller.currentExportJobJsonPath, "data/json/export_jobs/export_1.json")
+
+    def test_export_cuts_to_json_file(self):
+        self.controller.loadVideoFile("/tmp/a.mp4")
+        cuts = [
+            {
+                "start": "00:00:10",
+                "end": "00:00:20",
+                "reason": "Manual cut",
+                "tags": "manual",
+                "source": "Manual",
+                "score": "--",
+            }
+        ]
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            output_path = Path(tmp_dir) / "cuts.json"
+            self.controller.exportCutsToPath(cuts, str(output_path))
+
+            payload = json.loads(output_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(payload["version"], 1)
+        self.assertEqual(payload["video"]["name"], "a.mp4")
+        self.assertEqual(payload["cuts"], cuts)
+        self.assertEqual(self.controller.projectStatus, "Exported 1 cut(s) to cuts.json")
+
+    def test_import_cuts_from_json_file_accepts_wrapped_payload(self):
+        payload = {
+            "version": 1,
+            "cuts": [
+                {
+                    "start": "00:00:10",
+                    "end": "00:00:20",
+                    "reason": "Scene",
+                    "tags": "tag",
+                    "source": "AI",
+                    "score": "0.80",
+                }
+            ],
+        }
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            input_path = Path(tmp_dir) / "cuts.json"
+            input_path.write_text(json.dumps(payload), encoding="utf-8")
+
+            cuts = self.controller.importCutsFromPath(str(input_path))
+
+        self.assertEqual(cuts, payload["cuts"])
+        self.assertEqual(self.controller.projectStatus, "Imported 1 cut(s) from cuts.json")
+
+    def test_import_cuts_from_json_file_rejects_reversed_range(self):
+        payload = [{"start": "00:00:20", "end": "00:00:10"}]
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            input_path = Path(tmp_dir) / "cuts.json"
+            input_path.write_text(json.dumps(payload), encoding="utf-8")
+
+            with self.assertRaisesRegex(ValueError, "start before end"):
+                self.controller.importCutsFromPath(str(input_path))
 
 
 if __name__ == "__main__":

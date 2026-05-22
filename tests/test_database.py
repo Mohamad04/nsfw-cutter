@@ -4,7 +4,18 @@ from sqlalchemy import create_engine, inspect
 from sqlalchemy.pool import StaticPool
 
 from database.base import Base
-from models import AnalysisJob, DetectionResult, User, Video, VideoCut, VideoSubtitle
+from models import (
+    AnalysisJob,
+    DetectionResult,
+    ExportJob,
+    SubtitleInfo,
+    User,
+    Video,
+    VideoCut,
+    VideoFile,
+    VideoMetadata,
+    VideoSubtitle,
+)
 
 
 class DatabaseInitializationTests(unittest.TestCase):
@@ -24,6 +35,10 @@ class DatabaseInitializationTests(unittest.TestCase):
                     Video.__tablename__,
                     VideoCut.__tablename__,
                     VideoSubtitle.__tablename__,
+                    VideoFile.__tablename__,
+                    VideoMetadata.__tablename__,
+                    SubtitleInfo.__tablename__,
+                    ExportJob.__tablename__,
                     AnalysisJob.__tablename__,
                     DetectionResult.__tablename__,
                 },

@@ -70,9 +70,12 @@ class VideoImportService:
 
     def _build_video_listing(self, video_path: Path) -> dict:
         subtitle_path = self.subtitle_service.find_subtitle_for_video(video_path)
+        resolved_path = video_path.resolve()
         return {
-            "name": video_path.name,
-            "path": str(video_path),
+            "name": resolved_path.name,
+            "path": str(resolved_path),
+            "extension": resolved_path.suffix.lower(),
+            "file_size_bytes": resolved_path.stat().st_size,
             "subtitle_found": subtitle_path is not None,
             "subtitle_name": subtitle_path.name if subtitle_path else None,
         }

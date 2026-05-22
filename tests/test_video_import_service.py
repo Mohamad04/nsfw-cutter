@@ -93,6 +93,8 @@ class VideoImportServiceTests(unittest.TestCase):
                     {
                         "name": "sample.mp4",
                         "path": str(video_path.resolve()),
+                        "extension": ".mp4",
+                        "file_size_bytes": 0,
                         "subtitle_found": True,
                         "subtitle_name": "sample.en.srt",
                     }

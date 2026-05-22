@@ -14,8 +14,7 @@ Button {
 
     implicitHeight: {
         if (size === "sm") return 32
-        if (size === "lg") return 44
-        if (size === "icon") return 44
+        if (size === "lg" || size === "icon") return 44
         return 38
     }
 
@@ -44,7 +43,7 @@ Button {
         if (variant === "danger") return "#991B1B"
         if (variant === "control") return "#1E293B"
         if (variant === "ghost") return "#101826"
-        return "#243244"
+        return "#0371ff"
     }
 
     function hoverColor() {

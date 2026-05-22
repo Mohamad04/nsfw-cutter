@@ -3,17 +3,23 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import QtQuick.Window
 import QtMultimedia
 
 import "components"
 
 ApplicationWindow {
     id: root
+
+    readonly property int availableScreenWidth: Screen.desktopAvailableWidth > 0 ? Screen.desktopAvailableWidth : Screen.width
+    readonly property int availableScreenHeight: Screen.desktopAvailableHeight > 0 ? Screen.desktopAvailableHeight : Screen.height
+
     visible: true
-    width: 1360
-    height: 820
-    minimumWidth: 960
-    minimumHeight: 620
+    visibility: Window.Maximized
+    width: Math.min(1360, root.availableScreenWidth)
+    height: Math.min(820, root.availableScreenHeight)
+    minimumWidth: Math.min(960, root.availableScreenWidth)
+    minimumHeight: Math.min(620, root.availableScreenHeight)
     title: "NSFW Cutter"
     color: "#0F172A"
 
@@ -79,8 +85,68 @@ ApplicationWindow {
         tagsInput.text = ""
     }
 
+    function parseTimeToMs(value) {
+        var parts = value.trim().split(":")
+        if (parts.length !== 3) return -1
+
+        var hours = Number(parts[0])
+        var minutes = Number(parts[1])
+        var seconds = Number(parts[2])
+        if (!Number.isInteger(hours) || !Number.isInteger(minutes) || !Number.isInteger(seconds)) return -1
+        if (hours < 0 || minutes < 0 || minutes > 59 || seconds < 0 || seconds > 59) return -1
+
+        return ((hours * 3600) + (minutes * 60) + seconds) * 1000
+    }
+
+    function cutValidationMessage() {
+        var startMs = parseTimeToMs(startInput.text)
+        var endMs = parseTimeToMs(endInput.text)
+
+        if (startMs < 0 || endMs < 0) return "Use HH:MM:SS for start and end."
+        if (startMs === 0 && endMs === 0) return ""
+        if (startMs >= endMs) return "Start must be before end."
+        return ""
+    }
+
+    function canAddCut() {
+        var startMs = parseTimeToMs(startInput.text)
+        var endMs = parseTimeToMs(endInput.text)
+        return startMs >= 0 && endMs >= 0 && startMs < endMs
+    }
+
+    function tryAddCut(source, score) {
+        if (!canAddCut()) return
+        addCut(source, score)
+    }
+
+    function cutsToArray() {
+        var cuts = []
+        for (var i = 0; i < cutsModel.count; i += 1) {
+            var cut = cutsModel.get(i)
+            cuts.push({
+                "start": cut.start,
+                "end": cut.end,
+                "reason": cut.reason,
+                "tags": cut.tags,
+                "source": cut.source,
+                "score": cut.score
+            })
+        }
+        return cuts
+    }
+
+    function importCutsFromJson() {
+        var importedCuts = appController.importCuts()
+        if (importedCuts.length === 0) return
+
+        cutsModel.clear()
+        for (var i = 0; i < importedCuts.length; i += 1) {
+            cutsModel.append(importedCuts[i])
+        }
+    }
+
     function addCut(source, score) {
-        if (startInput.text.length === 0 || endInput.text.length === 0) return
+        if (!canAddCut()) return
         cutsModel.append({
             "start": startInput.text,
             "end": endInput.text,
@@ -107,6 +173,18 @@ ApplicationWindow {
         endInput.text = end
         reasonInput.text = reason
         tagsInput.text = tags
+    }
+
+    function formatBytes(bytes) {
+        var value = Number(bytes)
+        if (!Number.isFinite(value) || value <= 0) return "--"
+        var units = ["B", "KB", "MB", "GB", "TB"]
+        var index = 0
+        while (value >= 1024 && index < units.length - 1) {
+            value = value / 1024
+            index += 1
+        }
+        return value.toFixed(index === 0 ? 0 : 1) + " " + units[index]
     }
 
     component DarkScrollBar : ScrollBar {
@@ -657,7 +735,7 @@ ApplicationWindow {
                                     Layout.fillWidth: true
                                     placeholderText: "00:00:00"
                                     text: "00:00:00"
-                                    onAccepted: addCut("Manual", "--")
+                                    onAccepted: root.tryAddCut("Manual", "--")
                                 }
 
                                 AppButton {
@@ -684,7 +762,16 @@ ApplicationWindow {
                                 id: tagsInput
                                 Layout.fillWidth: true
                                 placeholderText: "kissing, romance, nsfw"
-                                onAccepted: addCut("Manual", "--")
+                                onAccepted: root.tryAddCut("Manual", "--")
+                            }
+
+                            Text {
+                                Layout.fillWidth: true
+                                text: root.cutValidationMessage()
+                                color: "#FCA5A5"
+                                font.pixelSize: 12
+                                visible: text.length > 0
+                                wrapMode: Text.WordWrap
                             }
 
                             RowLayout {
@@ -696,7 +783,8 @@ ApplicationWindow {
                                     variant: "primary"
                                     size: "lg"
                                     Layout.fillWidth: true
-                                    onClicked: addCut("Manual", "--")
+                                    enabled: root.canAddCut()
+                                    onClicked: root.tryAddCut("Manual", "--")
                                 }
 
                                 AppButton {
@@ -709,21 +797,21 @@ ApplicationWindow {
                             }
 
                             AppButton {
-                                text: appController.exportBusy ? "Generating..." : "Generate New Video"
+                                text: appController.backendPreparationBusy ? "Preparing..." : "Prepare Export Job"
                                 variant: "success"
                                 size: "lg"
                                 Layout.fillWidth: true
-                                enabled: !appController.exportBusy && appController.selectedVideoPath.length > 0
-                                onClicked: appController.startLosslessExport()
+                                enabled: !appController.backendPreparationBusy && appController.selectedVideoPath.length > 0
+                                onClicked: appController.prepareExportJob(appController.selectedVideoPath, "")
                             }
 
                             ProgressBar {
                                 Layout.fillWidth: true
                                 Layout.preferredHeight: 8
-                                visible: appController.exportBusy
+                                visible: appController.backendPreparationBusy
                                 from: 0
                                 to: 1
-                                value: appController.exportProgress / 100
+                                value: appController.backendPreparationProgress / 100
 
                                 background: Rectangle {
                                     radius: 4
@@ -732,7 +820,7 @@ ApplicationWindow {
 
                                 contentItem: Item {
                                     Rectangle {
-                                        width: parent.width * appController.exportProgress / 100
+                                        width: parent.width * appController.backendPreparationProgress / 100
                                         height: parent.height
                                         radius: 4
                                         color: root.accent
@@ -742,11 +830,20 @@ ApplicationWindow {
 
                             Text {
                                 Layout.fillWidth: true
-                                text: appController.exportStatus
-                                color: appController.exportStatus.indexOf("failed") >= 0 ? "#FCA5A5" : root.textMuted
+                                text: appController.backendPreparationStatus
+                                color: appController.backendPreparationStatus.indexOf("failed") >= 0 ? "#FCA5A5" : root.textMuted
                                 font.pixelSize: 12
                                 elide: Text.ElideRight
-                                visible: appController.exportBusy || appController.exportStatus !== "No export running"
+                                visible: appController.backendPreparationBusy || appController.backendPreparationStatus !== "No backend preparation running"
+                            }
+
+                            Text {
+                                Layout.fillWidth: true
+                                text: appController.currentExportJobId.length > 0 ? "Job: " + appController.currentExportJobId : ""
+                                color: "#86EFAC"
+                                font.pixelSize: 11
+                                elide: Text.ElideRight
+                                visible: appController.currentExportJobId.length > 0
                             }
                         }
                     }
@@ -819,39 +916,70 @@ ApplicationWindow {
                                             ScrollBar.vertical: DarkScrollBar {}
 
                                             delegate: Rectangle {
+                                                id: videoDelegate
+
                                                 required property int index
+                                                required property var modelData
 
                                                 width: availableVideosListView.width - root.listScrollbarGutter
-                                                height: root.shortMode ? 38 : 44
-                                                color: modelData.path === appController.selectedVideoPath ? "#102A43" : (index % 2 === 0 ? "#0B1324" : "#0E1728")
-                                                border.color: modelData.path === appController.selectedVideoPath ? root.accent : "#142033"
+                                                height: root.shortMode ? 56 : 68
+                                                radius: 8
+                                                color: videoDelegate.modelData.path === appController.selectedVideoPath ? "#102A43" : (videoDelegate.index % 2 === 0 ? "#0B1324" : "#0E1728")
+                                                border.color: videoDelegate.modelData.path === appController.selectedVideoPath ? root.accent : "#142033"
 
                                                 RowLayout {
                                                     anchors.fill: parent
-                                                    anchors.leftMargin: 8
+                                                    anchors.leftMargin: 10
                                                     anchors.rightMargin: 8
-                                                    spacing: 8
+                                                    spacing: 10
 
                                                     ColumnLayout {
                                                         Layout.fillWidth: true
-                                                        spacing: 1
+                                                        spacing: 3
 
                                                         Text {
-                                                            text: modelData.name
+                                                            text: videoDelegate.modelData.name
                                                             color: root.textMain
-                                                            font.pixelSize: 12
+                                                            font.pixelSize: 13
                                                             font.weight: Font.DemiBold
                                                             elide: Text.ElideRight
                                                             Layout.fillWidth: true
                                                         }
 
                                                         Text {
-                                                            text: modelData.subtitle_found ? modelData.subtitle_name : "No subtitle"
-                                                            color: modelData.subtitle_found ? "#86EFAC" : root.textMuted
+                                                            text: videoDelegate.modelData.path
+                                                            color: root.textMuted
                                                             font.pixelSize: 11
                                                             elide: Text.ElideRight
                                                             Layout.fillWidth: true
+                                                        }
+
+                                                        RowLayout {
+                                                            Layout.fillWidth: true
+                                                            spacing: 6
                                                             visible: !root.shortMode
+
+                                                            Text {
+                                                                text: (videoDelegate.modelData.extension || "").toUpperCase().replace(".", "") + " - " + root.formatBytes(videoDelegate.modelData.file_size_bytes)
+                                                                color: "#CBD5E1"
+                                                                font.pixelSize: 10
+                                                                elide: Text.ElideRight
+                                                                Layout.preferredWidth: 82
+                                                            }
+
+                                                            Rectangle {
+                                                                Layout.preferredWidth: 1
+                                                                Layout.preferredHeight: 12
+                                                                color: "#243244"
+                                                            }
+
+                                                            Text {
+                                                                text: videoDelegate.modelData.subtitle_found ? "Subtitle: " + videoDelegate.modelData.subtitle_name : "No subtitle"
+                                                                color: videoDelegate.modelData.subtitle_found ? "#86EFAC" : root.textMuted
+                                                                font.pixelSize: 10
+                                                                elide: Text.ElideRight
+                                                                Layout.fillWidth: true
+                                                            }
                                                         }
                                                     }
 
@@ -860,7 +988,7 @@ ApplicationWindow {
                                                         variant: "primary"
                                                         size: "sm"
                                                         Layout.preferredWidth: 56
-                                                        onClicked: appController.selectAvailableVideo(index)
+                                                        onClicked: appController.selectAvailableVideo(videoDelegate.index)
                                                     }
                                                 }
 
@@ -1001,6 +1129,21 @@ ApplicationWindow {
                                             font.bold: true
                                         }
                                         Item { Layout.fillWidth: true }
+                                        AppButton {
+                                            text: "Import"
+                                            variant: "secondary"
+                                            size: "sm"
+                                            Layout.preferredWidth: 68
+                                            onClicked: root.importCutsFromJson()
+                                        }
+                                        AppButton {
+                                            text: "Export"
+                                            variant: "secondary"
+                                            size: "sm"
+                                            Layout.preferredWidth: 68
+                                            enabled: cutsModel.count > 0
+                                            onClicked: appController.exportCuts(root.cutsToArray())
+                                        }
                                         AppButton {
                                             text: "Clear list"
                                             variant: "ghost"

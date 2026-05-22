@@ -1,15 +1,13 @@
 from contextlib import contextmanager
-from pathlib import Path
 
 from sqlalchemy import create_engine, event
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import sessionmaker
 
+from core.config import DATA_DIR, DATABASE_PATH
 
-APP_DATA_DIR = Path.home() / ".nsfw_cutter"
-APP_DATA_DIR.mkdir(parents=True, exist_ok=True)
 
-DATABASE_PATH = APP_DATA_DIR / "nsfw_cutter.db"
+DATA_DIR.mkdir(parents=True, exist_ok=True)
 DATABASE_URL = f"sqlite:///{DATABASE_PATH}"
 
 engine = create_engine(

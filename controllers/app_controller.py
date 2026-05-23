@@ -22,6 +22,7 @@ class AppController(QObject):
     videoNameChanged = Signal()
     subtitleStatusChanged = Signal()
     projectStatusChanged = Signal()
+    currentFolderChanged = Signal()
     availableVideosChanged = Signal()
     selectedVideoPathChanged = Signal()
     exportBusyChanged = Signal()
@@ -61,6 +62,7 @@ class AppController(QObject):
         self._video_name = "No video selected"
         self._subtitle_status = "Subtitle: not detected"
         self._project_status = "Ready"
+        self._current_folder = ""
         self._available_videos = []
         self._selected_video_path = ""
         self._export_busy = False
@@ -87,6 +89,10 @@ class AppController(QObject):
     @Property(str, notify=projectStatusChanged)
     def projectStatus(self):
         return self._project_status
+
+    @Property(str, notify=currentFolderChanged)
+    def currentFolder(self):
+        return self._current_folder
 
     @Property("QVariantList", notify=availableVideosChanged)
     def availableVideos(self):
@@ -137,6 +143,7 @@ class AppController(QObject):
     @Slot(str)
     def loadFolder(self, folder: str):
         try:
+            self._set_current_folder(folder)
             videos = self.video_import_service.list_importable_videos(folder)
             self._available_videos = videos
             self.availableVideosChanged.emit()
@@ -147,11 +154,13 @@ class AppController(QObject):
 
             self._set_project_status(f"{len(videos)} video(s) found. Select one to load.")
         except ValueError as exc:
+            self._set_current_folder("")
             self._available_videos = []
             self.availableVideosChanged.emit()
             self._set_project_status(str(exc))
         except Exception:
             logger.exception("Unexpected error while loading folder")
+            self._set_current_folder("")
             self._available_videos = []
             self.availableVideosChanged.emit()
             self._set_project_status("Unexpected error while loading folder")
@@ -425,6 +434,11 @@ class AppController(QObject):
         self._project_status = status
         self.projectStatusChanged.emit()
 
+    def _set_current_folder(self, folder: str):
+        if self._current_folder != folder:
+            self._current_folder = folder
+            self.currentFolderChanged.emit()
+
     def _set_export_busy(self, value: bool):
         if self._export_busy != value:
             self._export_busy = value
@@ -486,7 +500,7 @@ class AppController(QObject):
         if self._parse_time_to_seconds(start) >= self._parse_time_to_seconds(end):
             raise ValueError("Each cut must have start before end")
 
-        return {
+        normalized = {
             "start": start,
             "end": end,
             "reason": str(cut.get("reason") or "Manual cut"),
@@ -494,6 +508,30 @@ class AppController(QObject):
             "source": str(cut.get("source") or "Manual"),
             "score": str(cut.get("score") or "--"),
         }
+        if _has_keyframe_cut_fields(cut):
+            safe_start = str(cut.get("safe_start") or cut.get("safeStart") or start).strip()
+            safe_end = str(cut.get("safe_end") or cut.get("safeEnd") or end).strip()
+            normalized.update(
+                {
+                    "safeStart": safe_start,
+                    "safeEnd": safe_end,
+                    "previousKeyframeStart": str(
+                        cut.get("previous_keyframe_start") or cut.get("previousKeyframeStart") or safe_start
+                    ),
+                    "nextKeyframeStart": str(
+                        cut.get("next_keyframe_start") or cut.get("nextKeyframeStart") or start
+                    ),
+                    "previousKeyframeEnd": str(
+                        cut.get("previous_keyframe_end") or cut.get("previousKeyframeEnd") or end
+                    ),
+                    "nextKeyframeEnd": str(
+                        cut.get("next_keyframe_end") or cut.get("nextKeyframeEnd") or safe_end
+                    ),
+                    "extraBefore": str(cut.get("extraBefore") or cut.get("extra_before") or "0.0s"),
+                    "extraAfter": str(cut.get("extraAfter") or cut.get("extra_after") or "0.0s"),
+                }
+            )
+        return normalized
 
     def _parse_time_to_seconds(self, value: str) -> int:
         parts = value.split(":")
@@ -509,3 +547,27 @@ class AppController(QObject):
             raise ValueError("Cut times must use HH:MM:SS")
 
         return hours * 3600 + minutes * 60 + seconds
+
+
+def _has_keyframe_cut_fields(cut: dict) -> bool:
+    return any(
+        key in cut
+        for key in (
+            "safe_start",
+            "safeStart",
+            "safe_end",
+            "safeEnd",
+            "previous_keyframe_start",
+            "previousKeyframeStart",
+            "next_keyframe_start",
+            "nextKeyframeStart",
+            "previous_keyframe_end",
+            "previousKeyframeEnd",
+            "next_keyframe_end",
+            "nextKeyframeEnd",
+            "extra_before",
+            "extraBefore",
+            "extra_after",
+            "extraAfter",
+        )
+    )

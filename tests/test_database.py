@@ -6,6 +6,8 @@ from sqlalchemy.pool import StaticPool
 from database.base import Base
 from models import (
     AnalysisJob,
+    CutJob,
+    CutJobSegment,
     DetectionResult,
     ExportJob,
     SubtitleInfo,
@@ -39,6 +41,8 @@ class DatabaseInitializationTests(unittest.TestCase):
                     VideoMetadata.__tablename__,
                     SubtitleInfo.__tablename__,
                     ExportJob.__tablename__,
+                    CutJob.__tablename__,
+                    CutJobSegment.__tablename__,
                     AnalysisJob.__tablename__,
                     DetectionResult.__tablename__,
                 },

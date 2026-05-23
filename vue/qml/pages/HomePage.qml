@@ -10,9 +10,9 @@ Item {
 
     signal settingsRequested()
 
-    property bool compactMode: root.width < 1180 || root.height < 720
-    property bool narrowMode: root.width < 1060
-    property bool shortMode: root.height < 700
+    property bool compactMode: root.width < 1650 || root.height < 820
+    property bool narrowMode: root.width < 1500
+    property bool shortMode: root.height < 820
     property bool darkMode: settingsController.theme !== "light"
 
     property color bg: darkMode ? "#0F172A" : "#F6F7FB"
@@ -22,8 +22,15 @@ Item {
     property color textMuted: darkMode ? "#94A3B8" : "#475569"
     property color accent: "#38BDF8"
     property int listScrollbarGutter: 14
+    property int selectedCutIndex: -1
+    readonly property int footerHeight: {
+        var target = root.shortMode ? 280 : Math.floor(root.height * 0.42)
+        return Math.max(root.shortMode ? 260 : 390, Math.min(theme.bottomPanelHeight, target))
+    }
 
     ListModel { id: cutsModel }
+
+    AppTheme { id: theme }
 
     function cutsToArray() {
         var cuts = []
@@ -32,10 +39,22 @@ Item {
             cuts.push({
                 "start": cut.start,
                 "end": cut.end,
+                "safe_start": cut.safeStart,
+                "safe_end": cut.safeEnd,
+                "requested_start_seconds": cut.requestedStartSeconds,
+                "requested_end_seconds": cut.requestedEndSeconds,
+                "safe_start_seconds": cut.safeStartSeconds,
+                "safe_end_seconds": cut.safeEndSeconds,
+                "previous_keyframe_start": cut.previousKeyframeStart,
+                "next_keyframe_start": cut.nextKeyframeStart,
+                "previous_keyframe_end": cut.previousKeyframeEnd,
+                "next_keyframe_end": cut.nextKeyframeEnd,
                 "reason": cut.reason,
                 "tags": cut.tags,
                 "source": cut.source,
-                "score": cut.score
+                "score": cut.score,
+                "type": cut.cutType,
+                "status": cut.status
             })
         }
         return cuts
@@ -47,18 +66,51 @@ Item {
 
         cutsModel.clear()
         for (var index = 0; index < importedCuts.length; index += 1) {
-            cutsModel.append(importedCuts[index])
+            root.appendCut(importedCuts[index])
         }
     }
 
-    function addSuggestedCut(startTime, endTime, reason, tags, score) {
+    function appendCut(cut) {
+        var start = cut.start || cut.requestedStart || "00:00:00"
+        var end = cut.end || cut.requestedEnd || "00:00:00"
+        var safeStart = cut.safeStart || cut.safe_start || start
+        var safeEnd = cut.safeEnd || cut.safe_end || end
+
         cutsModel.append({
+            "start": start,
+            "end": end,
+            "safeStart": safeStart,
+            "safeEnd": safeEnd,
+            "requestedStartSeconds": cut.requestedStartSeconds !== undefined ? cut.requestedStartSeconds : (cut.requested_start_seconds !== undefined ? cut.requested_start_seconds : ""),
+            "requestedEndSeconds": cut.requestedEndSeconds !== undefined ? cut.requestedEndSeconds : (cut.requested_end_seconds !== undefined ? cut.requested_end_seconds : ""),
+            "safeStartSeconds": cut.safeStartSeconds !== undefined ? cut.safeStartSeconds : (cut.safe_start_seconds !== undefined ? cut.safe_start_seconds : ""),
+            "safeEndSeconds": cut.safeEndSeconds !== undefined ? cut.safeEndSeconds : (cut.safe_end_seconds !== undefined ? cut.safe_end_seconds : ""),
+            "previousKeyframeStart": cut.previousKeyframeStart || cut.previous_keyframe_start || safeStart,
+            "nextKeyframeStart": cut.nextKeyframeStart || cut.next_keyframe_start || start,
+            "previousKeyframeEnd": cut.previousKeyframeEnd || cut.previous_keyframe_end || end,
+            "nextKeyframeEnd": cut.nextKeyframeEnd || cut.next_keyframe_end || safeEnd,
+            "extraBefore": cut.extraBefore || "0.0s",
+            "extraAfter": cut.extraAfter || "0.0s",
+            "reason": cut.reason || "Manual removal",
+            "tags": cut.tags || "manual",
+            "source": cut.source || "Manual",
+            "score": cut.score || "--",
+            "cutType": cut.type || cut.cutType || "Remove",
+            "status": cut.status || "Pending"
+        })
+        root.selectedCutIndex = cutsModel.count - 1
+    }
+
+    function addSuggestedCut(startTime, endTime, reason, tags, score) {
+        root.appendCut({
             "start": startTime,
             "end": endTime,
             "reason": reason,
             "tags": tags,
             "source": "AI",
-            "score": score
+            "score": score,
+            "cutType": "Remove",
+            "status": "Pending"
         })
     }
 
@@ -68,12 +120,14 @@ Item {
 
         ColumnLayout {
             anchors.fill: parent
-            anchors.margins: root.compactMode ? 10 : 14
-            spacing: root.compactMode ? 8 : 10
+            anchors.margins: root.compactMode ? 12 : theme.windowMargin
+            spacing: root.compactMode ? 10 : theme.sectionGap
 
             AppHeader {
                 Layout.fillWidth: true
-                Layout.preferredHeight: root.compactMode ? 52 : 58
+                Layout.preferredHeight: root.compactMode ? 70 : theme.headerHeight
+                Layout.minimumHeight: 70
+                Layout.maximumHeight: 84
                 compactMode: root.compactMode
                 narrowMode: root.narrowMode
                 panelColor: root.panel
@@ -83,7 +137,7 @@ Item {
                 onFolderRequested: appController.browseFolder()
                 onClearRequested: {
                     appController.clearVideo()
-                    videoPreview.stopPlayback()
+                    homeBody.stopPlayback()
                 }
                 onSettingsClicked: root.settingsRequested()
             }
@@ -91,95 +145,58 @@ Item {
             ColumnLayout {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
-                spacing: root.compactMode ? 8 : 10
+                spacing: root.compactMode ? 10 : theme.sectionGap
 
-                RowLayout {
+                HomeBody {
+                    id: homeBody
                     Layout.fillWidth: true
                     Layout.fillHeight: true
-                    spacing: root.compactMode ? 8 : 10
-
-                    VideoPreviewPanel {
-                        id: videoPreview
-                        Layout.fillWidth: true
-                        Layout.fillHeight: true
-                        Layout.minimumHeight: 330
-                        compactMode: root.compactMode
-                        panelTone: root.panel
-                        videoTone: root.videoBg
-                        textMain: root.textMain
-                        textMuted: root.textMuted
-                        accent: root.accent
-                        cutCount: cutsModel.count
-                        onStartRequested: function(timeText) { cutEditor.setStartTime(timeText) }
-                        onEndRequested: function(timeText) { cutEditor.setEndTime(timeText) }
-                    }
-
-                    CutEditorPanel {
-                        id: cutEditor
-                        Layout.preferredWidth: root.narrowMode ? 300 : 320
-                        Layout.minimumWidth: 290
-                        Layout.alignment: Qt.AlignTop
-                        Layout.preferredHeight: implicitHeight
-                        compactMode: root.compactMode
-                        shortMode: root.shortMode
-                        panelTone: root.panel
-                        textMain: root.textMain
-                        textMuted: root.textMuted
-                        accent: root.accent
-                        onCutAdded: function(cut) { cutsModel.append(cut) }
-                    }
+                    Layout.minimumHeight: root.shortMode ? 280 : 400
+                    cutsModel: cutsModel
+                    compactMode: root.compactMode
+                    narrowMode: root.narrowMode
+                    shortMode: root.shortMode
+                    rightPanelWidth: theme.rightPanelWidth
+                    panelTone: root.panel
+                    videoTone: root.videoBg
+                    textMain: root.textMain
+                    textMuted: root.textMuted
+                    accent: root.accent
+                    selectedCutIndex: root.selectedCutIndex
+                    onCutAdded: function(cut) { root.appendCut(cut) }
+                    onCutSelected: function(index) { root.selectedCutIndex = index }
                 }
 
-                Panel {
+                HomeFooter {
                     Layout.fillWidth: true
-                    Layout.preferredHeight: root.shortMode ? 168 : 218
-                    panelColor: root.panel
-                    strokeColor: "#21324D"
-
-                    RowLayout {
-                        anchors.fill: parent
-                        anchors.margins: root.compactMode ? 10 : 12
-                        spacing: root.compactMode ? 8 : 10
-
-                        FoundVideosPanel {
-                            Layout.preferredWidth: root.narrowMode ? 220 : 260
-                            Layout.fillHeight: true
-                            shortMode: root.shortMode
-                            textMain: root.textMain
-                            textMuted: root.textMuted
-                            accent: root.accent
-                            scrollbarGutter: root.listScrollbarGutter
-                        }
-
-                        AiPicksPanel {
-                            Layout.fillWidth: true
-                            Layout.fillHeight: true
-                            narrowMode: root.narrowMode
-                            shortMode: root.shortMode
-                            textMain: root.textMain
-                            textMuted: root.textMuted
-                            accent: root.accent
-                            scrollbarGutter: root.listScrollbarGutter
-                            onEditRequested: function(startTime, endTime, reason, tags) {
-                                cutEditor.applyRecommendation(startTime, endTime, reason, tags)
-                            }
-                            onAddRequested: function(startTime, endTime, reason, tags, score) {
-                                root.addSuggestedCut(startTime, endTime, reason, tags, score)
-                            }
-                        }
-
-                        CutListPanel {
-                            Layout.fillWidth: true
-                            Layout.fillHeight: true
-                            cutsModel: cutsModel
-                            narrowMode: root.narrowMode
-                            textMain: root.textMain
-                            textMuted: root.textMuted
-                            accent: root.accent
-                            scrollbarGutter: root.listScrollbarGutter
-                            onImportRequested: root.importCutsFromJson()
-                            onExportRequested: appController.exportCuts(root.cutsToArray())
-                        }
+                    Layout.preferredHeight: root.footerHeight
+                    Layout.minimumHeight: root.shortMode ? 260 : 340
+                    Layout.maximumHeight: 480
+                    cutsModel: cutsModel
+                    compactMode: root.compactMode
+                    narrowMode: root.narrowMode
+                    shortMode: root.shortMode
+                    panelTone: root.panel
+                    textMain: root.textMain
+                    textMuted: root.textMuted
+                    accent: root.accent
+                    scrollbarGutter: root.listScrollbarGutter
+                    selectedCutIndex: root.selectedCutIndex
+                    videoDurationMs: homeBody.videoDurationMs
+                    videoPositionMs: homeBody.videoPositionMs
+                    onCutSelected: function(index) { root.selectedCutIndex = index }
+                    onEditRequested: function(startTime, endTime, reason, tags) {
+                        homeBody.applyRecommendation(startTime, endTime, reason, tags)
+                    }
+                    onPreviewRequested: function(startTime) { homeBody.previewCut(startTime) }
+                    onJumpRequested: function(timeText) { homeBody.seekToTime(timeText) }
+                    onSuggestedCutAdded: function(startTime, endTime, reason, tags, score) {
+                        root.addSuggestedCut(startTime, endTime, reason, tags, score)
+                    }
+                    onImportRequested: root.importCutsFromJson()
+                    onExportRequested: appController.exportCuts(root.cutsToArray())
+                    onFastExportAllRequested: function(outputDir, exportMode) {
+                        videoCutController.exportSegments(appController.selectedVideoPath, root.cutsToArray(), outputDir, exportMode)
                     }
                 }
             }

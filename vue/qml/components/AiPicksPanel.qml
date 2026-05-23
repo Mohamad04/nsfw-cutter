@@ -11,6 +11,7 @@ Rectangle {
     property color textMuted: "#94A3B8"
     property color accent: "#38BDF8"
     property int scrollbarGutter: 14
+    readonly property bool denseMode: root.narrowMode || root.width < 360
 
     signal editRequested(string startTime, string endTime, string reason, string tags)
     signal addRequested(string startTime, string endTime, string reason, string tags, string score)
@@ -79,17 +80,21 @@ Rectangle {
                     anchors.fill: parent
                     anchors.leftMargin: 10
                     anchors.rightMargin: 8
-                    spacing: 8
+                    spacing: root.denseMode ? 4 : 8
 
                     ColumnLayout {
                         Layout.fillWidth: true
+                        Layout.minimumWidth: 0
                         spacing: 2
 
                         Text {
+                            Layout.fillWidth: true
+                            Layout.minimumWidth: 0
                             text: start + " - " + end
                             color: index === 1 ? root.accent : root.textMain
                             font.pixelSize: 13
                             font.weight: Font.DemiBold
+                            elide: Text.ElideRight
                         }
 
                         Text {
@@ -108,13 +113,15 @@ Rectangle {
                         font.pixelSize: 12
                         font.bold: true
                         Layout.preferredWidth: 34
+                        visible: !root.denseMode
                     }
 
                     AppButton {
                         text: "Edit"
                         variant: "ghost"
                         size: "sm"
-                        Layout.preferredWidth: 52
+                        Layout.minimumWidth: 0
+                        Layout.preferredWidth: root.denseMode ? 44 : 52
                         onClicked: root.editRequested(start, end, label, tags)
                     }
 
@@ -122,7 +129,8 @@ Rectangle {
                         text: "Add"
                         variant: "primary"
                         size: "sm"
-                        Layout.preferredWidth: 52
+                        Layout.minimumWidth: 0
+                        Layout.preferredWidth: root.denseMode ? 44 : 52
                         onClicked: root.addRequested(start, end, label, tags, score)
                     }
                 }

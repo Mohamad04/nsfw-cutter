@@ -1,4 +1,3 @@
-import shutil
 import subprocess
 from pathlib import Path
 
@@ -37,8 +36,19 @@ def run_command(command: list[str]) -> str:
 
 
 def ensure_ffprobe_available() -> bool:
-    if LOCAL_FFPROBE_PATH.is_file():
+    try:
+        subprocess.run(
+            [_resolve_command_executable("ffprobe"), "-version"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            check=True,
+        )
         return True
-    if shutil.which("ffprobe"):
-        return True
-    raise RuntimeError("ffprobe was not found. Please install FFmpeg and ensure ffprobe is available in PATH.")
+    except FileNotFoundError as exc:
+        raise RuntimeError(
+            "ffprobe was not found. Please install FFmpeg and ensure ffprobe is available in PATH."
+        ) from exc
+    except subprocess.CalledProcessError as exc:
+        stderr = exc.stderr.strip() if exc.stderr else "Unable to run ffprobe."
+        raise RuntimeError(f"ffprobe is available but failed to run: {stderr}") from exc

@@ -1,5 +1,4 @@
 import QtQuick
-import QtQuick.Controls
 import QtQuick.Layouts
 import QtMultimedia
 
@@ -7,15 +6,23 @@ Panel {
     id: root
 
     property bool compactMode: false
+    property bool shortMode: false
     property color panelTone: "#0B1324"
     property color videoTone: "#1E293B"
     property color textMain: "#F8FAFC"
     property color textMuted: "#94A3B8"
     property color accent: "#38BDF8"
     property int cutCount: 0
+    property var cutsModel
+    property int selectedCutIndex: -1
+    property real volumeLevel: 0.85
+    readonly property real durationMs: player.duration
+    readonly property real positionMs: player.position
 
     signal startRequested(string timeText)
     signal endRequested(string timeText)
+    signal addCutRequested()
+    signal cutMarkerSelected(int index)
 
     panelColor: root.panelTone
     strokeColor: "#21324D"
@@ -37,28 +44,45 @@ Panel {
         player.position = newPosition
     }
 
+    function togglePlayback() {
+        if (player.playbackState === MediaPlayer.PlayingState) player.pause()
+        else player.play()
+    }
+
     function stopPlayback() {
         player.stop()
+    }
+
+    function seekToTime(timeText) {
+        player.position = parseTimeMs(timeText)
+    }
+
+    function playFromTime(timeText) {
+        player.position = parseTimeMs(timeText)
+        player.play()
+    }
+
+    function parseTimeMs(timeText) {
+        var parts = String(timeText).trim().split(":")
+        if (parts.length !== 3) return 0
+        return (Number(parts[0]) * 3600 + Number(parts[1]) * 60 + Number(parts[2])) * 1000
     }
 
     MediaPlayer {
         id: player
         source: appController.videoUrl
-        videoOutput: videoOutput
-        audioOutput: AudioOutput {}
-
-        onPositionChanged: currentTimeLabel.text = root.formatTime(position)
-        onDurationChanged: totalTimeLabel.text = duration > 0 ? root.formatTime(duration) : "00:00:00"
+        videoOutput: videoPlayer.videoOutput
+        audioOutput: AudioOutput { volume: root.volumeLevel }
     }
 
     ColumnLayout {
         anchors.fill: parent
-        anchors.margins: root.compactMode ? 10 : 12
-        spacing: root.compactMode ? 8 : 10
+        anchors.margins: root.compactMode ? 12 : 16
+        spacing: root.compactMode ? 10 : 12
 
         RowLayout {
             Layout.fillWidth: true
-            Layout.preferredHeight: 24
+            Layout.preferredHeight: 28
             spacing: 8
 
             Text {
@@ -84,220 +108,33 @@ Panel {
             }
         }
 
-        Rectangle {
+        VideoPlayer {
+            id: videoPlayer
             Layout.fillWidth: true
             Layout.fillHeight: true
-            radius: 14
-            color: root.videoTone
-            border.color: "#233452"
-            clip: true
-
-            VideoOutput {
-                id: videoOutput
-                anchors.fill: parent
-                fillMode: VideoOutput.PreserveAspectFit
-            }
-
-            Column {
-                anchors.centerIn: parent
-                spacing: 10
-                visible: appController.videoUrl.length === 0
-
-                Rectangle {
-                    width: root.compactMode ? 70 : 86
-                    height: width
-                    radius: width / 2
-                    color: "#050A12"
-                    border.color: "#111827"
-
-                    Text {
-                        anchors.centerIn: parent
-                        text: "Play"
-                        color: "#F8FAFC"
-                        font.pixelSize: root.compactMode ? 16 : 19
-                        font.bold: true
-                    }
-                }
-
-                Text {
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    text: "No video loaded"
-                    color: root.textMuted
-                    font.pixelSize: 13
-                }
-            }
-
-            Rectangle {
-                anchors.centerIn: parent
-                width: root.compactMode ? 70 : 86
-                height: width
-                radius: width / 2
-                color: "#020617"
-                opacity: player.playbackState === MediaPlayer.PlayingState || appController.videoUrl.length === 0 ? 0 : 0.86
-                visible: appController.videoUrl.length > 0
-
-                Text {
-                    anchors.centerIn: parent
-                    text: "Play"
-                    color: "#F8FAFC"
-                    font.pixelSize: root.compactMode ? 16 : 19
-                    font.bold: true
-                }
-
-                MouseArea {
-                    anchors.fill: parent
-                    onClicked: player.play()
-                }
-            }
-        }
-
-        RowLayout {
-            Layout.fillWidth: true
-            spacing: 8
-
-            Text {
-                id: currentTimeLabel
-                text: "00:00:00"
-                color: root.textMain
-                font.pixelSize: 13
-                Layout.preferredWidth: 66
-            }
-
-            Slider {
-                id: timelineSlider
-                Layout.fillWidth: true
-                from: 0
-                to: player.duration > 0 ? player.duration : 1
-                value: player.position
-                enabled: player.duration > 0
-                onMoved: player.position = value
-
-                background: Rectangle {
-                    x: timelineSlider.leftPadding
-                    y: timelineSlider.topPadding + timelineSlider.availableHeight / 2 - height / 2
-                    implicitHeight: 6
-                    width: timelineSlider.availableWidth
-                    height: implicitHeight
-                    radius: 3
-                    color: "#334155"
-
-                    Rectangle {
-                        width: timelineSlider.visualPosition * parent.width
-                        height: parent.height
-                        radius: 3
-                        color: root.accent
-                    }
-                }
-
-                handle: Rectangle {
-                    x: timelineSlider.leftPadding + timelineSlider.visualPosition * (timelineSlider.availableWidth - width)
-                    y: timelineSlider.topPadding + timelineSlider.availableHeight / 2 - height / 2
-                    width: 18
-                    height: 18
-                    radius: 9
-                    color: "#E0F2FE"
-                    border.color: root.accent
-                    border.width: 3
-                }
-            }
-
-            Text {
-                id: totalTimeLabel
-                text: "00:00:00"
-                color: root.textMain
-                font.pixelSize: 13
-                horizontalAlignment: Text.AlignRight
-                Layout.preferredWidth: 66
-            }
-        }
-
-        Rectangle {
-            Layout.fillWidth: true
-            Layout.preferredHeight: root.compactMode ? 50 : 56
-            radius: 14
-            color: "#0A1120"
-            border.color: "#1F2F4A"
-
-            RowLayout {
-                anchors.fill: parent
-                anchors.leftMargin: 8
-                anchors.rightMargin: 8
-                spacing: 8
-
-                Rectangle {
-                    Layout.fillWidth: true
-                    Layout.preferredHeight: 40
-                    radius: 12
-                    color: "#08111F"
-                    border.color: "#18263B"
-
-                    RowLayout {
-                        anchors.fill: parent
-                        anchors.margins: 4
-                        spacing: 4
-
-                        AppButton { text: "-60"; variant: "control"; size: "sm"; Layout.fillWidth: true; onClicked: root.seekBy(-60) }
-                        AppButton { text: "-15"; variant: "control"; size: "sm"; Layout.fillWidth: true; onClicked: root.seekBy(-15) }
-                        AppButton { text: "-5"; variant: "control"; size: "sm"; Layout.fillWidth: true; onClicked: root.seekBy(-5) }
-                    }
-                }
-
-                AppButton {
-                    text: player.playbackState === MediaPlayer.PlayingState ? "Pause" : "Play"
-                    variant: "primary"
-                    size: "lg"
-                    Layout.preferredWidth: root.compactMode ? 88 : 104
-                    Layout.preferredHeight: 40
-                    onClicked: player.playbackState === MediaPlayer.PlayingState ? player.pause() : player.play()
-                }
-
-                Rectangle {
-                    Layout.fillWidth: true
-                    Layout.preferredHeight: 40
-                    radius: 12
-                    color: "#08111F"
-                    border.color: "#18263B"
-
-                    RowLayout {
-                        anchors.fill: parent
-                        anchors.margins: 4
-                        spacing: 4
-
-                        AppButton { text: "+5"; variant: "control"; size: "sm"; Layout.fillWidth: true; onClicked: root.seekBy(5) }
-                        AppButton { text: "+15"; variant: "control"; size: "sm"; Layout.fillWidth: true; onClicked: root.seekBy(15) }
-                        AppButton { text: "+60"; variant: "control"; size: "sm"; Layout.fillWidth: true; onClicked: root.seekBy(60) }
-                    }
-                }
-
-                Rectangle {
-                    Layout.preferredWidth: root.compactMode ? 126 : 146
-                    Layout.preferredHeight: 40
-                    radius: 12
-                    color: "#0B2038"
-                    border.color: "#1D4F73"
-
-                    RowLayout {
-                        anchors.fill: parent
-                        anchors.margins: 4
-                        spacing: 4
-
-                        AppButton {
-                            text: "Start"
-                            variant: "ghost"
-                            size: "sm"
-                            Layout.fillWidth: true
-                            onClicked: root.startRequested(root.formatTime(player.position))
-                        }
-
-                        AppButton {
-                            text: "End"
-                            variant: "ghost"
-                            size: "sm"
-                            Layout.fillWidth: true
-                            onClicked: root.endRequested(root.formatTime(player.position))
-                        }
-                    }
-                }
+            Layout.minimumHeight: root.shortMode ? 210 : (root.compactMode ? 320 : 360)
+            compactMode: root.compactMode
+            playing: player.playbackState === MediaPlayer.PlayingState
+            positionMs: player.position
+            durationMs: player.duration
+            volume: root.volumeLevel
+            cutsModel: root.cutsModel
+            selectedCutIndex: root.selectedCutIndex
+            videoTone: root.videoTone
+            textMain: root.textMain
+            textMuted: root.textMuted
+            accent: root.accent
+            onPlayRequested: player.play()
+            onSeekRequested: function(positionMs) { player.position = positionMs }
+            onSkipRequested: function(seconds) { root.seekBy(seconds) }
+            onPlaybackToggled: root.togglePlayback()
+            onStartRequested: root.startRequested(root.formatTime(player.position))
+            onEndRequested: root.endRequested(root.formatTime(player.position))
+            onAddCutRequested: root.addCutRequested()
+            onVolumeRequested: function(value) { root.volumeLevel = value }
+            onMarkerSelected: function(index, positionMs) {
+                player.position = positionMs
+                root.cutMarkerSelected(index)
             }
         }
     }

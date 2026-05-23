@@ -1,4 +1,5 @@
 from models.analysis_job import AnalysisJob
+from models.cut_job import CutJob, CutJobSegment
 from models.detection_result import DetectionResult
 from models.export_job import ExportJob
 from models.subtitle_info import SubtitleInfo
@@ -11,6 +12,8 @@ from models.video_subtitle import VideoSubtitle
 
 __all__ = [
     "AnalysisJob",
+    "CutJob",
+    "CutJobSegment",
     "DetectionResult",
     "ExportJob",
     "SubtitleInfo",

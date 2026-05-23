@@ -19,14 +19,14 @@ Panel {
 
     RowLayout {
         anchors.fill: parent
-        anchors.leftMargin: 12
-        anchors.rightMargin: 12
-        spacing: root.compactMode ? 8 : 10
+        anchors.leftMargin: 16
+        anchors.rightMargin: 16
+        spacing: root.compactMode ? 10 : 12
 
         Rectangle {
-            Layout.preferredWidth: 34
-            Layout.preferredHeight: 34
-            radius: 11
+            Layout.preferredWidth: root.compactMode ? 42 : 46
+            Layout.preferredHeight: root.compactMode ? 42 : 46
+            radius: 13
             color: "#0B2038"
             border.color: "#1E9BFF"
 
@@ -45,13 +45,14 @@ Panel {
             font.pixelSize: root.compactMode ? 17 : 20
             font.bold: true
             visible: !root.narrowMode
+            Layout.preferredWidth: root.compactMode ? 150 : 170
         }
 
         AppButton {
             text: "Folder"
             variant: "primary"
             size: "md"
-            Layout.preferredWidth: root.compactMode ? 86 : 102
+            Layout.preferredWidth: root.compactMode ? 110 : 130
             onClicked: root.folderRequested()
         }
 
@@ -59,14 +60,14 @@ Panel {
             text: "Clear"
             variant: "secondary"
             size: "md"
-            Layout.preferredWidth: 86
+            Layout.preferredWidth: root.compactMode ? 96 : 110
             onClicked: root.clearRequested()
         }
 
         Rectangle {
-            Layout.preferredHeight: 34
+            Layout.preferredHeight: root.compactMode ? 42 : 46
             Layout.fillWidth: true
-            radius: 17
+            radius: 18
             color: "#0A1120"
             border.color: "#243244"
 
@@ -96,16 +97,16 @@ Panel {
                     color: "#86EFAC"
                     font.pixelSize: 12
                     elide: Text.ElideRight
-                    Layout.preferredWidth: root.compactMode ? 170 : 260
+                    Layout.preferredWidth: root.compactMode ? 250 : 290
                     visible: !root.narrowMode
                 }
             }
         }
 
         Rectangle {
-            Layout.preferredHeight: 30
-            Layout.preferredWidth: root.compactMode ? 96 : 130
-            radius: 15
+            Layout.preferredHeight: root.compactMode ? 38 : 40
+            Layout.preferredWidth: root.compactMode ? 150 : 165
+            radius: 16
             color: "#103D22"
             border.color: "#1B6F3A"
 
@@ -125,7 +126,8 @@ Panel {
             text: "⚙"
             variant: "ghost"
             size: "icon"
-            Layout.preferredWidth: 48
+            Layout.preferredWidth: root.compactMode ? 52 : 56
+            Layout.preferredHeight: root.compactMode ? 52 : 56
             ToolTip.visible: hovered
             ToolTip.text: "Settings"
             onClicked: root.settingsClicked()

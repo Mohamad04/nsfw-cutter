@@ -86,17 +86,27 @@ class SettingsController(QObject):
 
     @Slot(result=str)
     def getExportDir(self) -> str:
-        export_dir = self._reload().export_dir
+        settings = self._reload()
+        export_dir = settings.default_export_dir or settings.export_dir
         return str(export_dir) if export_dir else ""
 
     @Slot(str)
     def setExportDir(self, export_dir: str) -> None:
-        self._update(export_dir=Path(export_dir) if export_dir.strip() else None)
+        path = Path(export_dir) if export_dir.strip() else None
+        self._update(default_export_dir=path, export_dir=path)
 
     @Slot(result=str)
     def chooseExportDir(self) -> str:
         folder = QFileDialog.getExistingDirectory(None, "Select export folder", self.getExportDir())
         return folder or ""
+
+    @Slot(result=str)
+    def getLastExportMode(self) -> str:
+        return self._reload().last_export_mode
+
+    @Slot(str)
+    def setLastExportMode(self, export_mode: str) -> None:
+        self._update(last_export_mode=export_mode)
 
     @Slot(result=str)
     def getLastVideoPath(self) -> str:

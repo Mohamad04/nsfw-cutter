@@ -13,14 +13,16 @@ ApplicationWindow {
 
     readonly property int availableScreenWidth: Screen.desktopAvailableWidth > 0 ? Screen.desktopAvailableWidth : Screen.width
     readonly property int availableScreenHeight: Screen.desktopAvailableHeight > 0 ? Screen.desktopAvailableHeight : Screen.height
+    readonly property int restoreWidth: root.availableScreenWidth >= 1280 ? Math.min(1920, root.availableScreenWidth - 40) : root.availableScreenWidth
+    readonly property int restoreHeight: root.availableScreenHeight >= 720 ? Math.min(1080, root.availableScreenHeight - 40) : root.availableScreenHeight
     property bool darkMode: settingsController.theme !== "light"
 
     visible: true
     visibility: Window.Maximized
-    width: Math.min(1360, root.availableScreenWidth)
-    height: Math.min(820, root.availableScreenHeight)
-    minimumWidth: Math.min(960, root.availableScreenWidth)
-    minimumHeight: Math.min(620, root.availableScreenHeight)
+    width: root.restoreWidth
+    height: root.restoreHeight
+    minimumWidth: Math.min(1280, root.availableScreenWidth)
+    minimumHeight: Math.min(720, root.availableScreenHeight)
     title: "NSFW Cutter"
     color: root.darkMode ? "#0F172A" : "#F6F7FB"
 

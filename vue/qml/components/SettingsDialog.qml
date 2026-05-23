@@ -34,6 +34,7 @@ Popup {
         languageCombo.currentIndex = modelIndex(languageCombo.model, settingsController.getLanguage())
         providerCombo.currentIndex = modelIndex(providerCombo.model, settingsController.getAIProvider())
         exportFolderField.text = settingsController.getExportDir()
+        exportModeCombo.currentIndex = modelIndex(exportModeCombo.model, settingsController.getLastExportMode())
         promptArea.text = settingsController.getUserPrompt()
         modelNameField.text = settingsController.getAIModelName()
         gpuCheckbox.checked = settingsController.getEnableGpu()
@@ -141,6 +142,17 @@ Popup {
                                 size: "sm"
                                 Layout.preferredWidth: 62
                                 onClicked: exportFolderField.text = ""
+                            }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 8
+                            Text { text: "Export mode"; color: root.textMuted; Layout.preferredWidth: 84 }
+                            ComboBox {
+                                id: exportModeCombo
+                                Layout.fillWidth: true
+                                model: ["remove_intervals", "export_clips_separate", "export_clips_merged"]
                             }
                         }
                     }
@@ -283,6 +295,7 @@ Popup {
                     settingsController.setTheme(themeCombo.currentText)
                     settingsController.setLanguage(languageCombo.currentText)
                     settingsController.setExportDir(exportFolderField.text)
+                    settingsController.setLastExportMode(exportModeCombo.currentText)
                     settingsController.setUserPrompt(promptArea.text)
                     settingsController.setAIProvider(providerCombo.currentText)
                     settingsController.setAIModelName(modelNameField.text)

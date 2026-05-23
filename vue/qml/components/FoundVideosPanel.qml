@@ -36,19 +36,41 @@ Rectangle {
         RowLayout {
             Layout.fillWidth: true
 
-            Text {
-                text: "FOUND VIDEOS"
-                color: root.accent
-                font.pixelSize: 13
-                font.bold: true
-            }
+            ColumnLayout {
+                Layout.fillWidth: true
+                Layout.minimumWidth: 0
+                spacing: 2
 
-            Item { Layout.fillWidth: true }
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 8
 
-            Text {
-                text: appController.availableVideos.length
-                color: root.textMuted
-                font.pixelSize: 12
+                    Text {
+                        text: "FOUND VIDEOS IN FOLDER"
+                        color: root.accent
+                        font.pixelSize: 13
+                        font.bold: true
+                        elide: Text.ElideRight
+                        Layout.fillWidth: true
+                        Layout.minimumWidth: 0
+                    }
+
+                    Text {
+                        text: appController.availableVideos.length
+                        color: root.textMuted
+                        font.pixelSize: 12
+                    }
+                }
+
+                Text {
+                    Layout.fillWidth: true
+                    Layout.minimumWidth: 0
+                    text: appController.currentFolder.length > 0 ? appController.currentFolder : "Choose a video folder"
+                    color: root.textMuted
+                    font.pixelSize: 10
+                    elide: Text.ElideMiddle
+                    visible: !root.shortMode
+                }
             }
         }
 
@@ -63,7 +85,7 @@ Rectangle {
             Text {
                 anchors.centerIn: parent
                 visible: appController.availableVideos.length === 0
-                text: "No folder results"
+                text: appController.currentFolder.length > 0 ? "No videos found" : "No folder selected"
                 color: root.textMuted
                 font.pixelSize: 12
             }

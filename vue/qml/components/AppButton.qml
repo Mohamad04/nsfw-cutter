@@ -15,7 +15,7 @@ Button {
     implicitHeight: {
         if (size === "sm") return 32
         if (size === "lg" || size === "icon") return 44
-        return 38
+        return 40
     }
 
     implicitWidth: {

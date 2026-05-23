@@ -6,6 +6,8 @@ from PySide6.QtWidgets import QApplication
 
 from controllers.app_controller import AppController
 from controllers.settings_controller import SettingsController
+from controllers.video_cut_controller import VideoCutController
+from core.logging_config import configure_logging
 from core.paths import get_resource_path
 from database.init_db import init_database
 from services.settings_service import SettingsService
@@ -14,6 +16,7 @@ from services.settings_service import SettingsService
 def main():
     # Force a deterministic controls style to avoid platform hover artifacts.
     QQuickStyle.setStyle("Basic")
+    configure_logging()
     init_database()
     app = QApplication(sys.argv)
 
@@ -27,6 +30,10 @@ def main():
     settings_controller = SettingsController(settings_service=settings_service)
     settings_controller.setParent(app)
     engine.rootContext().setContextProperty("settingsController", settings_controller)
+
+    video_cut_controller = VideoCutController(settings_service=settings_service)
+    video_cut_controller.setParent(app)
+    engine.rootContext().setContextProperty("videoCutController", video_cut_controller)
 
     controller.restoreLastVideo()
 

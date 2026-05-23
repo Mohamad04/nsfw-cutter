@@ -6,6 +6,8 @@ from database.session import engine
 # Import models so SQLAlchemy registers all tables before create_all().
 from models import (  # noqa: F401
     AnalysisJob,
+    CutJob,
+    CutJobSegment,
     DetectionResult,
     ExportJob,
     SubtitleInfo,

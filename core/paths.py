@@ -27,6 +27,12 @@ def get_cache_dir() -> Path:
     return path
 
 
+def get_cuts_cache_dir() -> Path:
+    path = get_cache_dir() / "cuts"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
 def get_settings_path() -> Path:
     return get_config_dir() / "settings.json"
 
@@ -37,6 +43,12 @@ def get_database_path() -> Path:
 
 def get_json_data_dir() -> Path:
     path = get_data_dir() / "json"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def get_logs_dir() -> Path:
+    path = get_data_dir().parent / "logs"
     path.mkdir(parents=True, exist_ok=True)
     return path
 

@@ -111,13 +111,23 @@ class AppControllerTests(unittest.TestCase):
         self.controller.loadFolder("folder")
 
         self.assertEqual(self.controller.availableVideos[0]["name"], "a.mp4")
+        self.assertEqual(self.controller.currentFolder, "folder")
         self.assertEqual(self.controller.projectStatus, "1 video(s) found. Select one to load.")
 
     def test_load_folder_empty_sets_status(self):
         self.controller.loadFolder("empty")
 
         self.assertEqual(self.controller.availableVideos, [])
+        self.assertEqual(self.controller.currentFolder, "empty")
         self.assertEqual(self.controller.projectStatus, "No video found in selected folder")
+
+    def test_load_folder_invalid_clears_current_folder(self):
+        self.controller.loadFolder("folder")
+        self.controller.loadFolder("invalid")
+
+        self.assertEqual(self.controller.currentFolder, "")
+        self.assertEqual(self.controller.availableVideos, [])
+        self.assertEqual(self.controller.projectStatus, "Selected folder does not exist")
 
     def test_load_video_file_updates_properties(self):
         self.controller.loadVideoFile("/tmp/a.mp4")

@@ -35,7 +35,12 @@ class AppSettings(BaseModel):
     recent_videos: list[Path] = Field(default_factory=list)
 
     export_dir: Path | None = None
+    default_export_dir: Path | None = None
     default_export_format: str = "json"
+    last_export_mode: str = Field(
+        default="remove_intervals",
+        pattern="^(remove_intervals|export_clips_separate|export_clips_merged|separate|merged)$",
+    )
 
     user_prompt: str = ""
 

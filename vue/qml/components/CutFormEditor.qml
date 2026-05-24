@@ -1,10 +1,12 @@
 import QtQuick
+import QtQuick.Controls
 import QtQuick.Layouts
 
 ColumnLayout {
     id: root
 
     property bool shortMode: false
+    property bool headerCollapsed: false
     property color textMain: "#F8FAFC"
     property color textMuted: "#94A3B8"
     property color accent: "#38BDF8"
@@ -26,6 +28,7 @@ ColumnLayout {
     })
 
     signal cutAdded(var cut)
+    signal headerExpandRequested()
 
     spacing: 10
 
@@ -162,12 +165,15 @@ ColumnLayout {
         root.addCut("Manual", "--")
     }
 
-    RowLayout {
+    Item {
         Layout.fillWidth: true
         Layout.preferredHeight: 44
 
         ColumnLayout {
-            Layout.fillWidth: true
+            anchors.left: parent.left
+            anchors.right: manualBadge.left
+            anchors.rightMargin: 12
+            anchors.verticalCenter: parent.verticalCenter
             spacing: 2
 
             Text {
@@ -186,8 +192,13 @@ ColumnLayout {
         }
 
         Rectangle {
-            Layout.preferredHeight: 28
-            Layout.preferredWidth: 78
+            id: manualBadge
+
+            width: 78
+            height: 28
+            anchors.right: root.headerCollapsed ? expandHeaderButton.left : parent.right
+            anchors.rightMargin: root.headerCollapsed ? 8 : 0
+            anchors.verticalCenter: parent.verticalCenter
             radius: 14
             color: "#12223A"
             border.color: "#284566"
@@ -198,6 +209,22 @@ ColumnLayout {
                 color: root.textMuted
                 font.pixelSize: 12
             }
+        }
+
+        AppButton {
+            id: expandHeaderButton
+
+            visible: root.headerCollapsed
+            width: 58
+            height: 44
+            anchors.right: parent.right
+            anchors.verticalCenter: parent.verticalCenter
+            text: "▼"
+            variant: "ghost"
+            size: "icon"
+            ToolTip.visible: hovered
+            ToolTip.text: "Expand header"
+            onClicked: root.headerExpandRequested()
         }
     }
 

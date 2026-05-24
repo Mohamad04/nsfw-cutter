@@ -121,13 +121,19 @@ Item {
         ColumnLayout {
             anchors.fill: parent
             anchors.margins: root.compactMode ? 12 : theme.windowMargin
-            spacing: root.compactMode ? 10 : theme.sectionGap
+            spacing: appHeader.headerCollapsed ? 0 : (root.compactMode ? 10 : theme.sectionGap)
 
             AppHeader {
+                id: appHeader
+
+                visible: !appHeader.headerCollapsed
                 Layout.fillWidth: true
-                Layout.preferredHeight: root.compactMode ? 70 : theme.headerHeight
-                Layout.minimumHeight: 70
-                Layout.maximumHeight: 84
+                Layout.preferredHeight: appHeader.preferredHeaderHeight
+                Layout.minimumHeight: appHeader.collapsedHeaderHeight
+                Layout.preferredWidth: -1
+                Layout.maximumWidth: Number.POSITIVE_INFINITY
+                Layout.maximumHeight: appHeader.expandedHeaderHeight
+                Layout.alignment: Qt.AlignTop | Qt.AlignLeft
                 compactMode: root.compactMode
                 narrowMode: root.narrowMode
                 panelColor: root.panel
@@ -162,9 +168,11 @@ Item {
                     textMain: root.textMain
                     textMuted: root.textMuted
                     accent: root.accent
+                    headerCollapsed: appHeader.headerCollapsed
                     selectedCutIndex: root.selectedCutIndex
                     onCutAdded: function(cut) { root.appendCut(cut) }
                     onCutSelected: function(index) { root.selectedCutIndex = index }
+                    onHeaderExpandRequested: appHeader.headerCollapsed = false
                 }
 
                 HomeFooter {

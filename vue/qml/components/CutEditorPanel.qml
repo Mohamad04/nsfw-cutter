@@ -6,6 +6,7 @@ Panel {
     id: root
 
     property bool compactMode: false
+    property bool headerCollapsed: false
     property bool shortMode: false
     property color panelTone: "#0B1324"
     property color textMain: "#F8FAFC"
@@ -15,6 +16,7 @@ Panel {
     property real videoDurationMs: 0
 
     signal cutAdded(var cut)
+    signal headerExpandRequested()
 
     implicitHeight: content.implicitHeight + (root.compactMode ? 24 : 32)
     panelColor: root.panelTone
@@ -39,7 +41,10 @@ Panel {
     Flickable {
         id: editorScroll
         anchors.fill: parent
-        anchors.margins: root.compactMode ? 12 : 16
+        anchors.leftMargin: root.compactMode ? 12 : 16
+        anchors.topMargin: root.compactMode ? 12 : 16
+        anchors.rightMargin: root.compactMode ? 12 : 16
+        anchors.bottomMargin: root.compactMode ? 12 : 16
         contentWidth: width
         contentHeight: content.implicitHeight
         boundsBehavior: Flickable.StopAtBounds
@@ -55,6 +60,7 @@ Panel {
                 id: cutForm
                 Layout.fillWidth: true
                 spacing: root.compactMode ? 8 : 10
+                headerCollapsed: root.headerCollapsed
                 shortMode: root.shortMode
                 textMain: root.textMain
                 textMuted: root.textMuted
@@ -62,6 +68,7 @@ Panel {
                 selectedVideoPath: root.selectedVideoPath
                 videoDurationMs: root.videoDurationMs
                 onCutAdded: function(cut) { root.cutAdded(cut) }
+                onHeaderExpandRequested: root.headerExpandRequested()
             }
 
             ExportJobSection {

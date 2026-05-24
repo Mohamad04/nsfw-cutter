@@ -6,6 +6,7 @@ Item {
 
     required property var cutsModel
     property bool compactMode: false
+    property bool headerCollapsed: false
     property bool narrowMode: false
     property bool shortMode: false
     property color panelTone: "#0B1324"
@@ -20,6 +21,7 @@ Item {
 
     signal cutAdded(var cut)
     signal cutSelected(int index)
+    signal headerExpandRequested()
 
     function stopPlayback() {
         videoPanel.stopPlayback()
@@ -75,6 +77,7 @@ Item {
             Layout.fillHeight: true
             Layout.minimumHeight: root.shortMode ? 260 : 400
             compactMode: root.compactMode
+            headerCollapsed: root.headerCollapsed
             shortMode: root.shortMode
             selectedVideoPath: appController.selectedVideoPath
             videoDurationMs: root.videoDurationMs
@@ -83,6 +86,7 @@ Item {
             textMuted: root.textMuted
             accent: root.accent
             onCutAdded: function(cut) { root.cutAdded(cut) }
+            onHeaderExpandRequested: root.headerExpandRequested()
         }
     }
 }

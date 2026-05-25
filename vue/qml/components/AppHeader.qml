@@ -7,6 +7,7 @@ Item {
 
     property bool compactMode: false
     property bool headerCollapsed: false
+    property bool lightMode: false
     property bool narrowMode: false
     property url appIconSource: Qt.resolvedUrl("../../../assets/icons/app.png")
     property color panelColor: "#0B1324"
@@ -14,13 +15,15 @@ Item {
     property color textColor: "#F8FAFC"
     property color mutedTextColor: "#94A3B8"
     property color accentColor: "#38BDF8"
-    readonly property int expandedHeaderHeight: 72
+    readonly property int expandedHeaderHeight: 76
     readonly property int collapsedHeaderHeight: 0
     readonly property int preferredHeaderHeight: root.headerCollapsed ? root.collapsedHeaderHeight : root.expandedHeaderHeight
 
     signal folderRequested()
     signal clearRequested()
     signal settingsClicked()
+
+    AppTheme { id: theme }
 
     implicitHeight: root.preferredHeaderHeight
     implicitWidth: 1200
@@ -50,8 +53,10 @@ Item {
 
         RowLayout {
             anchors.fill: parent
-            anchors.leftMargin: 16
-            anchors.rightMargin: 16
+            anchors.leftMargin: root.compactMode ? 14 : 18
+            anchors.rightMargin: 14
+            anchors.topMargin: 10
+            anchors.bottomMargin: 10
             spacing: root.compactMode ? 10 : 12
 
             Image {
@@ -76,6 +81,7 @@ Item {
                 text: "Folder"
                 variant: "primary"
                 size: "md"
+                lightMode: root.lightMode
                 Layout.preferredWidth: root.compactMode ? 110 : 130
                 onClicked: root.folderRequested()
             }
@@ -84,6 +90,7 @@ Item {
                 text: "Clear"
                 variant: "secondary"
                 size: "md"
+                lightMode: root.lightMode
                 Layout.preferredWidth: root.compactMode ? 96 : 110
                 onClicked: root.clearRequested()
             }
@@ -91,9 +98,9 @@ Item {
             Rectangle {
                 Layout.preferredHeight: root.compactMode ? 42 : 46
                 Layout.fillWidth: true
-                radius: 18
-                color: "#0A1120"
-                border.color: "#243244"
+                radius: 16
+                color: root.lightMode ? theme.lightSurfaceAlt : "#0A1120"
+                border.color: root.lightMode ? theme.lightBorder : "#243244"
 
                 RowLayout {
                     anchors.fill: parent
@@ -103,7 +110,7 @@ Item {
 
                     Text {
                         text: appController.videoName
-                        color: "#DDE7F6"
+                        color: root.lightMode ? theme.lightTextPrimary : "#DDE7F6"
                         font.pixelSize: 13
                         elide: Text.ElideRight
                         Layout.fillWidth: true
@@ -112,17 +119,28 @@ Item {
                     Rectangle {
                         Layout.preferredWidth: 1
                         Layout.preferredHeight: 18
-                        color: "#243244"
+                        color: root.lightMode ? theme.lightDivider : "#243244"
                         visible: !root.narrowMode
                     }
 
-                    Text {
-                        text: appController.subtitleStatus
-                        color: "#86EFAC"
-                        font.pixelSize: 12
-                        elide: Text.ElideRight
+                    Rectangle {
                         Layout.preferredWidth: root.compactMode ? 250 : 290
+                        Layout.preferredHeight: 28
+                        radius: 12
                         visible: !root.narrowMode
+                        color: root.lightMode ? "#ECFDF5" : "#103D22"
+                        border.color: root.lightMode ? "#BBF7D0" : "#1B6F3A"
+
+                        Text {
+                            anchors.fill: parent
+                            anchors.leftMargin: 10
+                            anchors.rightMargin: 10
+                            text: appController.subtitleStatus
+                            color: root.lightMode ? "#15803D" : "#86EFAC"
+                            font.pixelSize: 12
+                            elide: Text.ElideRight
+                            verticalAlignment: Text.AlignVCenter
+                        }
                     }
                 }
             }
@@ -131,13 +149,13 @@ Item {
                 Layout.preferredHeight: root.compactMode ? 38 : 40
                 Layout.preferredWidth: root.compactMode ? 150 : 165
                 radius: 16
-                color: "#103D22"
-                border.color: "#1B6F3A"
+                color: root.lightMode ? theme.lightSuccessSoft : "#103D22"
+                border.color: root.lightMode ? "#86EFAC" : "#1B6F3A"
 
                 Text {
                     anchors.centerIn: parent
                     text: appController.projectStatus
-                    color: "#86EFAC"
+                    color: root.lightMode ? "#166534" : "#86EFAC"
                     font.pixelSize: 12
                     font.weight: Font.DemiBold
                     elide: Text.ElideRight
@@ -150,8 +168,9 @@ Item {
                 text: "⚙"
                 variant: "ghost"
                 size: "icon"
-                Layout.preferredWidth: root.compactMode ? 52 : 56
-                Layout.preferredHeight: root.compactMode ? 52 : 56
+                lightMode: root.lightMode
+                Layout.preferredWidth: 52
+                Layout.preferredHeight: 52
                 ToolTip.visible: hovered
                 ToolTip.text: "Settings"
                 onClicked: root.settingsClicked()
@@ -161,8 +180,9 @@ Item {
                 text: "▲"
                 variant: "ghost"
                 size: "icon"
-                Layout.preferredWidth: root.compactMode ? 44 : 48
-                Layout.preferredHeight: root.compactMode ? 44 : 48
+                lightMode: root.lightMode
+                Layout.preferredWidth: 52
+                Layout.preferredHeight: 52
                 ToolTip.visible: hovered
                 ToolTip.text: "Collapse header"
                 onClicked: root.headerCollapsed = true

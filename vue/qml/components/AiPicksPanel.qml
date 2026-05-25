@@ -5,6 +5,7 @@ import QtQuick.Layouts
 Rectangle {
     id: root
 
+    property bool lightMode: false
     property bool narrowMode: false
     property bool shortMode: false
     property color textMain: "#F8FAFC"
@@ -16,9 +17,9 @@ Rectangle {
     signal editRequested(string startTime, string endTime, string reason, string tags)
     signal addRequested(string startTime, string endTime, string reason, string tags, string score)
 
-    radius: 12
-    color: "#08111F"
-    border.color: "#1F2F4A"
+    radius: 14
+    color: root.lightMode ? "#FFFFFF" : "#08111F"
+    border.color: root.lightMode ? "#CBD5E1" : "#1F2F4A"
     clip: true
 
     ListModel {
@@ -39,8 +40,9 @@ Rectangle {
             Text {
                 text: "AI PICKS"
                 color: root.accent
-                font.pixelSize: 13
+                font.pixelSize: 15
                 font.bold: true
+                font.letterSpacing: 0.8
             }
 
             Item { Layout.fillWidth: true }
@@ -60,7 +62,7 @@ Rectangle {
             model: aiModel
             spacing: 6
             clip: true
-            ScrollBar.vertical: AppScrollBar {}
+            ScrollBar.vertical: AppScrollBar { lightMode: root.lightMode }
 
             delegate: Rectangle {
                 required property int index
@@ -73,8 +75,8 @@ Rectangle {
                 width: aiListView.width - root.scrollbarGutter
                 height: root.shortMode ? 44 : 50
                 radius: 10
-                color: "#0A1120"
-                border.color: index === 1 ? "#155E9E" : "#1F2F4A"
+                color: root.lightMode ? (index === 1 ? "#EFF6FF" : "#F8FAFC") : "#0A1120"
+                border.color: root.lightMode ? (index === 1 ? "#60A5FA" : "#CBD5E1") : (index === 1 ? "#155E9E" : "#1F2F4A")
 
                 RowLayout {
                     anchors.fill: parent
@@ -109,7 +111,7 @@ Rectangle {
 
                     Text {
                         text: score
-                        color: "#86EFAC"
+                        color: root.lightMode ? "#16A34A" : "#86EFAC"
                         font.pixelSize: 12
                         font.bold: true
                         Layout.preferredWidth: 34
@@ -120,6 +122,7 @@ Rectangle {
                         text: "Edit"
                         variant: "ghost"
                         size: "sm"
+                        lightMode: root.lightMode
                         Layout.minimumWidth: 0
                         Layout.preferredWidth: root.denseMode ? 44 : 52
                         onClicked: root.editRequested(start, end, label, tags)
@@ -129,6 +132,7 @@ Rectangle {
                         text: "Add"
                         variant: "primary"
                         size: "sm"
+                        lightMode: root.lightMode
                         Layout.minimumWidth: 0
                         Layout.preferredWidth: root.denseMode ? 44 : 52
                         onClicked: root.addRequested(start, end, label, tags, score)

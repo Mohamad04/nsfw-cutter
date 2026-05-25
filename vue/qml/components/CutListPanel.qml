@@ -8,6 +8,7 @@ Rectangle {
     id: root
 
     required property var cutsModel
+    property bool lightMode: false
     property bool narrowMode: false
     property bool shortMode: false
     property color textMain: "#F8FAFC"
@@ -40,9 +41,9 @@ Rectangle {
     signal jumpCutRequested(string timeText)
     signal fastExportAllRequested(string outputDir, string exportMode)
 
-    radius: 12
-    color: "#08111F"
-    border.color: "#1F2F4A"
+    radius: 14
+    color: root.lightMode ? "#FFFFFF" : "#08111F"
+    border.color: root.lightMode ? "#CBD5E1" : "#1F2F4A"
     clip: true
 
     Component.onCompleted: root.outputDir = settingsController.getExportDir()
@@ -100,8 +101,9 @@ Rectangle {
                 Layout.minimumWidth: 0
                 text: "CUT LIST (" + root.cutsModel.count + ")"
                 color: root.accent
-                font.pixelSize: 13
+                font.pixelSize: 15
                 font.bold: true
+                font.letterSpacing: 0.8
                 elide: Text.ElideRight
             }
 
@@ -109,8 +111,9 @@ Rectangle {
 
             AppButton {
                 text: "Import"
-                variant: "secondary"
+                variant: "primary"
                 size: "sm"
+                lightMode: root.lightMode
                 Layout.preferredWidth: 62
                 onClicked: root.importRequested()
             }
@@ -119,6 +122,7 @@ Rectangle {
                 text: "JSON"
                 variant: "secondary"
                 size: "sm"
+                lightMode: root.lightMode
                 Layout.preferredWidth: 56
                 enabled: root.cutsModel.count > 0
                 onClicked: root.exportRequested()
@@ -128,6 +132,7 @@ Rectangle {
                 text: "Clear"
                 variant: "ghost"
                 size: "sm"
+                lightMode: root.lightMode
                 Layout.preferredWidth: 58
                 enabled: root.cutsModel.count > 0
                 onClicked: {
@@ -142,8 +147,8 @@ Rectangle {
             Layout.preferredHeight: root.shortMode ? 58 : 84
             Layout.minimumHeight: root.shortMode ? 52 : 70
             radius: 10
-            color: "#050B14"
-            border.color: "#142033"
+            color: root.lightMode ? "#F8FAFC" : "#050B14"
+            border.color: root.lightMode ? "#E2E8F0" : "#142033"
 
             Text {
                 anchors.left: parent.left
@@ -175,7 +180,7 @@ Rectangle {
                 anchors.bottomMargin: 18
                 height: 16
                 radius: 8
-                color: "#243244"
+                color: root.lightMode ? "#CBD5E1" : "#243244"
 
                 Repeater {
                     model: root.cutsModel
@@ -237,7 +242,7 @@ Rectangle {
                     height: parent.height + 12
                     y: -6
                     x: root.durationMs > 0 ? Math.max(0, Math.min(parent.width - width, root.videoPositionMs / root.durationMs * parent.width)) : 0
-                    color: "#E0F2FE"
+                    color: root.lightMode ? "#0284C7" : "#E0F2FE"
                     visible: root.durationMs > 0
                 }
             }
@@ -247,8 +252,8 @@ Rectangle {
             Layout.fillWidth: true
             Layout.preferredHeight: root.shortMode ? 26 : 30
             radius: 9
-            color: "#111C30"
-            border.color: "#243244"
+            color: root.lightMode ? "#EEF4FB" : "#111C30"
+            border.color: root.lightMode ? "#CBD5E1" : "#243244"
             visible: root.cutsModel.count > 0 && !root.cardRows
 
             RowLayout {
@@ -275,8 +280,8 @@ Rectangle {
             Layout.preferredHeight: root.shortMode ? 82 : 190
             Layout.minimumHeight: root.shortMode ? 70 : (root.narrowMode ? 120 : 140)
             radius: 10
-            color: "#050B14"
-            border.color: "#142033"
+            color: root.lightMode ? "#F8FAFC" : "#050B14"
+            border.color: root.lightMode ? "#E2E8F0" : "#142033"
             clip: true
 
             Text {
@@ -294,7 +299,7 @@ Rectangle {
                 model: root.cutsModel
                 clip: true
                 spacing: 1
-                ScrollBar.vertical: AppScrollBar {}
+                ScrollBar.vertical: AppScrollBar { lightMode: root.lightMode }
 
                 delegate: Item {
                     required property int index
@@ -341,6 +346,7 @@ Rectangle {
                         editButtonWidth: root.editButtonWidth
                         deleteButtonWidth: root.deleteButtonWidth
                         selected: root.selectedIndex === parent.index
+                        lightMode: root.lightMode
                         textMain: root.textMain
                         textMuted: root.textMuted
                         accent: root.accent
@@ -362,6 +368,7 @@ Rectangle {
             outputDir: root.outputDir
             narrowMode: root.narrowMode
             hasSegments: root.cutsModel.count > 0
+            lightMode: root.lightMode
             textMain: root.textMain
             textMuted: root.textMuted
             accent: root.accent

@@ -6,7 +6,7 @@ Rectangle {
     property color panelColor: "#111827"
     property color strokeColor: "#243244"
 
-    radius: 16
+    radius: 14
     color: panelColor
     border.color: strokeColor
     border.width: 1

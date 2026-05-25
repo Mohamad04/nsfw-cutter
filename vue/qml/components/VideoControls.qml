@@ -6,6 +6,7 @@ Rectangle {
     id: root
 
     property bool compactMode: false
+    property bool lightMode: false
     property bool playing: false
     property real volume: 0.85
     implicitHeight: root.compactMode ? 34 : 38
@@ -26,27 +27,29 @@ Rectangle {
         anchors.margins: 0
         spacing: root.compactMode ? 4 : 8
 
-        AppButton { text: "-60"; variant: "control"; size: "sm"; Layout.preferredWidth: root.compactMode ? 50 : 72; Layout.preferredHeight: 32; onClicked: root.seekRequested(-60) }
-        AppButton { text: "-15"; variant: "control"; size: "sm"; Layout.preferredWidth: root.compactMode ? 50 : 72; Layout.preferredHeight: 32; onClicked: root.seekRequested(-15) }
-        AppButton { text: "-5"; variant: "control"; size: "sm"; Layout.preferredWidth: root.compactMode ? 46 : 66; Layout.preferredHeight: 32; onClicked: root.seekRequested(-5) }
+        AppButton { text: "-60"; variant: "control"; size: "sm"; lightMode: root.lightMode; Layout.preferredWidth: root.compactMode ? 50 : 72; Layout.preferredHeight: 32; onClicked: root.seekRequested(-60) }
+        AppButton { text: "-15"; variant: "control"; size: "sm"; lightMode: root.lightMode; Layout.preferredWidth: root.compactMode ? 50 : 72; Layout.preferredHeight: 32; onClicked: root.seekRequested(-15) }
+        AppButton { text: "-5"; variant: "control"; size: "sm"; lightMode: root.lightMode; Layout.preferredWidth: root.compactMode ? 46 : 66; Layout.preferredHeight: 32; onClicked: root.seekRequested(-5) }
 
         AppButton {
             text: root.playing ? "Pause" : "Play"
             variant: "primary"
             size: "md"
+            lightMode: root.lightMode
             Layout.preferredWidth: root.compactMode ? 68 : 96
             Layout.preferredHeight: 34
             onClicked: root.playbackToggled()
         }
 
-        AppButton { text: "+5"; variant: "control"; size: "sm"; Layout.preferredWidth: root.compactMode ? 46 : 66; Layout.preferredHeight: 32; onClicked: root.seekRequested(5) }
-        AppButton { text: "+15"; variant: "control"; size: "sm"; Layout.preferredWidth: root.compactMode ? 50 : 72; Layout.preferredHeight: 32; onClicked: root.seekRequested(15) }
-        AppButton { text: "+60"; variant: "control"; size: "sm"; Layout.preferredWidth: root.compactMode ? 50 : 72; Layout.preferredHeight: 32; onClicked: root.seekRequested(60) }
+        AppButton { text: "+5"; variant: "control"; size: "sm"; lightMode: root.lightMode; Layout.preferredWidth: root.compactMode ? 46 : 66; Layout.preferredHeight: 32; onClicked: root.seekRequested(5) }
+        AppButton { text: "+15"; variant: "control"; size: "sm"; lightMode: root.lightMode; Layout.preferredWidth: root.compactMode ? 50 : 72; Layout.preferredHeight: 32; onClicked: root.seekRequested(15) }
+        AppButton { text: "+60"; variant: "control"; size: "sm"; lightMode: root.lightMode; Layout.preferredWidth: root.compactMode ? 50 : 72; Layout.preferredHeight: 32; onClicked: root.seekRequested(60) }
 
         AppButton {
             text: "Set Start"
             variant: "ghost"
             size: "sm"
+            lightMode: root.lightMode
             Layout.preferredWidth: root.compactMode ? 68 : 88
             Layout.preferredHeight: 32
             onClicked: root.startRequested()
@@ -56,6 +59,7 @@ Rectangle {
             text: "Set End"
             variant: "ghost"
             size: "sm"
+            lightMode: root.lightMode
             Layout.preferredWidth: root.compactMode ? 64 : 82
             Layout.preferredHeight: 32
             onClicked: root.endRequested()
@@ -65,6 +69,7 @@ Rectangle {
             text: "+ Add Cut"
             variant: "success"
             size: "sm"
+            lightMode: root.lightMode
             Layout.preferredWidth: root.compactMode ? 82 : 116
             Layout.preferredHeight: 32
             onClicked: root.addCutRequested()
@@ -72,7 +77,7 @@ Rectangle {
 
         Text {
             text: "Vol"
-            color: "#CBD5E1"
+            color: root.lightMode ? "#475569" : "#CBD5E1"
             font.pixelSize: 11
             horizontalAlignment: Text.AlignHCenter
             verticalAlignment: Text.AlignVCenter
@@ -96,13 +101,13 @@ Rectangle {
                 width: volumeSlider.availableWidth
                 height: implicitHeight
                 radius: 2
-                color: "#334155"
+                color: root.lightMode ? "#CBD5E1" : "#334155"
 
                 Rectangle {
                     width: volumeSlider.visualPosition * parent.width
                     height: parent.height
                     radius: parent.radius
-                    color: "#22C55E"
+                    color: root.lightMode ? "#16A34A" : "#22C55E"
                 }
             }
 
@@ -112,8 +117,8 @@ Rectangle {
                 width: 12
                 height: 12
                 radius: 6
-                color: "#E2E8F0"
-                border.color: "#22C55E"
+                color: root.lightMode ? "#FFFFFF" : "#E2E8F0"
+                border.color: root.lightMode ? "#16A34A" : "#22C55E"
             }
         }
     }

@@ -14,6 +14,7 @@ Popup {
     closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
 
     property bool darkMode: settingsController.theme !== "light"
+    property bool lightMode: !root.darkMode
     property color dialogBg: darkMode ? "#0B1324" : "#FFFFFF"
     property color sectionBg: darkMode ? "#08111F" : "#F8FAFC"
     property color stroke: darkMode ? "#243244" : "#CBD5E1"
@@ -73,6 +74,7 @@ Popup {
                 text: "X"
                 variant: "ghost"
                 size: "sm"
+                lightMode: root.lightMode
                 Layout.preferredWidth: 42
                 onClicked: root.close()
             }
@@ -124,12 +126,14 @@ Popup {
                             AppTextField {
                                 id: exportFolderField
                                 Layout.fillWidth: true
+                                lightMode: root.lightMode
                                 placeholderText: "Leave blank for project defaults"
                             }
                             AppButton {
                                 text: "Browse"
                                 variant: "secondary"
                                 size: "sm"
+                                lightMode: root.lightMode
                                 Layout.preferredWidth: 72
                                 onClicked: {
                                     var folder = settingsController.chooseExportDir()
@@ -140,6 +144,7 @@ Popup {
                                 text: "Clear"
                                 variant: "ghost"
                                 size: "sm"
+                                lightMode: root.lightMode
                                 Layout.preferredWidth: 62
                                 onClicked: exportFolderField.text = ""
                             }
@@ -213,6 +218,7 @@ Popup {
                             id: promptArea
                             Layout.fillWidth: true
                             Layout.fillHeight: true
+                            lightMode: root.lightMode
                             placeholderText: "Write your custom AI prompt here..."
                         }
                     }
@@ -243,6 +249,7 @@ Popup {
                         AppTextField {
                             id: modelNameField
                             Layout.fillWidth: true
+                            lightMode: root.lightMode
                             placeholderText: "Model name"
                         }
 
@@ -285,12 +292,14 @@ Popup {
             AppButton {
                 text: "Cancel"
                 variant: "ghost"
+                lightMode: root.lightMode
                 onClicked: root.close()
             }
 
             AppButton {
                 text: "Save"
                 variant: "primary"
+                lightMode: root.lightMode
                 onClicked: {
                     settingsController.setTheme(themeCombo.currentText)
                     settingsController.setLanguage(languageCombo.currentText)

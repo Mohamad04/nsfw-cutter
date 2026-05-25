@@ -6,6 +6,7 @@ Panel {
 
     required property var cutsModel
     property bool compactMode: false
+    property bool lightMode: false
     property bool narrowMode: false
     property bool shortMode: false
     property color panelTone: "#0B1324"
@@ -28,7 +29,7 @@ Panel {
     signal fastExportAllRequested(string outputDir, string exportMode)
 
     panelColor: root.panelTone
-    strokeColor: "#21324D"
+    strokeColor: root.lightMode ? "#CBD5E1" : "#21324D"
 
     RowLayout {
         anchors.fill: parent
@@ -46,6 +47,7 @@ Panel {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 Layout.minimumHeight: root.shortMode ? 112 : 160
+                lightMode: root.lightMode
                 shortMode: root.shortMode
                 textMain: root.textMain
                 textMuted: root.textMuted
@@ -57,6 +59,7 @@ Panel {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 Layout.minimumHeight: root.shortMode ? 112 : 160
+                lightMode: root.lightMode
                 narrowMode: root.narrowMode
                 shortMode: root.shortMode
                 textMain: root.textMain
@@ -77,6 +80,7 @@ Panel {
             Layout.fillHeight: true
             Layout.minimumHeight: root.shortMode ? 250 : 340
             cutsModel: root.cutsModel
+            lightMode: root.lightMode
             shortMode: root.shortMode
             selectedIndex: root.selectedCutIndex
             durationMs: root.videoDurationMs

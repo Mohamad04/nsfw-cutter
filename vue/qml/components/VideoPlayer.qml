@@ -5,6 +5,7 @@ Rectangle {
     id: root
 
     property bool compactMode: false
+    property bool lightMode: false
     property bool playing: false
     property real positionMs: 0
     property real durationMs: 0
@@ -30,7 +31,7 @@ Rectangle {
 
     radius: 16
     color: root.videoTone
-    border.color: "#233452"
+    border.color: root.lightMode ? "#CBD5E1" : "#233452"
     clip: true
 
     function revealControls() {
@@ -120,10 +121,10 @@ Rectangle {
         anchors.bottom: parent.bottom
         anchors.margins: root.compactMode ? 8 : 12
         height: root.compactMode ? 78 : 88
-        radius: 16
-        color: "#050B14"
+        radius: 12
+        color: root.lightMode ? "#F8FAFC" : "#050B14"
         opacity: root.playing && !root.overlayActive ? 0 : 0.96
-        border.color: "#233452"
+        border.color: root.lightMode ? "#CBD5E1" : "#233452"
 
         Behavior on opacity { NumberAnimation { duration: 160 } }
 
@@ -144,8 +145,9 @@ Rectangle {
                 durationMs: root.durationMs
                 cutsModel: root.cutsModel
                 selectedCutIndex: root.selectedCutIndex
-                textMain: root.textMain
-                accent: root.accent
+                lightMode: root.lightMode
+                textMain: root.lightMode ? "#0F172A" : root.textMain
+                accent: root.lightMode ? "#2563EB" : root.accent
                 onSeekRequested: function(positionMs) { root.seekRequested(positionMs) }
                 onMarkerSelected: function(index, positionMs) { root.markerSelected(index, positionMs) }
             }
@@ -155,6 +157,7 @@ Rectangle {
                 width: parent.width
                 height: root.compactMode ? 34 : 38
                 compactMode: root.compactMode
+                lightMode: root.lightMode
                 playing: root.playing
                 volume: root.volume
                 onSeekRequested: function(seconds) { root.skipRequested(seconds) }

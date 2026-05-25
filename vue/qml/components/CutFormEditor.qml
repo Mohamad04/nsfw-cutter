@@ -7,6 +7,7 @@ ColumnLayout {
 
     property bool shortMode: false
     property bool headerCollapsed: false
+    property bool lightMode: false
     property color textMain: "#F8FAFC"
     property color textMuted: "#94A3B8"
     property color accent: "#38BDF8"
@@ -31,6 +32,8 @@ ColumnLayout {
     signal headerExpandRequested()
 
     spacing: 10
+
+    AppTheme { id: theme }
 
     function setStartTime(timeText) {
         startInput.text = timeText
@@ -167,11 +170,11 @@ ColumnLayout {
 
     Item {
         Layout.fillWidth: true
-        Layout.preferredHeight: 44
+        Layout.preferredHeight: root.headerCollapsed ? 52 : 44
 
         ColumnLayout {
             anchors.left: parent.left
-            anchors.right: manualBadge.left
+            anchors.right: headerActions.left
             anchors.rightMargin: 12
             anchors.verticalCenter: parent.verticalCenter
             spacing: 2
@@ -179,9 +182,9 @@ ColumnLayout {
             Text {
                 text: "CURRENT CUT"
                 color: root.accent
-                font.pixelSize: 15
+                font.pixelSize: 16
                 font.bold: true
-                font.letterSpacing: 0.6
+                font.letterSpacing: 1.0
             }
 
             Text {
@@ -191,75 +194,80 @@ ColumnLayout {
             }
         }
 
-        Rectangle {
-            id: manualBadge
+        RowLayout {
+            id: headerActions
 
-            width: 78
-            height: 28
-            anchors.right: root.headerCollapsed ? expandHeaderButton.left : parent.right
-            anchors.rightMargin: root.headerCollapsed ? 8 : 0
-            anchors.verticalCenter: parent.verticalCenter
-            radius: 14
-            color: "#12223A"
-            border.color: "#284566"
-
-            Text {
-                anchors.centerIn: parent
-                text: "Manual"
-                color: root.textMuted
-                font.pixelSize: 12
-            }
-        }
-
-        AppButton {
-            id: expandHeaderButton
-
-            visible: root.headerCollapsed
-            width: 58
-            height: 44
             anchors.right: parent.right
             anchors.verticalCenter: parent.verticalCenter
-            text: "▼"
-            variant: "ghost"
-            size: "icon"
-            ToolTip.visible: hovered
-            ToolTip.text: "Expand header"
-            onClicked: root.headerExpandRequested()
+            spacing: 6
+
+            Rectangle {
+                id: manualBadge
+
+                Layout.preferredWidth: 96
+                Layout.preferredHeight: 28
+                radius: 14
+                color: root.lightMode ? "#EFF6FF" : "#12223A"
+                border.color: root.lightMode ? "#BFDBFE" : "#284566"
+
+                Text {
+                    anchors.centerIn: parent
+                    text: "Manual"
+                    color: root.lightMode ? "#2563EB" : root.textMuted
+                    font.pixelSize: 12
+                }
+            }
+
+            AppButton {
+                id: expandHeaderButton
+
+                visible: root.headerCollapsed
+                Layout.preferredWidth: theme.collapsedControlSize
+                Layout.preferredHeight: theme.collapsedControlSize
+                text: "▼"
+                variant: "ghost"
+                size: "icon"
+                lightMode: root.lightMode
+                ToolTip.visible: hovered
+                ToolTip.text: "Expand header"
+                onClicked: root.headerExpandRequested()
+            }
         }
     }
 
-    Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: "#1F2F4A" }
+    Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: root.lightMode ? theme.lightDivider : "#1F2F4A" }
 
     RowLayout {
         Layout.fillWidth: true
         Layout.preferredHeight: 50
         spacing: 8
-        Text { text: "Start"; color: root.textMain; font.pixelSize: 12; Layout.preferredWidth: 40 }
-        AppTextField { id: startInput; Layout.fillWidth: true; placeholderText: "00:00:00"; text: "00:00:00"; onEditingFinished: root.refreshKeyframeInfo() }
-        AppButton { text: "Reset"; variant: "ghost"; size: "sm"; Layout.preferredWidth: 58; onClicked: { startInput.text = "00:00:00"; root.refreshKeyframeInfo() } }
+        Text { text: "Start"; color: root.textMain; font.pixelSize: 13; Layout.preferredWidth: 40 }
+        AppTextField { id: startInput; Layout.fillWidth: true; lightMode: root.lightMode; placeholderText: "00:00:00"; text: "00:00:00"; onEditingFinished: root.refreshKeyframeInfo() }
+        AppButton { text: "Reset"; variant: "ghost"; size: "sm"; lightMode: root.lightMode; Layout.preferredWidth: 58; onClicked: { startInput.text = "00:00:00"; root.refreshKeyframeInfo() } }
     }
 
     RowLayout {
         Layout.fillWidth: true
         Layout.preferredHeight: 50
         spacing: 8
-        Text { text: "End"; color: root.textMain; font.pixelSize: 12; Layout.preferredWidth: 40 }
+        Text { text: "End"; color: root.textMain; font.pixelSize: 13; Layout.preferredWidth: 40 }
         AppTextField {
             id: endInput
             Layout.fillWidth: true
+            lightMode: root.lightMode
             placeholderText: "00:00:00"
             text: "00:00:00"
             onAccepted: root.addCut("Manual", "--")
             onEditingFinished: root.refreshKeyframeInfo()
         }
-        AppButton { text: "Reset"; variant: "ghost"; size: "sm"; Layout.preferredWidth: 58; onClicked: { endInput.text = "00:00:00"; root.refreshKeyframeInfo() } }
+        AppButton { text: "Reset"; variant: "ghost"; size: "sm"; lightMode: root.lightMode; Layout.preferredWidth: 58; onClicked: { endInput.text = "00:00:00"; root.refreshKeyframeInfo() } }
     }
 
     Text {
         Layout.fillWidth: true
         Layout.preferredHeight: 36
         text: root.validationMessage()
-        color: "#FCA5A5"
+        color: root.lightMode ? theme.lightDanger : "#FCA5A5"
         font.pixelSize: 12
         visible: text.length > 0
         wrapMode: Text.WordWrap
@@ -282,23 +290,26 @@ ColumnLayout {
         textMain: root.textMain
         textMuted: root.textMuted
         accent: root.accent
+        lightMode: root.lightMode
     }
 
-    Text { text: "Reason"; color: root.textMain; font.pixelSize: 12; Layout.preferredHeight: 24 }
+    Text { text: "Reason"; color: root.textMain; font.pixelSize: 13; Layout.preferredHeight: 24 }
 
     AppTextArea {
         id: reasonInput
         Layout.fillWidth: true
         Layout.preferredHeight: 48
+        lightMode: root.lightMode
         placeholderText: "Reason for this cut..."
     }
 
-    Text { text: "Tags"; color: root.textMain; font.pixelSize: 12; Layout.preferredHeight: 24 }
+    Text { text: "Tags"; color: root.textMain; font.pixelSize: 13; Layout.preferredHeight: 24 }
 
     AppTextField {
         id: tagsInput
         Layout.fillWidth: true
         Layout.preferredHeight: 48
+        lightMode: root.lightMode
         placeholderText: "kissing, romance, nsfw"
         onAccepted: root.addCut("Manual", "--")
     }
@@ -312,6 +323,7 @@ ColumnLayout {
             text: "+ Add Cut"
             variant: "primary"
             size: "lg"
+            lightMode: root.lightMode
             Layout.fillWidth: true
             enabled: root.canAddCut()
             onClicked: root.addCut("Manual", "--")
@@ -321,6 +333,7 @@ ColumnLayout {
             text: "Reset"
             variant: "danger"
             size: "md"
+            lightMode: root.lightMode
             Layout.preferredWidth: 80
             onClicked: root.clearEditor()
         }

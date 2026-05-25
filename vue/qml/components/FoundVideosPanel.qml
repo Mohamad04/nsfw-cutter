@@ -5,15 +5,16 @@ import QtQuick.Layouts
 Rectangle {
     id: root
 
+    property bool lightMode: false
     property bool shortMode: false
     property color textMain: "#F8FAFC"
     property color textMuted: "#94A3B8"
     property color accent: "#38BDF8"
     property int scrollbarGutter: 14
 
-    radius: 12
-    color: "#08111F"
-    border.color: "#1F2F4A"
+    radius: 14
+    color: root.lightMode ? "#FFFFFF" : "#08111F"
+    border.color: root.lightMode ? "#CBD5E1" : "#1F2F4A"
     clip: true
 
     function formatBytes(bytes) {
@@ -48,8 +49,9 @@ Rectangle {
                     Text {
                         text: "FOUND VIDEOS IN FOLDER"
                         color: root.accent
-                        font.pixelSize: 13
+                        font.pixelSize: 15
                         font.bold: true
+                        font.letterSpacing: 0.8
                         elide: Text.ElideRight
                         Layout.fillWidth: true
                         Layout.minimumWidth: 0
@@ -78,8 +80,8 @@ Rectangle {
             Layout.fillWidth: true
             Layout.fillHeight: true
             radius: 10
-            color: "#050B14"
-            border.color: "#142033"
+            color: root.lightMode ? "#F8FAFC" : "#050B14"
+            border.color: root.lightMode ? "#E2E8F0" : "#142033"
             clip: true
 
             Text {
@@ -97,7 +99,7 @@ Rectangle {
                 model: appController.availableVideos
                 clip: true
                 spacing: 2
-                ScrollBar.vertical: AppScrollBar {}
+                ScrollBar.vertical: AppScrollBar { lightMode: root.lightMode }
 
                 delegate: Rectangle {
                     id: videoDelegate
@@ -108,8 +110,8 @@ Rectangle {
                     width: availableVideosListView.width - root.scrollbarGutter
                     height: root.shortMode ? 56 : 68
                     radius: 8
-                    color: videoDelegate.modelData.path === appController.selectedVideoPath ? "#102A43" : (videoDelegate.index % 2 === 0 ? "#0B1324" : "#0E1728")
-                    border.color: videoDelegate.modelData.path === appController.selectedVideoPath ? root.accent : "#142033"
+                    color: root.lightMode ? (videoDelegate.modelData.path === appController.selectedVideoPath ? "#EFF6FF" : "#FFFFFF") : (videoDelegate.modelData.path === appController.selectedVideoPath ? "#102A43" : (videoDelegate.index % 2 === 0 ? "#0B1324" : "#0E1728"))
+                    border.color: root.lightMode ? (videoDelegate.modelData.path === appController.selectedVideoPath ? "#60A5FA" : "#E2E8F0") : (videoDelegate.modelData.path === appController.selectedVideoPath ? root.accent : "#142033")
 
                     RowLayout {
                         anchors.fill: parent
@@ -145,7 +147,7 @@ Rectangle {
 
                                 Text {
                                     text: (videoDelegate.modelData.extension || "").toUpperCase().replace(".", "") + " - " + root.formatBytes(videoDelegate.modelData.file_size_bytes)
-                                    color: "#CBD5E1"
+                                    color: root.lightMode ? "#475569" : "#CBD5E1"
                                     font.pixelSize: 10
                                     elide: Text.ElideRight
                                     Layout.preferredWidth: 82
@@ -154,12 +156,12 @@ Rectangle {
                                 Rectangle {
                                     Layout.preferredWidth: 1
                                     Layout.preferredHeight: 12
-                                    color: "#243244"
+                                    color: root.lightMode ? "#E5EAF2" : "#243244"
                                 }
 
                                 Text {
                                     text: videoDelegate.modelData.subtitle_found ? "Subtitle: " + videoDelegate.modelData.subtitle_name : "No subtitle"
-                                    color: videoDelegate.modelData.subtitle_found ? "#86EFAC" : root.textMuted
+                                    color: videoDelegate.modelData.subtitle_found ? (root.lightMode ? "#16A34A" : "#86EFAC") : root.textMuted
                                     font.pixelSize: 10
                                     elide: Text.ElideRight
                                     Layout.fillWidth: true
@@ -171,6 +173,7 @@ Rectangle {
                             text: "Load"
                             variant: "primary"
                             size: "sm"
+                            lightMode: root.lightMode
                             Layout.preferredWidth: 56
                             onClicked: appController.selectAvailableVideo(videoDelegate.index)
                         }

@@ -6,6 +6,7 @@ Rectangle {
     id: root
 
     property string outputDir: ""
+    property bool lightMode: false
     property bool narrowMode: false
     property bool hasSegments: false
     property color textMain: "#F8FAFC"
@@ -17,8 +18,8 @@ Rectangle {
 
     implicitHeight: 92
     radius: 10
-    color: "#091321"
-    border.color: "#243244"
+    color: root.lightMode ? "#FFFFFF" : "#091321"
+    border.color: root.lightMode ? "#CBD5E1" : "#243244"
     clip: true
 
     ColumnLayout {
@@ -36,8 +37,8 @@ Rectangle {
                 Layout.minimumWidth: 120
                 Layout.preferredHeight: 38
                 radius: 10
-                color: "#050B14"
-                border.color: "#142033"
+                color: root.lightMode ? "#F8FAFC" : "#050B14"
+                border.color: root.lightMode ? "#CBD5E1" : "#142033"
 
                 Text {
                     anchors.fill: parent
@@ -55,6 +56,7 @@ Rectangle {
                 text: "Folder"
                 variant: "secondary"
                 size: "sm"
+                lightMode: root.lightMode
                 Layout.preferredWidth: root.narrowMode ? 76 : 90
                 Layout.preferredHeight: 38
                 enabled: !videoCutController.cutBusy
@@ -65,6 +67,7 @@ Rectangle {
                 text: "Remove selected intervals"
                 variant: "danger"
                 size: "sm"
+                lightMode: root.lightMode
                 Layout.preferredWidth: root.narrowMode ? 210 : 300
                 Layout.preferredHeight: 40
                 enabled: root.hasSegments && !videoCutController.cutBusy
@@ -80,7 +83,7 @@ Rectangle {
             Text {
                 Layout.fillWidth: true
                 text: "No re-encoding: fast and quality-preserving, but cuts may align to nearby keyframes."
-                color: "#FDE68A"
+                color: root.lightMode ? "#A16207" : "#FDE68A"
                 font.pixelSize: 11
                 elide: Text.ElideRight
             }
@@ -102,7 +105,7 @@ Rectangle {
             to: 1
             value: videoCutController.cutProgressValue / 100
 
-            background: Rectangle { radius: 3; color: "#111827" }
+            background: Rectangle { radius: 3; color: root.lightMode ? "#E2E8F0" : "#111827" }
             contentItem: Item {
                 Rectangle {
                     width: parent.width * videoCutController.cutProgressValue / 100
@@ -117,7 +120,7 @@ Rectangle {
             Layout.fillWidth: true
             Layout.preferredHeight: 14
             text: videoCutController.cutError.length > 0 ? videoCutController.cutError : videoCutController.cutStatus
-            color: videoCutController.cutError.length > 0 ? "#FCA5A5" : root.textMuted
+            color: videoCutController.cutError.length > 0 ? (root.lightMode ? "#DC2626" : "#FCA5A5") : root.textMuted
             font.pixelSize: 10
             elide: Text.ElideRight
         }

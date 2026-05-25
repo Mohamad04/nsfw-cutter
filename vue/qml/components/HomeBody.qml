@@ -7,6 +7,7 @@ Item {
     required property var cutsModel
     property bool compactMode: false
     property bool headerCollapsed: false
+    property bool lightMode: false
     property bool narrowMode: false
     property bool shortMode: false
     property color panelTone: "#0B1324"
@@ -18,6 +19,8 @@ Item {
     property int rightPanelWidth: 380
     readonly property real videoDurationMs: videoPanel.durationMs
     readonly property real videoPositionMs: videoPanel.positionMs
+
+    AppTheme { id: theme }
 
     signal cutAdded(var cut)
     signal cutSelected(int index)
@@ -45,7 +48,7 @@ Item {
 
     RowLayout {
         anchors.fill: parent
-        spacing: root.compactMode ? 10 : 14
+        spacing: root.compactMode ? 10 : theme.sectionGap
 
         VideoPreviewPanel {
             id: videoPanel
@@ -54,6 +57,7 @@ Item {
             Layout.minimumWidth: 0
             Layout.minimumHeight: root.shortMode ? 260 : 400
             compactMode: root.compactMode
+            lightMode: root.lightMode
             shortMode: root.shortMode
             panelTone: root.panelTone
             videoTone: root.videoTone
@@ -78,6 +82,7 @@ Item {
             Layout.minimumHeight: root.shortMode ? 260 : 400
             compactMode: root.compactMode
             headerCollapsed: root.headerCollapsed
+            lightMode: root.lightMode
             shortMode: root.shortMode
             selectedVideoPath: appController.selectedVideoPath
             videoDurationMs: root.videoDurationMs

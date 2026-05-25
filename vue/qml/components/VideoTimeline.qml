@@ -11,6 +11,7 @@ RowLayout {
     property real durationMs: 0
     property var cutsModel
     property int selectedCutIndex: -1
+    property bool lightMode: false
     property color textMain: "#F8FAFC"
     property color accent: "#38BDF8"
 
@@ -62,7 +63,7 @@ RowLayout {
             width: timelineSlider.availableWidth
             height: implicitHeight
             radius: 4
-            color: "#334155"
+            color: root.lightMode ? "#CBD5E1" : "#334155"
 
             Rectangle {
                 width: timelineSlider.visualPosition * parent.width
@@ -138,7 +139,7 @@ RowLayout {
             width: 16
             height: 16
             radius: 8
-            color: "#E0F2FE"
+            color: root.lightMode ? "#FFFFFF" : "#E0F2FE"
             border.color: root.accent
             border.width: 3
         }

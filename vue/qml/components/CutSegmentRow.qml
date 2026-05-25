@@ -20,6 +20,7 @@ Rectangle {
     property bool narrowMode: false
     property bool compactTable: false
     property bool selected: false
+    property bool lightMode: false
     property color textMain: "#F8FAFC"
     property color textMuted: "#94A3B8"
     property color accent: "#38BDF8"
@@ -40,8 +41,8 @@ Rectangle {
     signal jumpEndRequested()
 
     height: root.narrowMode ? 82 : 38
-    color: root.selected ? "#102A43" : "#0B1324"
-    border.color: root.selected ? root.accent : "#142033"
+    color: root.lightMode ? (root.selected ? "#EFF6FF" : "#FFFFFF") : (root.selected ? "#102A43" : "#0B1324")
+    border.color: root.lightMode ? (root.selected ? "#60A5FA" : "#E2E8F0") : (root.selected ? root.accent : "#142033")
 
     function parseSeconds(value) {
         var parts = String(value).split(":")
@@ -73,16 +74,16 @@ Rectangle {
         Text { text: root.segmentIndex; color: root.textMain; font.pixelSize: 11; Layout.preferredWidth: root.indexColumnWidth; Layout.minimumWidth: 0 }
         Text { text: root.startTime; color: root.textMain; font.pixelSize: 11; Layout.preferredWidth: root.timeColumnWidth; Layout.minimumWidth: 0; elide: Text.ElideRight }
         Text { text: root.endTime; color: root.textMain; font.pixelSize: 11; Layout.preferredWidth: root.timeColumnWidth; Layout.minimumWidth: 0; elide: Text.ElideRight }
-        Text { text: root.safeStartTime; color: "#FED7AA"; font.pixelSize: 11; Layout.preferredWidth: root.timeColumnWidth; Layout.minimumWidth: 0; elide: Text.ElideRight }
-        Text { text: root.safeEndTime; color: "#FED7AA"; font.pixelSize: 11; Layout.preferredWidth: root.timeColumnWidth; Layout.minimumWidth: 0; elide: Text.ElideRight }
+        Text { text: root.safeStartTime; color: root.lightMode ? "#B45309" : "#FED7AA"; font.pixelSize: 11; Layout.preferredWidth: root.timeColumnWidth; Layout.minimumWidth: 0; elide: Text.ElideRight }
+        Text { text: root.safeEndTime; color: root.lightMode ? "#B45309" : "#FED7AA"; font.pixelSize: 11; Layout.preferredWidth: root.timeColumnWidth; Layout.minimumWidth: 0; elide: Text.ElideRight }
         Text { text: root.durationText(); color: root.textMuted; font.pixelSize: 11; Layout.preferredWidth: root.durationColumnWidth; Layout.minimumWidth: 0; elide: Text.ElideRight }
-        Text { text: "-" + root.extraBefore + ", +" + root.extraAfter; color: "#FDE68A"; font.pixelSize: 11; Layout.preferredWidth: root.extraColumnWidth; Layout.minimumWidth: 0; elide: Text.ElideRight }
-        Text { text: root.reason; color: "#E5E7EB"; font.pixelSize: 11; Layout.fillWidth: true; Layout.minimumWidth: 56; elide: Text.ElideRight }
-        Text { text: root.status; color: root.status === "Warning" ? "#FDE68A" : "#86EFAC"; font.pixelSize: 11; Layout.preferredWidth: root.statusColumnWidth; Layout.minimumWidth: 0; elide: Text.ElideRight }
+        Text { text: "-" + root.extraBefore + ", +" + root.extraAfter; color: root.lightMode ? "#A16207" : "#FDE68A"; font.pixelSize: 11; Layout.preferredWidth: root.extraColumnWidth; Layout.minimumWidth: 0; elide: Text.ElideRight }
+        Text { text: root.reason; color: root.lightMode ? root.textMain : "#E5E7EB"; font.pixelSize: 11; Layout.fillWidth: true; Layout.minimumWidth: 56; elide: Text.ElideRight }
+        Text { text: root.status; color: root.status === "Warning" ? (root.lightMode ? "#A16207" : "#FDE68A") : (root.lightMode ? "#16A34A" : "#86EFAC"); font.pixelSize: 11; Layout.preferredWidth: root.statusColumnWidth; Layout.minimumWidth: 0; elide: Text.ElideRight }
 
-        AppButton { text: "Jump"; variant: "secondary"; size: "sm"; Layout.preferredWidth: root.jumpButtonWidth; Layout.minimumWidth: 0; onClicked: root.jumpStartRequested() }
-        AppButton { text: "Edit"; variant: "ghost"; size: "sm"; Layout.preferredWidth: root.editButtonWidth; Layout.minimumWidth: 0; onClicked: root.editRequested() }
-        AppButton { text: "Delete"; variant: "danger"; size: "sm"; Layout.preferredWidth: root.deleteButtonWidth; Layout.minimumWidth: 0; onClicked: root.removeRequested() }
+        AppButton { text: "Jump"; variant: "secondary"; size: "sm"; lightMode: root.lightMode; Layout.preferredWidth: root.jumpButtonWidth; Layout.minimumWidth: 0; onClicked: root.jumpStartRequested() }
+        AppButton { text: "Edit"; variant: "ghost"; size: "sm"; lightMode: root.lightMode; Layout.preferredWidth: root.editButtonWidth; Layout.minimumWidth: 0; onClicked: root.editRequested() }
+        AppButton { text: "Delete"; variant: "danger"; size: "sm"; lightMode: root.lightMode; Layout.preferredWidth: root.deleteButtonWidth; Layout.minimumWidth: 0; onClicked: root.removeRequested() }
     }
 
     ColumnLayout {
@@ -110,9 +111,9 @@ Rectangle {
         RowLayout {
             Layout.fillWidth: true
             spacing: 4
-            AppButton { text: "Jump"; variant: "secondary"; size: "sm"; Layout.fillWidth: true; onClicked: root.jumpStartRequested() }
-            AppButton { text: "Edit"; variant: "ghost"; size: "sm"; Layout.fillWidth: true; onClicked: root.editRequested() }
-            AppButton { text: "Delete"; variant: "danger"; size: "sm"; Layout.fillWidth: true; onClicked: root.removeRequested() }
+            AppButton { text: "Jump"; variant: "secondary"; size: "sm"; lightMode: root.lightMode; Layout.fillWidth: true; onClicked: root.jumpStartRequested() }
+            AppButton { text: "Edit"; variant: "ghost"; size: "sm"; lightMode: root.lightMode; Layout.fillWidth: true; onClicked: root.editRequested() }
+            AppButton { text: "Delete"; variant: "danger"; size: "sm"; lightMode: root.lightMode; Layout.fillWidth: true; onClicked: root.removeRequested() }
         }
     }
 }

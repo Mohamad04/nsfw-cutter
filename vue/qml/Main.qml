@@ -2,7 +2,6 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import QtQuick.Controls
-import QtQuick.Layouts
 import QtQuick.Window
 
 import "components"
@@ -17,6 +16,8 @@ ApplicationWindow {
     readonly property int restoreHeight: root.availableScreenHeight >= 720 ? Math.min(1080, root.availableScreenHeight - 40) : root.availableScreenHeight
     property bool darkMode: settingsController.theme !== "light"
 
+    AppTheme { id: theme }
+
     visible: true
     visibility: Window.Maximized
     width: root.restoreWidth
@@ -24,7 +25,7 @@ ApplicationWindow {
     minimumWidth: Math.min(1280, root.availableScreenWidth)
     minimumHeight: Math.min(720, root.availableScreenHeight)
     title: "NSFW Cutter"
-    color: root.darkMode ? "#0F172A" : "#F6F7FB"
+    color: root.darkMode ? theme.darkAppBg : theme.lightAppBg
 
     SettingsDialog {
         id: settingsDialog

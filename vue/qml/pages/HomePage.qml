@@ -14,13 +14,15 @@ Item {
     property bool narrowMode: root.width < 1500
     property bool shortMode: root.height < 820
     property bool darkMode: settingsController.theme !== "light"
+    property bool lightMode: !root.darkMode
 
-    property color bg: darkMode ? "#0F172A" : "#F6F7FB"
-    property color panel: darkMode ? "#0B1324" : "#FFFFFF"
-    property color videoBg: darkMode ? "#1E293B" : "#E2E8F0"
-    property color textMain: darkMode ? "#F8FAFC" : "#0F172A"
-    property color textMuted: darkMode ? "#94A3B8" : "#475569"
-    property color accent: "#38BDF8"
+    property color bg: darkMode ? theme.darkAppBg : theme.lightAppBg
+    property color panel: darkMode ? theme.darkSurface : theme.lightSurface
+    property color videoBg: darkMode ? theme.darkVideoSurface : theme.lightVideoSurface
+    property color textMain: darkMode ? theme.darkTextPrimary : theme.lightTextPrimary
+    property color textMuted: darkMode ? theme.darkTextMuted : theme.lightTextMuted
+    property color accent: darkMode ? theme.darkAccent : theme.lightCyan
+    property color borderColor: darkMode ? theme.darkBorder : theme.lightBorder
     property int listScrollbarGutter: 14
     property int selectedCutIndex: -1
     readonly property int footerHeight: {
@@ -136,7 +138,9 @@ Item {
                 Layout.alignment: Qt.AlignTop | Qt.AlignLeft
                 compactMode: root.compactMode
                 narrowMode: root.narrowMode
+                lightMode: root.lightMode
                 panelColor: root.panel
+                strokeColor: root.borderColor
                 textColor: root.textMain
                 mutedTextColor: root.textMuted
                 accentColor: root.accent
@@ -160,6 +164,7 @@ Item {
                     Layout.minimumHeight: root.shortMode ? 280 : 400
                     cutsModel: cutsModel
                     compactMode: root.compactMode
+                    lightMode: root.lightMode
                     narrowMode: root.narrowMode
                     shortMode: root.shortMode
                     rightPanelWidth: theme.rightPanelWidth
@@ -182,6 +187,7 @@ Item {
                     Layout.maximumHeight: 480
                     cutsModel: cutsModel
                     compactMode: root.compactMode
+                    lightMode: root.lightMode
                     narrowMode: root.narrowMode
                     shortMode: root.shortMode
                     panelTone: root.panel

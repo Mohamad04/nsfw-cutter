@@ -6,6 +6,7 @@ Panel {
     id: root
 
     property bool compactMode: false
+    property bool lightMode: false
     property bool shortMode: false
     property color panelTone: "#0B1324"
     property color videoTone: "#1E293B"
@@ -25,7 +26,9 @@ Panel {
     signal cutMarkerSelected(int index)
 
     panelColor: root.panelTone
-    strokeColor: "#21324D"
+    strokeColor: root.lightMode ? "#CBD5E1" : "#21324D"
+
+    AppTheme { id: theme }
 
     function formatTime(ms) {
         var totalSeconds = Math.floor(ms / 1000)
@@ -77,7 +80,7 @@ Panel {
 
     ColumnLayout {
         anchors.fill: parent
-        anchors.margins: root.compactMode ? 12 : 16
+        anchors.margins: theme.panelPadding
         spacing: root.compactMode ? 10 : 12
 
         RowLayout {
@@ -88,7 +91,7 @@ Panel {
             Text {
                 text: "VIDEO"
                 color: root.accent
-                font.pixelSize: 13
+                font.pixelSize: 15
                 font.bold: true
                 font.letterSpacing: 0.8
             }
@@ -114,6 +117,7 @@ Panel {
             Layout.fillHeight: true
             Layout.minimumHeight: root.shortMode ? 210 : (root.compactMode ? 320 : 360)
             compactMode: root.compactMode
+            lightMode: root.lightMode
             playing: player.playbackState === MediaPlayer.PlayingState
             positionMs: player.position
             durationMs: player.duration

@@ -1,0 +1,52 @@
+from core.time_utils import timecode_to_seconds
+
+
+def segment_to_payload(index: int, segment: dict) -> dict:
+    if not isinstance(segment, dict):
+        raise ValueError("Each cut segment must be an object.")
+
+    requested_start_seconds = segment_seconds(segment, "requested_start_seconds", "requestedStartSeconds")
+    requested_end_seconds = segment_seconds(segment, "requested_end_seconds", "requestedEndSeconds")
+    if requested_start_seconds is None:
+        requested_start_seconds = timecode_to_seconds(segment.get("start", ""))
+    if requested_end_seconds is None:
+        requested_end_seconds = timecode_to_seconds(segment.get("end", ""))
+
+    start_seconds = segment_seconds(segment, "safe_start_seconds", "safe_start", "safeStart")
+    end_seconds = segment_seconds(segment, "safe_end_seconds", "safe_end", "safeEnd")
+    if start_seconds is None:
+        start_seconds = segment_seconds(segment, "start_seconds")
+    if end_seconds is None:
+        end_seconds = segment_seconds(segment, "end_seconds")
+    if start_seconds is None:
+        start_seconds = requested_start_seconds
+    if end_seconds is None:
+        end_seconds = requested_end_seconds
+
+    return {
+        "index": index,
+        "start_seconds": start_seconds,
+        "end_seconds": end_seconds,
+        "requested_start_seconds": requested_start_seconds,
+        "requested_end_seconds": requested_end_seconds,
+        "previous_keyframe_start": segment_seconds(
+            segment,
+            "previous_keyframe_start",
+            "previousKeyframeStart",
+        ),
+        "next_keyframe_start": segment_seconds(segment, "next_keyframe_start", "nextKeyframeStart"),
+        "previous_keyframe_end": segment_seconds(segment, "previous_keyframe_end", "previousKeyframeEnd"),
+        "next_keyframe_end": segment_seconds(segment, "next_keyframe_end", "nextKeyframeEnd"),
+        "label": str(segment.get("reason") or segment.get("label") or "").strip() or None,
+    }
+
+
+def segment_seconds(segment: dict, *keys: str) -> float | None:
+    for key in keys:
+        value = segment.get(key)
+        if value in (None, ""):
+            continue
+        if isinstance(value, (int, float)):
+            return float(value)
+        return timecode_to_seconds(str(value))
+    return None

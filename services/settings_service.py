@@ -46,6 +46,46 @@ class SettingsService:
         self.save(settings)
         return settings
 
+    def add_recent_videos(self, video_paths: list[str | Path]) -> AppSettings:
+        settings = self.load()
+        recent = list(settings.recent_videos)
+        for video_path in reversed(video_paths):
+            path = Path(video_path)
+            recent = [recent_path for recent_path in recent if recent_path != path]
+            recent.insert(0, path)
+
+        settings.recent_videos = recent[:10]
+        self.save(settings)
+        return settings
+
+    def remove_recent_video(self, video_path: str | Path) -> AppSettings:
+        settings = self.load()
+        path = Path(video_path)
+        settings.recent_videos = [
+            recent_path for recent_path in settings.recent_videos if recent_path != path
+        ]
+        if settings.last_video_path == path:
+            settings.last_video_path = None
+        self.save(settings)
+        return settings
+
+    def clear_recent_videos(self) -> AppSettings:
+        settings = self.load()
+        settings.recent_videos = []
+        self.save(settings)
+        return settings
+
+    def prune_missing_recent_videos(self) -> tuple[AppSettings, bool]:
+        settings = self.load()
+        existing = [path for path in settings.recent_videos if path.is_file()]
+        changed = existing != settings.recent_videos
+        if changed:
+            settings.recent_videos = existing
+            if settings.last_video_path and not settings.last_video_path.is_file():
+                settings.last_video_path = None
+            self.save(settings)
+        return settings, changed
+
     def get_last_video(self) -> Path | None:
         settings = self.load()
         if settings.last_video_path and settings.last_video_path.is_file():

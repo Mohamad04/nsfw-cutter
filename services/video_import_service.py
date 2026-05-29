@@ -28,6 +28,10 @@ class VideoImportService:
         videos = self.video_discovery_service.find_videos_in_folder(folder)
         return [self._build_video_listing(video_path) for video_path in videos]
 
+    def build_video_listing_for_file(self, file_path: str | Path) -> dict:
+        video_path = self.video_discovery_service.validate_video_file(file_path)
+        return self._build_video_listing(video_path)
+
     def import_video_file(self, file_path: str | Path, user_id: int | None = None) -> dict:
         video_path = self.video_discovery_service.validate_video_file(file_path)
         subtitle_path = self.subtitle_service.find_subtitle_for_video(video_path)

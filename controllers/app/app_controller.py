@@ -42,6 +42,7 @@ class AppController(QObject):
     backendPreparationStatusChanged = Signal()
     currentExportJobIdChanged = Signal()
     currentExportJobJsonPathChanged = Signal()
+    recentFilesChanged = Signal()
 
     def __init__(
         self,
@@ -107,6 +108,10 @@ class AppController(QObject):
     def selectedVideoPath(self):
         return self._state.selected_video_path
 
+    @Property("QVariantList", notify=recentFilesChanged)
+    def recentFiles(self):
+        return self._recent_file_items()
+
     @Property(bool, notify=exportBusyChanged)
     def exportBusy(self):
         return self._state.export_busy
@@ -145,6 +150,28 @@ class AppController(QObject):
         if folder:
             self.loadFolder(folder)
 
+    @Slot()
+    def openFile(self):
+        file_path, _selected_filter = QFileDialog.getOpenFileName(
+            None,
+            "Open video file",
+            "",
+            self._video_file_filter(),
+        )
+        if file_path:
+            self.loadVideoFile(file_path)
+
+    @Slot()
+    def openFiles(self):
+        file_paths, _selected_filter = QFileDialog.getOpenFileNames(
+            None,
+            "Open video files",
+            "",
+            self._video_file_filter(),
+        )
+        if file_paths:
+            self.loadVideoFiles(file_paths)
+
     @Slot(str)
     def loadFolder(self, folder: str):
         try:
@@ -169,14 +196,80 @@ class AppController(QObject):
 
     @Slot(str)
     def loadVideoFile(self, file_path: str):
+        self._load_video_file(file_path)
+
+    @Slot("QVariantList")
+    def loadVideoFiles(self, file_paths):
+        valid_videos = []
+        skipped = 0
+        for file_path in file_paths or []:
+            try:
+                video = self.video_import_service.build_video_listing_for_file(file_path)
+            except ValueError:
+                skipped += 1
+                continue
+
+            if not any(existing["path"] == video["path"] for existing in valid_videos):
+                valid_videos.append(video)
+
+        if not valid_videos:
+            self._set_project_status("No supported videos selected.")
+            return
+
+        self._append_available_videos(valid_videos)
+        self._set_current_folder("Selected files")
+        self.settings_service.add_recent_videos([video["path"] for video in valid_videos])
+        self.recentFilesChanged.emit()
+
+        loaded = self._load_video_file(valid_videos[0]["path"])
+        if not loaded:
+            return
+
+        if skipped:
+            self._set_project_status(
+                f"Loaded {len(valid_videos)} video(s); skipped {skipped} unsupported or missing file(s)."
+            )
+        elif len(valid_videos) > 1:
+            self._set_project_status(f"Loaded {len(valid_videos)} selected video(s).")
+
+    def _load_video_file(self, file_path: str) -> bool:
         try:
             result = self._video_loader.import_video_file(file_path)
             self._apply_loaded_video(result)
+            return True
         except ValueError as exc:
             self._set_project_status(str(exc))
+            return False
         except Exception:
             logger.exception("Unexpected error while loading video")
             self._set_project_status("Unexpected error while loading video")
+            return False
+
+    @Slot(str)
+    def openRecentFile(self, file_path: str):
+        if not file_path:
+            return
+
+        video_path = Path(file_path).expanduser()
+        if not video_path.is_file():
+            self.settings_service.remove_recent_video(video_path)
+            self.recentFilesChanged.emit()
+            self._set_project_status("Recent file no longer exists.")
+            return
+
+        self.loadVideoFile(str(video_path))
+
+    @Slot(result="QVariantList")
+    def refreshRecentFiles(self):
+        _settings, changed = self.settings_service.prune_missing_recent_videos()
+        if changed:
+            self.recentFilesChanged.emit()
+        return self.recentFiles
+
+    @Slot()
+    def clearRecentFiles(self):
+        self.settings_service.clear_recent_videos()
+        self.recentFilesChanged.emit()
 
     @Slot()
     def restoreLastVideo(self):
@@ -353,8 +446,36 @@ class AppController(QObject):
         if self._state.selected_video_path:
             try:
                 self._video_loader.save_last_video(self._state.selected_video_path)
+                self.recentFilesChanged.emit()
             except OSError:
                 logger.exception("Unable to persist last opened video")
+
+    def _append_available_videos(self, videos: list[dict]):
+        existing_paths = {video.get("path") for video in self._state.available_videos}
+        merged = list(self._state.available_videos)
+        for video in videos:
+            if video["path"] not in existing_paths:
+                merged.append(video)
+                existing_paths.add(video["path"])
+
+        if merged != self._state.available_videos:
+            self._set_available_videos(merged)
+
+    def _recent_file_items(self) -> list[dict]:
+        settings = self.settings_service.load()
+        return [
+            {
+                "name": path.name,
+                "path": str(path),
+            }
+            for path in settings.recent_videos
+        ]
+
+    def _video_file_filter(self) -> str:
+        discovery_service = getattr(self.video_import_service, "video_discovery_service", None)
+        extensions = getattr(discovery_service, "VIDEO_EXTENSIONS", {".mkv", ".mp4"})
+        patterns = " ".join(f"*{extension}" for extension in sorted(extensions))
+        return f"Video files ({patterns})"
 
     def _set_project_status(self, status: str):
         self._state.project_status = status

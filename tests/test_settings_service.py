@@ -44,6 +44,42 @@ class SettingsServiceTests(unittest.TestCase):
             self.assertEqual(settings.recent_videos[0], Path(temp_dir) / "video-5.mp4")
             self.assertEqual(len(set(settings.recent_videos)), 10)
 
+    def test_add_recent_videos_preserves_selection_order_and_deduplicates(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            service = SettingsService(Path(temp_dir) / "settings.json")
+            first = Path(temp_dir) / "first.mp4"
+            second = Path(temp_dir) / "second.mkv"
+
+            service.add_recent_videos([first, second, first])
+
+            settings = service.load()
+            self.assertEqual(settings.recent_videos, [first, second])
+
+    def test_clear_recent_videos_does_not_clear_last_video(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            service = SettingsService(Path(temp_dir) / "settings.json")
+            video = Path(temp_dir) / "video.mp4"
+            service.save_last_video(video)
+
+            service.clear_recent_videos()
+
+            settings = service.load()
+            self.assertEqual(settings.recent_videos, [])
+            self.assertEqual(settings.last_video_path, video)
+
+    def test_prune_missing_recent_videos_removes_deleted_entries(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            service = SettingsService(Path(temp_dir) / "settings.json")
+            existing = Path(temp_dir) / "existing.mp4"
+            missing = Path(temp_dir) / "missing.mkv"
+            existing.touch()
+            service.add_recent_videos([existing, missing])
+
+            settings, changed = service.prune_missing_recent_videos()
+
+            self.assertTrue(changed)
+            self.assertEqual(settings.recent_videos, [existing])
+
     def test_settings_model_rejects_invalid_preferences(self):
         with self.assertRaises(ValidationError):
             AppSettings.model_validate({"theme": "blue", "batch_size": -5})

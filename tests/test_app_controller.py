@@ -9,6 +9,11 @@ from workers.worker_signals import WorkerSignals
 
 class FakeVideoImportService:
     def __init__(self):
+        self.video_discovery_service = type(
+            "FakeVideoDiscoveryService",
+            (),
+            {"VIDEO_EXTENSIONS": {".mp4", ".mkv"}},
+        )()
         self.videos = [
             {
                 "name": "a.mp4",
@@ -25,14 +30,30 @@ class FakeVideoImportService:
             return []
         return self.videos
 
+    def build_video_listing_for_file(self, file_path):
+        raw_path = str(file_path)
+        path = Path(file_path)
+        if raw_path == "invalid" or path.suffix.lower() not in {".mp4", ".mkv"}:
+            raise ValueError("Unsupported video format. Use .mp4 or .mkv")
+        return {
+            "name": path.name,
+            "path": raw_path,
+            "extension": path.suffix.lower(),
+            "file_size_bytes": 100,
+            "subtitle_found": False,
+            "subtitle_name": None,
+        }
+
     def import_video_file(self, file_path, user_id=None):
         if file_path == "invalid":
             raise ValueError("Selected video file does not exist")
+        raw_path = str(file_path)
+        path = Path(file_path)
         return {
             "video_id": 1,
-            "video_name": "a.mp4",
-            "video_path": "/tmp/a.mp4",
-            "video_url": "file:///tmp/a.mp4",
+            "video_name": path.name,
+            "video_path": raw_path,
+            "video_url": "file://" + raw_path if raw_path.startswith("/") else raw_path,
             "subtitle_found": False,
             "subtitle_name": None,
             "status": "Video loaded",
@@ -70,13 +91,55 @@ class FakePrepareWorker:
 class FakeSettingsService:
     def __init__(self, last_video=None):
         self.last_video = last_video
+        self.recent_videos = []
         self.saved_videos = []
+
+    def load(self):
+        return type(
+            "FakeSettings",
+            (),
+            {
+                "last_video_path": self.last_video,
+                "recent_videos": list(self.recent_videos),
+            },
+        )()
 
     def get_last_video(self):
         return self.last_video
 
     def save_last_video(self, path):
+        video_path = Path(path)
+        self.last_video = video_path
         self.saved_videos.append(path)
+        self.recent_videos = [recent for recent in self.recent_videos if recent != video_path]
+        self.recent_videos.insert(0, video_path)
+        self.recent_videos = self.recent_videos[:10]
+        return self.load()
+
+    def add_recent_videos(self, paths):
+        for path in reversed(paths):
+            video_path = Path(path)
+            self.recent_videos = [recent for recent in self.recent_videos if recent != video_path]
+            self.recent_videos.insert(0, video_path)
+        self.recent_videos = self.recent_videos[:10]
+        return self.load()
+
+    def remove_recent_video(self, path):
+        video_path = Path(path)
+        self.recent_videos = [recent for recent in self.recent_videos if recent != video_path]
+        if self.last_video == video_path:
+            self.last_video = None
+        return self.load()
+
+    def clear_recent_videos(self):
+        self.recent_videos = []
+        return self.load()
+
+    def prune_missing_recent_videos(self):
+        existing = [path for path in self.recent_videos if path.is_file()]
+        changed = existing != self.recent_videos
+        self.recent_videos = existing
+        return self.load(), changed
 
 
 class AppControllerTests(unittest.TestCase):
@@ -151,7 +214,7 @@ class AppControllerTests(unittest.TestCase):
         controller.restoreLastVideo()
 
         self.assertEqual(controller.videoName, "a.mp4")
-        self.assertEqual(controller.selectedVideoPath, "/tmp/a.mp4")
+        self.assertEqual(controller.selectedVideoPath, str(Path("/tmp/a.mp4")))
 
     def test_load_video_file_invalid_does_not_crash(self):
         self.controller.loadVideoFile("invalid")
@@ -169,6 +232,37 @@ class AppControllerTests(unittest.TestCase):
         self.controller.selectAvailableVideo(10)
 
         self.assertEqual(self.controller.projectStatus, "Invalid video selection")
+
+    def test_load_video_files_deduplicates_list_populates_recents_and_loads_first(self):
+        self.controller.loadVideoFiles(["/tmp/a.mp4", "/tmp/b.mkv", "/tmp/a.mp4", "/tmp/bad.txt"])
+
+        self.assertEqual([video["path"] for video in self.controller.availableVideos], ["/tmp/a.mp4", "/tmp/b.mkv"])
+        self.assertEqual(self.controller.selectedVideoPath, "/tmp/a.mp4")
+        self.assertEqual(
+            [item["path"] for item in self.controller.recentFiles],
+            [str(Path("/tmp/a.mp4")), str(Path("/tmp/b.mkv"))],
+        )
+        self.assertEqual(
+            self.controller.projectStatus,
+            "Loaded 2 video(s); skipped 1 unsupported or missing file(s).",
+        )
+
+    def test_open_recent_file_removes_missing_entry_without_crashing(self):
+        missing_path = Path(tempfile.gettempdir()) / "missing_recent_video.mp4"
+        self.settings_service.add_recent_videos([missing_path])
+
+        self.controller.openRecentFile(str(missing_path))
+
+        self.assertEqual(self.controller.recentFiles, [])
+        self.assertEqual(self.controller.projectStatus, "Recent file no longer exists.")
+
+    def test_clear_recent_files_keeps_current_video_loaded(self):
+        self.controller.loadVideoFile("/tmp/a.mp4")
+
+        self.controller.clearRecentFiles()
+
+        self.assertEqual(self.controller.recentFiles, [])
+        self.assertEqual(self.controller.selectedVideoPath, "/tmp/a.mp4")
 
     def test_clear_video_resets_properties(self):
         self.controller.loadVideoFile("/tmp/a.mp4")

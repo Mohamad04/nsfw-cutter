@@ -144,7 +144,11 @@ Item {
                 textColor: root.textMain
                 mutedTextColor: root.textMuted
                 accentColor: root.accent
-                onFolderRequested: appController.browseFolder()
+                onOpenFileRequested: appController.openFile()
+                onOpenFilesRequested: appController.openFiles()
+                onOpenFolderRequested: appController.browseFolder()
+                onRecentFileRequested: function(path) { appController.openRecentFile(path) }
+                onClearRecentFilesRequested: appController.clearRecentFiles()
                 onClearRequested: {
                     appController.clearVideo()
                     homeBody.stopPlayback()

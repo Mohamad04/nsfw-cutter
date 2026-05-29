@@ -19,7 +19,11 @@ Item {
     readonly property int collapsedHeaderHeight: 0
     readonly property int preferredHeaderHeight: root.headerCollapsed ? root.collapsedHeaderHeight : root.expandedHeaderHeight
 
-    signal folderRequested()
+    signal openFileRequested()
+    signal openFilesRequested()
+    signal openFolderRequested()
+    signal recentFileRequested(string path)
+    signal clearRecentFilesRequested()
     signal clearRequested()
     signal settingsClicked()
 
@@ -78,21 +82,14 @@ Item {
             }
 
             AppButton {
-                text: "Folder"
+                id: mediaButton
+
+                text: "Media v"
                 variant: "primary"
                 size: "md"
                 lightMode: root.lightMode
                 Layout.preferredWidth: root.compactMode ? 110 : 130
-                onClicked: root.folderRequested()
-            }
-
-            AppButton {
-                text: "Clear"
-                variant: "secondary"
-                size: "md"
-                lightMode: root.lightMode
-                Layout.preferredWidth: root.compactMode ? 96 : 110
-                onClicked: root.clearRequested()
+                onClicked: mediaMenu.showAt(mediaButton)
             }
 
             Rectangle {
@@ -188,6 +185,29 @@ Item {
                 onClicked: root.headerCollapsed = true
             }
         }
+    }
+
+    HeaderMediaMenu {
+        id: mediaMenu
+
+        lightMode: root.lightMode
+        textColor: root.textColor
+        mutedTextColor: root.mutedTextColor
+        accentColor: root.accentColor
+        recentFiles: appController.recentFiles
+        canClearCurrentMedia: appController.selectedVideoPath.length > 0
+        onRefreshRecentFilesRequested: appController.refreshRecentFiles()
+        onOpenFileRequested: root.openFileRequested()
+        onOpenFilesRequested: root.openFilesRequested()
+        onOpenFolderRequested: root.openFolderRequested()
+        onRecentFileRequested: function(path) { root.recentFileRequested(path) }
+        onClearRecentFilesRequested: root.clearRecentFilesRequested()
+        onClearCurrentMediaRequested: root.clearRequested()
+    }
+
+    Shortcut {
+        sequence: "Ctrl+O"
+        onActivated: root.openFileRequested()
     }
 
 }

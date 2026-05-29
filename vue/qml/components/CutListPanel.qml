@@ -51,7 +51,9 @@ Rectangle {
     function parseTimeMs(value) {
         var parts = String(value).trim().split(":")
         if (parts.length !== 3) return 0
-        return (Number(parts[0]) * 3600 + Number(parts[1]) * 60 + Number(parts[2])) * 1000
+        var seconds = Number(parts[2])
+        if (!Number.isFinite(seconds)) return 0
+        return (Number(parts[0]) * 3600 + Number(parts[1]) * 60 + seconds) * 1000
     }
 
     function setAllStatuses(value) {

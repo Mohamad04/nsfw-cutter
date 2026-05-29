@@ -1,9 +1,49 @@
 import unittest
 
-from services.keyframe_service import KeyframeService
+from services.keyframe_service import KeyframeService, compute_safe_cut
 
 
 class KeyframeServiceTests(unittest.TestCase):
+    def test_compute_safe_cut_expands_non_keyframe_request(self):
+        safe_start, safe_end = compute_safe_cut(
+            requested_start=12.3,
+            requested_end=18.7,
+            keyframes=[0.0, 5.0, 10.0, 15.0, 20.0],
+        )
+
+        self.assertEqual(safe_start, 10.0)
+        self.assertEqual(safe_end, 20.0)
+
+    def test_compute_safe_cut_preserves_exact_keyframe_request(self):
+        safe_start, safe_end = compute_safe_cut(
+            requested_start=5.0,
+            requested_end=10.0,
+            keyframes=[0.0, 5.0, 10.0, 15.0],
+        )
+
+        self.assertEqual(safe_start, 5.0)
+        self.assertEqual(safe_end, 10.0)
+
+    def test_compute_safe_cut_uses_zero_boundary_before_first_keyframe(self):
+        safe_start, safe_end = compute_safe_cut(
+            requested_start=1.0,
+            requested_end=9.0,
+            keyframes=[3.0, 8.0, 13.0],
+            video_duration=20.0,
+        )
+
+        self.assertEqual(safe_start, 0.0)
+        self.assertEqual(safe_end, 13.0)
+
+    def test_compute_safe_cut_rejects_missing_keyframes(self):
+        with self.assertRaisesRegex(ValueError, "Keyframe data unavailable"):
+            compute_safe_cut(
+                requested_start=1.0,
+                requested_end=2.0,
+                keyframes=[],
+                video_duration=20.0,
+            )
+
     def test_align_interval_expands_to_previous_and_next_keyframes(self):
         info = KeyframeService(ffmpeg_service=None).align_interval(
             [0, 32, 34, 40, 44, 72],

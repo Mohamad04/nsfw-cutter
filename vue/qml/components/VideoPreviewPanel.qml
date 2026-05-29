@@ -16,6 +16,7 @@ Panel {
     property int cutCount: 0
     property var cutsModel
     property int selectedCutIndex: -1
+    property var cutPreview: ({ "visible": false })
     property real volumeLevel: 0.85
     readonly property real durationMs: player.duration
     readonly property real positionMs: player.position
@@ -24,6 +25,7 @@ Panel {
     signal endRequested(string timeText)
     signal addCutRequested()
     signal cutMarkerSelected(int index)
+    signal cutRangeChanged(int index, real startMs, real endMs)
 
     panelColor: root.panelTone
     strokeColor: root.lightMode ? "#CBD5E1" : "#21324D"
@@ -31,13 +33,24 @@ Panel {
     AppTheme { id: theme }
 
     function formatTime(ms) {
-        var totalSeconds = Math.floor(ms / 1000)
+        var totalMilliseconds = Math.max(0, Math.round(ms))
+        var totalSeconds = Math.floor(totalMilliseconds / 1000)
+        var milliseconds = totalMilliseconds % 1000
         var hours = Math.floor(totalSeconds / 3600)
         var minutes = Math.floor((totalSeconds % 3600) / 60)
         var seconds = totalSeconds % 60
 
         function pad(value) { return value < 10 ? "0" + value : "" + value }
-        return pad(hours) + ":" + pad(minutes) + ":" + pad(seconds)
+        function padMillis(value) {
+            if (value < 10) return "00" + value
+            if (value < 100) return "0" + value
+            return "" + value
+        }
+        var text = pad(hours) + ":" + pad(minutes) + ":" + pad(seconds)
+        if (milliseconds > 0) {
+            text += "." + padMillis(milliseconds)
+        }
+        return text
     }
 
     function seekBy(seconds) {
@@ -124,6 +137,7 @@ Panel {
             volume: root.volumeLevel
             cutsModel: root.cutsModel
             selectedCutIndex: root.selectedCutIndex
+            cutPreview: root.cutPreview
             videoTone: root.videoTone
             textMain: root.textMain
             textMuted: root.textMuted
@@ -139,6 +153,12 @@ Panel {
             onMarkerSelected: function(index, positionMs) {
                 player.position = positionMs
                 root.cutMarkerSelected(index)
+            }
+            onCutSelected: function(index) {
+                root.cutMarkerSelected(index)
+            }
+            onCutRangeChanged: function(index, startMs, endMs) {
+                root.cutRangeChanged(index, startMs, endMs)
             }
         }
     }

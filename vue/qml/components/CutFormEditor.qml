@@ -13,22 +13,24 @@ ColumnLayout {
     property color accent: "#38BDF8"
     property string selectedVideoPath: ""
     property real videoDurationMs: 0
+    property var cutPreview: ({ "visible": false })
     property var keyframeInfo: ({
         "valid": false,
         "error": "Mark Start and End to preview keyframe-safe removal.",
         "requested_start": 0,
         "requested_end": 0,
-        "safe_start": 0,
-        "safe_end": 0,
-        "previous_keyframe_start": 0,
-        "next_keyframe_start": 0,
-        "previous_keyframe_end": 0,
-        "next_keyframe_end": 0,
+        "safe_start": null,
+        "safe_end": null,
+        "previous_keyframe_start": null,
+        "next_keyframe_start": null,
+        "previous_keyframe_end": null,
+        "next_keyframe_end": null,
         "extra_before": 0,
         "extra_after": 0
     })
 
     signal cutAdded(var cut)
+    signal previewChanged(var preview)
     signal headerExpandRequested()
 
     spacing: 10
@@ -59,6 +61,7 @@ ColumnLayout {
         reasonInput.text = ""
         tagsInput.text = ""
         resetKeyframeInfo()
+        updateCutPreview()
     }
 
     function parseTimeToMs(value) {
@@ -68,19 +71,33 @@ ColumnLayout {
         var hours = Number(parts[0])
         var minutes = Number(parts[1])
         var seconds = Number(parts[2])
-        if (!Number.isInteger(hours) || !Number.isInteger(minutes) || !Number.isInteger(seconds)) return -1
+        if (!Number.isInteger(hours) || !Number.isInteger(minutes) || !Number.isFinite(seconds)) return -1
         if (hours < 0 || minutes < 0 || minutes > 59 || seconds < 0 || seconds > 59) return -1
         return ((hours * 3600) + (minutes * 60) + seconds) * 1000
     }
 
     function formatSeconds(seconds) {
-        var safeSeconds = Math.max(0, Number(seconds) || 0)
-        var totalSeconds = Math.floor(safeSeconds)
+        if (seconds === null || seconds === undefined || seconds === "") return "unavailable"
+        var safeSeconds = Number(seconds)
+        if (!Number.isFinite(safeSeconds)) return "unavailable"
+        safeSeconds = Math.max(0, safeSeconds)
+        var totalMilliseconds = Math.round(safeSeconds * 1000)
+        var totalSeconds = Math.floor(totalMilliseconds / 1000)
+        var milliseconds = totalMilliseconds % 1000
         var hours = Math.floor(totalSeconds / 3600)
         var minutes = Math.floor((totalSeconds % 3600) / 60)
         var wholeSeconds = totalSeconds % 60
         function pad(value) { return value < 10 ? "0" + value : "" + value }
-        return pad(hours) + ":" + pad(minutes) + ":" + pad(wholeSeconds)
+        function padMillis(value) {
+            if (value < 10) return "00" + value
+            if (value < 100) return "0" + value
+            return "" + value
+        }
+        var text = pad(hours) + ":" + pad(minutes) + ":" + pad(wholeSeconds)
+        if (milliseconds > 0) {
+            text += "." + padMillis(milliseconds)
+        }
+        return text
     }
 
     function formatDelta(seconds) {
@@ -93,20 +110,47 @@ ColumnLayout {
             "error": message || "Mark Start and End to preview keyframe-safe removal.",
             "requested_start": 0,
             "requested_end": 0,
-            "safe_start": 0,
-            "safe_end": 0,
-            "previous_keyframe_start": 0,
-            "next_keyframe_start": 0,
-            "previous_keyframe_end": 0,
-            "next_keyframe_end": 0,
+            "safe_start": null,
+            "safe_end": null,
+            "previous_keyframe_start": null,
+            "next_keyframe_start": null,
+            "previous_keyframe_end": null,
+            "next_keyframe_end": null,
             "extra_before": 0,
             "extra_after": 0
         }
     }
 
+    function updateCutPreview() {
+        var startMs = parseTimeToMs(startInput.text)
+        var endMs = parseTimeToMs(endInput.text)
+        var hasTimes = startMs >= 0 && endMs >= 0 && (startMs !== 0 || endMs !== 0)
+
+        if (!hasTimes) {
+            root.cutPreview = { "visible": false }
+            root.previewChanged(root.cutPreview)
+            return
+        }
+
+        var hasSafe = hasSafeKeyframeInfo()
+        var validOrder = startMs < endMs
+        root.cutPreview = {
+            "visible": true,
+            "valid": validOrder,
+            "has_safe": validOrder && hasSafe,
+            "requested_start": startMs / 1000,
+            "requested_end": endMs / 1000,
+            "safe_start": validOrder && hasSafe ? root.keyframeInfo.safe_start : null,
+            "safe_end": validOrder && hasSafe ? root.keyframeInfo.safe_end : null,
+            "error": validOrder ? "" : "End time must be after start time."
+        }
+        root.previewChanged(root.cutPreview)
+    }
+
     function refreshKeyframeInfo() {
         if (!canAddCut()) {
             resetKeyframeInfo(validationMessage())
+            updateCutPreview()
             return
         }
 
@@ -116,6 +160,7 @@ ColumnLayout {
             endInput.text,
             root.videoDurationMs > 0 ? root.videoDurationMs / 1000 : 0
         )
+        updateCutPreview()
     }
 
     function validationMessage() {
@@ -134,9 +179,24 @@ ColumnLayout {
         return startMs >= 0 && endMs >= 0 && startMs < endMs
     }
 
+    function hasSafeKeyframeInfo() {
+        var info = root.keyframeInfo
+        return info.valid
+            && info.safe_start !== null
+            && info.safe_end !== null
+            && Number.isFinite(Number(info.safe_start))
+            && Number.isFinite(Number(info.safe_end))
+            && Number(info.safe_start) < Number(info.safe_end)
+    }
+
+    function canAddSafeCut() {
+        return root.canAddCut() && root.hasSafeKeyframeInfo()
+    }
+
     function addCut(source, score) {
         if (!canAddCut()) return
         refreshKeyframeInfo()
+        if (!hasSafeKeyframeInfo()) return
         var info = root.keyframeInfo
         var safeStart = root.formatSeconds(info.safe_start)
         var safeEnd = root.formatSeconds(info.safe_end)
@@ -162,6 +222,7 @@ ColumnLayout {
             "score": score,
             "status": "Pending"
         })
+        root.clearEditor()
     }
 
     function addCurrentCut() {
@@ -325,7 +386,7 @@ ColumnLayout {
             size: "lg"
             lightMode: root.lightMode
             Layout.fillWidth: true
-            enabled: root.canAddCut()
+            enabled: root.canAddSafeCut()
             onClicked: root.addCut("Manual", "--")
         }
 

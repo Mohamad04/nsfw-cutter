@@ -28,6 +28,19 @@ class VideoCutControllerTests(unittest.TestCase):
         self.assertEqual(payload["previous_keyframe_start"], 32)
         self.assertEqual(payload["next_keyframe_end"], 44)
 
+    def test_export_segments_fails_clearly_without_safe_bounds(self):
+        controller = VideoCutController()
+
+        controller.exportSegments(
+            "missing.mp4",
+            [{"start": "00:00:01", "end": "00:00:03"}],
+            "",
+            "remove_intervals",
+        )
+
+        self.assertEqual(controller.cutStatus, "Video export failed")
+        self.assertIn("Safe cut start is unavailable", controller.cutError)
+
 
 if __name__ == "__main__":
     unittest.main()

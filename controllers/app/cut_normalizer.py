@@ -58,6 +58,10 @@ def normalize_cut(cut: dict) -> dict:
                 "extraAfter": str(cut.get("extraAfter") or cut.get("extra_after") or "0.0s"),
             }
         )
+    _copy_optional_number(cut, normalized, "requested_start_seconds", "requestedStartSeconds")
+    _copy_optional_number(cut, normalized, "requested_end_seconds", "requestedEndSeconds")
+    _copy_optional_number(cut, normalized, "safe_start_seconds", "safeStartSeconds")
+    _copy_optional_number(cut, normalized, "safe_end_seconds", "safeEndSeconds")
     return normalized
 
 
@@ -79,3 +83,12 @@ def parse_hh_mm_ss_to_seconds(value: str) -> int:
 
 def has_keyframe_cut_fields(cut: dict) -> bool:
     return any(key in cut for key in KEYFRAME_CUT_FIELDS)
+
+
+def _copy_optional_number(source: dict, target: dict, snake_key: str, camel_key: str) -> None:
+    value = source.get(snake_key)
+    if value in (None, ""):
+        value = source.get(camel_key)
+    if value in (None, ""):
+        return
+    target[camel_key] = float(value)

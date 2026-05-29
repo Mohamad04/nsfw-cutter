@@ -15,8 +15,10 @@ Panel {
     property color accent: "#38BDF8"
     property string selectedVideoPath: ""
     property real videoDurationMs: 0
+    property var cutPreview: ({ "visible": false })
 
     signal cutAdded(var cut)
+    signal previewChanged(var preview)
     signal headerExpandRequested()
 
     implicitHeight: content.implicitHeight + (root.compactMode ? 24 : 32)
@@ -72,6 +74,10 @@ Panel {
                 selectedVideoPath: root.selectedVideoPath
                 videoDurationMs: root.videoDurationMs
                 onCutAdded: function(cut) { root.cutAdded(cut) }
+                onPreviewChanged: function(preview) {
+                    root.cutPreview = preview
+                    root.previewChanged(preview)
+                }
                 onHeaderExpandRequested: root.headerExpandRequested()
             }
 

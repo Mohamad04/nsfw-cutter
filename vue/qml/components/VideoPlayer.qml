@@ -12,6 +12,7 @@ Rectangle {
     property real volume: 0.85
     property var cutsModel
     property int selectedCutIndex: -1
+    property var cutPreview: ({ "visible": false })
     property bool overlayActive: true
     property color videoTone: "#1E293B"
     property color textMain: "#F8FAFC"
@@ -28,6 +29,8 @@ Rectangle {
     signal addCutRequested()
     signal volumeRequested(real value)
     signal markerSelected(int index, real positionMs)
+    signal cutSelected(int index)
+    signal cutRangeChanged(int index, real startMs, real endMs)
 
     radius: 16
     color: root.videoTone
@@ -145,11 +148,16 @@ Rectangle {
                 durationMs: root.durationMs
                 cutsModel: root.cutsModel
                 selectedCutIndex: root.selectedCutIndex
+                cutPreview: root.cutPreview
                 lightMode: root.lightMode
                 textMain: root.lightMode ? "#0F172A" : root.textMain
                 accent: root.lightMode ? "#2563EB" : root.accent
                 onSeekRequested: function(positionMs) { root.seekRequested(positionMs) }
                 onMarkerSelected: function(index, positionMs) { root.markerSelected(index, positionMs) }
+                onCutSelected: function(index) { root.cutSelected(index) }
+                onCutRangeChanged: function(index, startMs, endMs) {
+                    root.cutRangeChanged(index, startMs, endMs)
+                }
             }
 
             VideoControls {

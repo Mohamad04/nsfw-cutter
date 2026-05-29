@@ -64,15 +64,46 @@ class CutNormalizerTests(unittest.TestCase):
         self.assertEqual(cut["previousKeyframeEnd"], "00:00:18")
         self.assertEqual(cut["nextKeyframeStart"], "00:00:11")
 
+    def test_requested_and_safe_seconds_are_preserved(self):
+        cut = normalize_cut(
+            {
+                "start": "00:00:10",
+                "end": "00:00:20",
+                "safeStart": "00:00:09",
+                "safeEnd": "00:00:21",
+                "requested_start_seconds": 10.25,
+                "requested_end_seconds": 20.5,
+                "safe_start_seconds": 9.0,
+                "safe_end_seconds": 21.0,
+            }
+        )
+
+        self.assertEqual(cut["requestedStartSeconds"], 10.25)
+        self.assertEqual(cut["requestedEndSeconds"], 20.5)
+        self.assertEqual(cut["safeStartSeconds"], 9.0)
+        self.assertEqual(cut["safeEndSeconds"], 21.0)
+
 
 class SegmentMapperTests(unittest.TestCase):
-    def test_segment_with_start_and_end(self):
-        payload = segment_to_payload(1, {"start": "00:00:01", "end": "00:00:03"})
+    def test_segment_with_start_and_end_requires_safe_bounds(self):
+        with self.assertRaisesRegex(ValueError, "Safe cut start is unavailable"):
+            segment_to_payload(1, {"start": "00:00:01", "end": "00:00:03"})
 
-        self.assertEqual(payload["start_seconds"], 1)
-        self.assertEqual(payload["end_seconds"], 3)
+    def test_segment_with_start_end_and_safe_bounds(self):
+        payload = segment_to_payload(
+            1,
+            {
+                "start": "00:00:01",
+                "end": "00:00:03",
+                "safeStart": "00:00:00",
+                "safeEnd": "00:00:05",
+            },
+        )
+
         self.assertEqual(payload["requested_start_seconds"], 1)
         self.assertEqual(payload["requested_end_seconds"], 3)
+        self.assertEqual(payload["start_seconds"], 0)
+        self.assertEqual(payload["end_seconds"], 5)
 
     def test_segment_with_safe_start_and_safe_end(self):
         payload = segment_to_payload(

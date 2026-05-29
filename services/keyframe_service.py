@@ -63,15 +63,19 @@ class KeyframeService:
             raise ValueError("End time must be after start time.")
 
         normalized_keyframes = sorted(set(round(float(value), 3) for value in keyframes if value is not None))
+        if not normalized_keyframes:
+            raise ValueError("Keyframe data unavailable. Safe stream-copy cut cannot be computed.")
+
         previous_start = previous_keyframe(normalized_keyframes, requested_start)
         next_start = next_keyframe(normalized_keyframes, requested_start, duration_seconds)
         previous_end = previous_keyframe(normalized_keyframes, requested_end)
         next_end = next_keyframe(normalized_keyframes, requested_end, duration_seconds)
-
-        safe_start = previous_start if previous_start is not None else 0.0
-        safe_end = next_end if next_end is not None else requested_end
-        if duration_seconds is not None and duration_seconds > 0:
-            safe_end = min(safe_end, float(duration_seconds))
+        safe_start, safe_end = compute_safe_cut(
+            requested_start,
+            requested_end,
+            normalized_keyframes,
+            duration_seconds,
+        )
 
         return {
             "valid": True,
@@ -102,3 +106,35 @@ def next_keyframe(keyframes: list[float], seconds: float, duration_seconds: floa
     if duration_seconds is not None and duration_seconds > 0:
         return round(float(duration_seconds), 3)
     return None
+
+
+def compute_safe_cut(
+    requested_start: float,
+    requested_end: float,
+    keyframes: list[float],
+    video_duration: float | None = None,
+) -> tuple[float, float]:
+    if requested_end <= requested_start:
+        raise ValueError("End time must be after start time.")
+
+    normalized_keyframes = sorted(set(round(float(value), 3) for value in keyframes if value is not None))
+    if not normalized_keyframes:
+        raise ValueError("Keyframe data unavailable. Safe stream-copy cut cannot be computed.")
+
+    safe_start = previous_keyframe(normalized_keyframes, requested_start)
+    if safe_start is None:
+        safe_start = 0.0
+
+    safe_end = next_keyframe(normalized_keyframes, requested_end, video_duration)
+    if safe_end is None:
+        raise ValueError("No next keyframe found after requested end. Safe stream-copy cut cannot be computed.")
+
+    if video_duration is not None and video_duration > 0:
+        duration = round(float(video_duration), 3)
+        safe_start = max(0.0, min(round(float(safe_start), 3), duration))
+        safe_end = max(0.0, min(round(float(safe_end), 3), duration))
+
+    if safe_end <= safe_start:
+        raise ValueError("Computed safe cut is invalid.")
+
+    return round(float(safe_start), 3), round(float(safe_end), 3)

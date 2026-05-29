@@ -17,6 +17,7 @@ Item {
     property color accent: "#38BDF8"
     property int selectedCutIndex: -1
     property int rightPanelWidth: 380
+    property var cutPreview: ({ "visible": false })
     readonly property real videoDurationMs: videoPanel.durationMs
     readonly property real videoPositionMs: videoPanel.positionMs
 
@@ -24,6 +25,7 @@ Item {
 
     signal cutAdded(var cut)
     signal cutSelected(int index)
+    signal cutRangeChanged(int index, real startMs, real endMs)
     signal headerExpandRequested()
 
     function stopPlayback() {
@@ -67,10 +69,14 @@ Item {
             cutCount: root.cutsModel.count
             cutsModel: root.cutsModel
             selectedCutIndex: root.selectedCutIndex
+            cutPreview: root.cutPreview
             onStartRequested: function(timeText) { cutEditor.setStartTime(timeText) }
             onEndRequested: function(timeText) { cutEditor.setEndTime(timeText) }
             onAddCutRequested: root.addCurrentCut()
             onCutMarkerSelected: function(index) { root.cutSelected(index) }
+            onCutRangeChanged: function(index, startMs, endMs) {
+                root.cutRangeChanged(index, startMs, endMs)
+            }
         }
 
         CutEditorPanel {
@@ -91,6 +97,7 @@ Item {
             textMuted: root.textMuted
             accent: root.accent
             onCutAdded: function(cut) { root.cutAdded(cut) }
+            onPreviewChanged: function(preview) { root.cutPreview = preview }
             onHeaderExpandRequested: root.headerExpandRequested()
         }
     }

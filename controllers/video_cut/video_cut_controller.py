@@ -90,9 +90,16 @@ class VideoCutController(QObject):
 
     @Slot(str, "QVariantList", str, str)
     def exportSegments(self, input_path: str, segments, output_dir: str, export_mode: str):
-        parsed_segments = []
-        for index, segment in enumerate(segments or [], start=1):
-            parsed_segments.append(segment_to_payload(index, segment))
+        try:
+            parsed_segments = []
+            for index, segment in enumerate(segments or [], start=1):
+                parsed_segments.append(segment_to_payload(index, segment))
+        except ValueError as exc:
+            error_message = str(exc)
+            self._set_cut_error(error_message)
+            self._set_cut_status("Video export failed")
+            self.cutFailed.emit(error_message)
+            return
         self._start_export(input_path, parsed_segments, output_dir, export_mode)
 
     @Slot(str, str, str, float, result="QVariantMap")

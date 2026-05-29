@@ -1,4 +1,5 @@
 import shutil
+import sys
 from pathlib import Path
 
 from core.paths import get_resource_path
@@ -36,11 +37,17 @@ class FFmpegService:
             if candidate.is_file():
                 return candidate
 
-        system_binary = shutil.which(executable)
-        if system_binary:
-            return Path(system_binary)
+        for binary_name in self._system_binary_names(executable):
+            system_binary = shutil.which(binary_name)
+            if system_binary:
+                return Path(system_binary)
 
         binary_label = "FFmpeg" if executable == "ffmpeg" else "ffprobe"
         raise FFmpegNotFoundError(
             f"{binary_label} was not found. Please install FFmpeg or bundle {executable}.exe with the app."
         )
+
+    def _system_binary_names(self, executable: str) -> tuple[str, ...]:
+        if sys.platform == "win32" and not executable.lower().endswith(".exe"):
+            return (f"{executable}.exe", executable)
+        return (executable,)

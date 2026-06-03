@@ -227,6 +227,9 @@ class AppControllerTests(unittest.TestCase):
         self.assertEqual(self.controller.subtitleStatus, "Subtitle: Detecting...")
         self.assertEqual(self.controller.subtitleDetectionState, "loading")
         self.assertEqual(self.controller.subtitleCandidates, [])
+        self.assertEqual(self.controller.analysisSubtitleOptions, [])
+        self.assertEqual(self.controller.selectedAnalysisSubtitleId, "")
+        self.assertEqual(self.controller.activePreviewSubtitleTrackIndex, -1)
         self.assertEqual(self.controller.projectStatus, "Video loaded")
         self.assertEqual(self.controller.selectedVideoPath, "/tmp/a.mp4")
         self.assertEqual(self.settings_service.saved_videos, ["/tmp/a.mp4"])
@@ -280,8 +283,20 @@ class AppControllerTests(unittest.TestCase):
         self.controller.loadVideoFile("/tmp/a.mp4")
         worker = self._workers_of_type(FakeSubtitleWorker)[0]
         candidates = [
-            {"source": "embedded", "kind": "text", "is_text_readable": True},
-            {"source": "external", "kind": "text", "is_text_readable": True},
+            {
+                "source": "embedded",
+                "stream_index": 1,
+                "kind": "text",
+                "language_name": "French",
+                "is_text_readable": True,
+            },
+            {
+                "source": "external",
+                "file_path": "/tmp/a.eng.srt",
+                "kind": "text",
+                "language_name": "English",
+                "is_text_readable": True,
+            },
         ]
 
         self.controller._on_subtitle_discovery_finished(
@@ -292,10 +307,122 @@ class AppControllerTests(unittest.TestCase):
         self.assertEqual(self.controller.subtitleDetectionState, "ready")
         self.assertEqual(
             self.controller.subtitleStatus,
-            "Subtitle: 2 subtitles detected (1 embedded, 1 external)",
+            "Analysis subtitle: Select one · 2 available",
         )
-        self.assertEqual(self.controller.subtitleCandidates, candidates)
+        self.assertEqual(len(self.controller.subtitleCandidates), 2)
+        self.assertTrue(all(candidate.get("candidate_id") for candidate in self.controller.subtitleCandidates))
+        self.assertEqual(
+            [option["label"] for option in self.controller.analysisSubtitleOptions],
+            ["Off", "French", "English"],
+        )
+        self.assertEqual(self.controller.selectedAnalysisSubtitleId, "")
         self.assertEqual(self.controller.subtitleError, "")
+
+    def test_single_text_readable_subtitle_is_auto_selected(self):
+        self.controller.loadVideoFile("/tmp/a.mp4")
+        worker = self._workers_of_type(FakeSubtitleWorker)[0]
+
+        self.controller._on_subtitle_discovery_finished(
+            worker.job_token,
+            {
+                "input_path": worker.input_path,
+                "candidates": [
+                    {
+                        "source": "external",
+                        "file_path": "/tmp/a.fra.srt",
+                        "kind": "text",
+                        "language_name": "French",
+                        "is_text_readable": True,
+                    }
+                ],
+            },
+        )
+
+        self.assertEqual(self.controller.subtitleStatus, "Analysis subtitle: French · Auto-selected")
+        self.assertNotEqual(self.controller.selectedAnalysisSubtitleId, "")
+        self.assertEqual(self.controller.selectedAnalysisSubtitle["language_name"], "French")
+        self.assertTrue(self.controller.analysisSubtitleOptions[1]["selected"])
+        self.assertEqual(self.controller.activePreviewSubtitleTrackIndex, -1)
+
+    def test_embedded_selection_activates_player_subtitle_track_index_not_ffprobe_stream_index(self):
+        self.controller.loadVideoFile("/tmp/a.mp4")
+        self.controller.updatePlayerSubtitleTrackCount(1)
+        worker = self._workers_of_type(FakeSubtitleWorker)[0]
+        self.controller._on_subtitle_discovery_finished(
+            worker.job_token,
+            {
+                "input_path": worker.input_path,
+                "candidates": [
+                    {
+                        "source": "embedded",
+                        "stream_index": 3,
+                        "codec_name": "subrip",
+                        "kind": "text",
+                        "language_name": "French",
+                        "is_text_readable": True,
+                    }
+                ],
+            },
+        )
+
+        self.assertEqual(self.controller.selectedAnalysisSubtitle["stream_index"], 3)
+        self.assertEqual(self.controller.selectedAnalysisSubtitle["player_subtitle_track_index"], 0)
+        self.assertEqual(self.controller.activePreviewSubtitleTrackIndex, 0)
+
+    def test_embedded_auto_selection_activates_when_player_tracks_arrive_late(self):
+        self.controller.loadVideoFile("/tmp/a.mp4")
+        worker = self._workers_of_type(FakeSubtitleWorker)[0]
+        self.controller._on_subtitle_discovery_finished(
+            worker.job_token,
+            {
+                "input_path": worker.input_path,
+                "candidates": [
+                    {
+                        "source": "embedded",
+                        "stream_index": 3,
+                        "codec_name": "subrip",
+                        "kind": "text",
+                        "language_name": "French",
+                        "is_text_readable": True,
+                    }
+                ],
+            },
+        )
+        self.assertEqual(self.controller.activePreviewSubtitleTrackIndex, -1)
+
+        self.controller.updatePlayerSubtitleTrackCount(1)
+
+        self.assertEqual(self.controller.selectedAnalysisSubtitle["player_subtitle_track_index"], 0)
+        self.assertEqual(self.controller.activePreviewSubtitleTrackIndex, 0)
+
+    def test_off_selection_disables_preview_subtitles(self):
+        self.controller.loadVideoFile("/tmp/a.mp4")
+        self.controller.updatePlayerSubtitleTrackCount(1)
+        worker = self._workers_of_type(FakeSubtitleWorker)[0]
+        self.controller._on_subtitle_discovery_finished(
+            worker.job_token,
+            {
+                "input_path": worker.input_path,
+                "candidates": [
+                    {
+                        "source": "embedded",
+                        "stream_index": 3,
+                        "codec_name": "subrip",
+                        "kind": "text",
+                        "language_name": "French",
+                        "is_text_readable": True,
+                    }
+                ],
+            },
+        )
+
+        selected = self.controller.selectAnalysisSubtitle("__subtitle_preview_off__")
+
+        self.assertTrue(selected)
+        self.assertEqual(self.controller.selectedAnalysisSubtitleId, "__subtitle_preview_off__")
+        self.assertEqual(self.controller.selectedAnalysisSubtitle, {})
+        self.assertEqual(self.controller.activePreviewSubtitleTrackIndex, -1)
+        self.assertEqual(self.controller.subtitleStatus, "Analysis subtitle: Off")
 
     def test_subtitle_discovery_finished_without_candidates_sets_not_detected(self):
         self.controller.loadVideoFile("/tmp/a.mp4")
@@ -309,6 +436,9 @@ class AppControllerTests(unittest.TestCase):
         self.assertEqual(self.controller.subtitleDetectionState, "ready")
         self.assertEqual(self.controller.subtitleStatus, "Subtitle: Not detected")
         self.assertEqual(self.controller.subtitleCandidates, [])
+        self.assertEqual(self.controller.analysisSubtitleOptions, [])
+        self.assertEqual(self.controller.selectedAnalysisSubtitleId, "")
+        self.assertEqual(self.controller.activePreviewSubtitleTrackIndex, -1)
 
     def test_subtitle_discovery_failure_sets_error_state(self):
         self.controller.loadVideoFile("/tmp/a.mp4")
@@ -320,6 +450,96 @@ class AppControllerTests(unittest.TestCase):
         self.assertEqual(self.controller.subtitleStatus, "Subtitle: Detection error")
         self.assertEqual(self.controller.subtitleError, "ffprobe failed")
         self.assertEqual(self.controller.subtitleCandidates, [])
+        self.assertEqual(self.controller.selectedAnalysisSubtitleId, "")
+        self.assertEqual(self.controller.activePreviewSubtitleTrackIndex, -1)
+
+    def test_selecting_readable_analysis_subtitle_updates_state(self):
+        self.controller.loadVideoFile("/tmp/a.mp4")
+        worker = self._workers_of_type(FakeSubtitleWorker)[0]
+        self.controller._on_subtitle_discovery_finished(
+            worker.job_token,
+            {
+                "input_path": worker.input_path,
+                "candidates": [
+                    {
+                        "source": "embedded",
+                        "stream_index": 1,
+                        "kind": "text",
+                        "language_name": "French",
+                        "is_text_readable": True,
+                    },
+                    {
+                        "source": "external",
+                        "file_path": "/tmp/a.eng.srt",
+                        "kind": "text",
+                        "language_name": "English",
+                        "is_text_readable": True,
+                    },
+                ],
+            },
+        )
+        selected_id = self.controller.subtitleCandidates[0]["candidate_id"]
+
+        selected = self.controller.selectAnalysisSubtitle(selected_id)
+
+        self.assertTrue(selected)
+        self.assertEqual(self.controller.selectedAnalysisSubtitleId, selected_id)
+        self.assertEqual(self.controller.selectedAnalysisSubtitle["language_name"], "French")
+        self.assertEqual(self.controller.subtitleStatus, "Analysis subtitle: French")
+        self.assertEqual(self.controller.activePreviewSubtitleTrackIndex, -1)
+        self.assertEqual(len(self.controller.subtitleCandidates), 2)
+        self.assertTrue(self.controller.analysisSubtitleOptions[1]["selected"])
+
+    def test_selecting_unreadable_analysis_subtitle_is_rejected(self):
+        self.controller.loadVideoFile("/tmp/a.mp4")
+        worker = self._workers_of_type(FakeSubtitleWorker)[0]
+        self.controller._on_subtitle_discovery_finished(
+            worker.job_token,
+            {
+                "input_path": worker.input_path,
+                "candidates": [
+                    {
+                        "source": "embedded",
+                        "stream_index": 1,
+                        "kind": "image",
+                        "language_name": "English",
+                        "is_text_readable": False,
+                    }
+                ],
+            },
+        )
+        rejected_id = self.controller.subtitleCandidates[0]["candidate_id"]
+
+        selected = self.controller.selectAnalysisSubtitle(rejected_id)
+
+        self.assertFalse(selected)
+        self.assertEqual(self.controller.selectedAnalysisSubtitleId, "")
+        self.assertEqual(self.controller.subtitleStatus, "Subtitles found · None text-readable")
+        self.assertFalse(self.controller.analysisSubtitleOptions[1]["enabled"])
+
+    def test_selecting_external_analysis_subtitle_does_not_activate_preview_track(self):
+        self.controller.loadVideoFile("/tmp/a.mp4")
+        self.controller.updatePlayerSubtitleTrackCount(2)
+        worker = self._workers_of_type(FakeSubtitleWorker)[0]
+        self.controller._on_subtitle_discovery_finished(
+            worker.job_token,
+            {
+                "input_path": worker.input_path,
+                "candidates": [
+                    {
+                        "source": "external",
+                        "file_path": "/tmp/a.fra.srt",
+                        "kind": "text",
+                        "language_name": "French",
+                        "is_text_readable": True,
+                    }
+                ],
+            },
+        )
+
+        self.assertNotEqual(self.controller.selectedAnalysisSubtitleId, "")
+        self.assertEqual(self.controller.selectedAnalysisSubtitle["source"], "external")
+        self.assertEqual(self.controller.activePreviewSubtitleTrackIndex, -1)
 
     def test_stale_subtitle_discovery_result_does_not_replace_new_video_state(self):
         self.controller.loadVideoFile("/tmp/a.mp4")
@@ -338,8 +558,36 @@ class AppControllerTests(unittest.TestCase):
         self.assertEqual(self.controller.subtitleDetectionState, "loading")
         self.assertEqual(self.controller.subtitleStatus, "Subtitle: Detecting...")
         self.assertEqual(self.controller.subtitleCandidates, [])
+        self.assertEqual(self.controller.selectedAnalysisSubtitleId, "")
+        self.assertEqual(self.controller.activePreviewSubtitleTrackIndex, -1)
         self.assertEqual(self.controller.selectedVideoPath, "/tmp/b.mkv")
         self.assertNotEqual(first_worker.job_token, second_worker.job_token)
+
+    def test_loading_new_video_clears_selected_analysis_subtitle(self):
+        self.controller.loadVideoFile("/tmp/a.mp4")
+        first_worker = self._workers_of_type(FakeSubtitleWorker)[0]
+        self.controller._on_subtitle_discovery_finished(
+            first_worker.job_token,
+            {
+                "input_path": first_worker.input_path,
+                "candidates": [
+                    {
+                        "source": "external",
+                        "file_path": "/tmp/a.fra.srt",
+                        "language_name": "French",
+                        "is_text_readable": True,
+                    }
+                ],
+            },
+        )
+        self.assertNotEqual(self.controller.selectedAnalysisSubtitleId, "")
+
+        self.controller.loadVideoFile("/tmp/b.mkv")
+
+        self.assertEqual(self.controller.selectedAnalysisSubtitleId, "")
+        self.assertEqual(self.controller.selectedAnalysisSubtitle, {})
+        self.assertEqual(self.controller.subtitleStatus, "Subtitle: Detecting...")
+        self.assertEqual(self.controller.activePreviewSubtitleTrackIndex, -1)
 
     def test_keyframe_indexing_runs_off_caller_thread_and_completes(self):
         app = QCoreApplication.instance() or QCoreApplication([])
@@ -461,6 +709,9 @@ class AppControllerTests(unittest.TestCase):
         self.assertEqual(self.controller.subtitleStatus, "Subtitle: Not detected")
         self.assertEqual(self.controller.subtitleDetectionState, "idle")
         self.assertEqual(self.controller.subtitleCandidates, [])
+        self.assertEqual(self.controller.analysisSubtitleOptions, [])
+        self.assertEqual(self.controller.selectedAnalysisSubtitleId, "")
+        self.assertEqual(self.controller.activePreviewSubtitleTrackIndex, -1)
         self.assertEqual(self.controller.projectStatus, "Ready")
         self.assertEqual(self.controller.selectedVideoPath, "")
 

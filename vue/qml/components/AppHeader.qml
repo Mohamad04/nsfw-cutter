@@ -29,6 +29,55 @@ Item {
 
     AppTheme { id: theme }
 
+    function subtitleNoneReadable() {
+        return appController.subtitleStatus.indexOf("None text-readable") >= 0
+    }
+
+    function subtitlePillColor() {
+        if (appController.subtitleDetectionState === "error")
+            return root.lightMode ? theme.lightDangerSoft : theme.darkDangerSoft
+        if (appController.subtitleDetectionState === "loading")
+            return root.lightMode ? theme.lightCyanSoft : theme.darkCyanSoft
+        if (appController.subtitleCandidates.length > 0 && appController.selectedAnalysisSubtitleId.length === 0) {
+            if (root.subtitleNoneReadable())
+                return root.lightMode ? theme.lightWarningSoft : theme.darkWarningSoft
+            return root.lightMode ? theme.lightAccentSoft : theme.darkAccentSoft
+        }
+        if (appController.selectedAnalysisSubtitleId.length > 0)
+            return root.lightMode ? theme.lightSuccessSoft : theme.darkSuccessSoft
+        return root.lightMode ? "#F1F5F9" : "#162033"
+    }
+
+    function subtitlePillBorderColor() {
+        if (appController.subtitleDetectionState === "error")
+            return root.lightMode ? "#FCA5A5" : "#7F1D1D"
+        if (appController.subtitleDetectionState === "loading")
+            return root.lightMode ? "#7DD3FC" : "#075985"
+        if (appController.subtitleCandidates.length > 0 && appController.selectedAnalysisSubtitleId.length === 0) {
+            if (root.subtitleNoneReadable())
+                return root.lightMode ? "#FDE68A" : "#9A3412"
+            return root.lightMode ? "#93C5FD" : "#1D4ED8"
+        }
+        if (appController.selectedAnalysisSubtitleId.length > 0)
+            return root.lightMode ? "#86EFAC" : "#1B6F3A"
+        return root.lightMode ? theme.lightBorder : "#243244"
+    }
+
+    function subtitlePillTextColor() {
+        if (appController.subtitleDetectionState === "error")
+            return root.lightMode ? theme.lightDanger : theme.darkDanger
+        if (appController.subtitleDetectionState === "loading")
+            return root.lightMode ? theme.lightCyan : theme.darkCyan
+        if (appController.subtitleCandidates.length > 0 && appController.selectedAnalysisSubtitleId.length === 0) {
+            if (root.subtitleNoneReadable())
+                return root.lightMode ? theme.lightWarning : theme.darkWarning
+            return root.lightMode ? theme.lightAccent : theme.darkAccent
+        }
+        if (appController.selectedAnalysisSubtitleId.length > 0)
+            return root.lightMode ? theme.lightSuccess : theme.darkSuccess
+        return root.lightMode ? theme.lightTextMuted : theme.darkTextMuted
+    }
+
     implicitHeight: root.preferredHeaderHeight
     implicitWidth: 1200
 
@@ -121,22 +170,36 @@ Item {
                     }
 
                     Rectangle {
+                        id: subtitlePill
+
                         Layout.preferredWidth: root.compactMode ? 250 : 290
                         Layout.preferredHeight: 28
                         radius: 12
                         visible: !root.narrowMode
-                        color: root.lightMode ? "#ECFDF5" : "#103D22"
-                        border.color: root.lightMode ? "#BBF7D0" : "#1B6F3A"
+                        color: root.subtitlePillColor()
+                        border.color: root.subtitlePillBorderColor()
+
+                        Behavior on color {
+                            ColorAnimation { duration: 120 }
+                        }
 
                         Text {
                             anchors.fill: parent
                             anchors.leftMargin: 10
                             anchors.rightMargin: 10
-                            text: appController.subtitleStatus
-                            color: root.lightMode ? "#15803D" : "#86EFAC"
+                            text: appController.subtitleStatus + (appController.subtitleCandidates.length > 0 ? " v" : "")
+                            color: root.subtitlePillTextColor()
                             font.pixelSize: 12
                             elide: Text.ElideRight
                             verticalAlignment: Text.AlignVCenter
+                        }
+
+                        MouseArea {
+                            anchors.fill: parent
+                            enabled: appController.subtitleCandidates.length > 0
+                            hoverEnabled: true
+                            cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                            onClicked: subtitleSelector.showAt(subtitlePill)
                         }
                     }
                 }
@@ -203,6 +266,33 @@ Item {
         onRecentFileRequested: function(path) { root.recentFileRequested(path) }
         onClearRecentFilesRequested: root.clearRecentFilesRequested()
         onClearCurrentMediaRequested: root.clearRequested()
+    }
+
+    SubtitleSelectorPopup {
+        id: subtitleSelector
+
+        lightMode: root.lightMode
+        textColor: root.textColor
+        mutedTextColor: root.mutedTextColor
+        options: appController.analysisSubtitleOptions
+        detectedCount: appController.subtitleCandidates.length
+        onCandidateSelected: function(candidateId) {
+            if (appController.selectAnalysisSubtitle(candidateId))
+                subtitleSelector.closeAfterAction()
+        }
+    }
+
+    Connections {
+        target: appController
+
+        function onSelectedVideoPathChanged() {
+            subtitleSelector.closeAfterAction()
+        }
+
+        function onSubtitleCandidatesChanged() {
+            if (appController.subtitleCandidates.length === 0)
+                subtitleSelector.closeAfterAction()
+        }
     }
 
     Shortcut {

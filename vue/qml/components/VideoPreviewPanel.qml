@@ -78,6 +78,30 @@ Panel {
         player.play()
     }
 
+    function subtitleTrackCount() {
+        return player.subtitleTracks ? player.subtitleTracks.length : 0
+    }
+
+    function syncSubtitleTracks() {
+        appController.updatePlayerSubtitleTrackCount(root.subtitleTrackCount())
+        root.applyActiveSubtitleTrack()
+    }
+
+    function scheduleSubtitleTrackSync() {
+        Qt.callLater(root.syncSubtitleTracks)
+    }
+
+    function applyActiveSubtitleTrack() {
+        var requestedTrack = appController.activePreviewSubtitleTrackIndex
+        if (player.activeSubtitleTrack !== requestedTrack)
+            player.activeSubtitleTrack = requestedTrack
+        console.info(
+            "[Subtitles] Preview player tracks=" + root.subtitleTrackCount()
+            + ", requested=" + requestedTrack
+            + ", active=" + player.activeSubtitleTrack
+        )
+    }
+
     function parseTimeMs(timeText) {
         var parts = String(timeText).trim().split(":")
         if (parts.length !== 3) return 0
@@ -89,6 +113,23 @@ Panel {
         source: appController.videoUrl
         videoOutput: videoPlayer.videoOutput
         audioOutput: AudioOutput { volume: root.volumeLevel }
+        activeSubtitleTrack: -1
+
+        onSubtitleTracksChanged: root.scheduleSubtitleTrackSync()
+        onSourceChanged: {
+            player.activeSubtitleTrack = -1
+            root.scheduleSubtitleTrackSync()
+        }
+        onMediaStatusChanged: root.scheduleSubtitleTrackSync()
+        Component.onCompleted: root.scheduleSubtitleTrackSync()
+    }
+
+    Connections {
+        target: appController
+
+        function onActivePreviewSubtitleTrackIndexChanged() {
+            root.applyActiveSubtitleTrack()
+        }
     }
 
     ColumnLayout {

@@ -20,6 +20,16 @@ from services.editing.keyframe_service import KeyframeService
 from services.settings_service import SettingsService
 from services.media.import_service import VideoImportService
 from services.subtitles.processing_service import SubtitleService
+from services.subtitles.selection_service import (
+    OFF_SUBTITLE_OPTION_ID,
+    analysis_subtitle_status_text,
+    attach_candidate_ids,
+    attach_player_subtitle_track_indexes,
+    auto_select_analysis_subtitle_id,
+    build_analysis_subtitle_options,
+    find_selectable_candidate,
+    preview_subtitle_track_index_for_selection,
+)
 from workers.keyframe_index_worker import KeyframeIndexWorker
 from workers.prepare_export_job_worker import PrepareExportJobWorker
 from workers.subtitle_discovery_worker import SubtitleDiscoveryWorker
@@ -38,6 +48,9 @@ class AppController(QObject):
     subtitleDetectionStateChanged = Signal()
     subtitleCandidatesChanged = Signal()
     subtitleErrorChanged = Signal()
+    analysisSubtitleOptionsChanged = Signal()
+    selectedAnalysisSubtitleChanged = Signal()
+    activePreviewSubtitleTrackIndexChanged = Signal()
     projectStatusChanged = Signal()
     currentFolderChanged = Signal()
     availableVideosChanged = Signal()
@@ -129,6 +142,26 @@ class AppController(QObject):
     @Property(str, notify=subtitleErrorChanged)
     def subtitleError(self):
         return self._state.subtitle_error
+
+    @Property("QVariantList", notify=analysisSubtitleOptionsChanged)
+    def analysisSubtitleOptions(self):
+        return build_analysis_subtitle_options(
+            self._state.subtitle_candidates,
+            self._state.selected_analysis_subtitle_id,
+            include_off=True,
+        )
+
+    @Property(str, notify=selectedAnalysisSubtitleChanged)
+    def selectedAnalysisSubtitleId(self):
+        return self._state.selected_analysis_subtitle_id
+
+    @Property("QVariant", notify=selectedAnalysisSubtitleChanged)
+    def selectedAnalysisSubtitle(self):
+        return self._state.selected_analysis_subtitle or {}
+
+    @Property(int, notify=activePreviewSubtitleTrackIndexChanged)
+    def activePreviewSubtitleTrackIndex(self):
+        return self._state.active_preview_subtitle_track_index
 
     @Property(str, notify=projectStatusChanged)
     def projectStatus(self):
@@ -359,6 +392,66 @@ class AppController(QObject):
         self.selectedVideoPathChanged.emit()
         self._emit_keyframe_state_changed()
 
+    @Slot(str, result=bool)
+    def selectAnalysisSubtitle(self, candidate_id: str) -> bool:
+        if candidate_id == OFF_SUBTITLE_OPTION_ID:
+            self._state.selected_analysis_subtitle_id = OFF_SUBTITLE_OPTION_ID
+            self._state.selected_analysis_subtitle = None
+            self._state.analysis_subtitle_auto_selected = False
+            self._state.subtitle_status = analysis_subtitle_status_text(
+                self._state.subtitle_candidates,
+                self._state.selected_analysis_subtitle_id,
+            )
+            self._set_active_preview_subtitle_track_index(-1)
+            logger.info("[Subtitles] Preview subtitles disabled")
+            self._emit_subtitle_state_changed()
+            return True
+
+        candidate = find_selectable_candidate(self._state.subtitle_candidates, candidate_id)
+        if candidate is None:
+            logger.info("[Subtitles] Analysis selection rejected: candidate is not text-readable")
+            return False
+
+        self._state.selected_analysis_subtitle_id = candidate["candidate_id"]
+        self._state.selected_analysis_subtitle = candidate
+        self._state.analysis_subtitle_auto_selected = False
+        self._state.subtitle_status = analysis_subtitle_status_text(
+            self._state.subtitle_candidates,
+            self._state.selected_analysis_subtitle_id,
+        )
+        self._apply_preview_subtitle_selection(candidate)
+        logger.info(
+            "[Subtitles] Analysis subtitle selected: source=%s, language=%s, id=%s",
+            candidate.get("source"),
+            candidate.get("language_name") or candidate.get("language_code") or "unknown",
+            candidate.get("candidate_id"),
+        )
+        self._emit_subtitle_state_changed()
+        return True
+
+    @Slot(int)
+    def updatePlayerSubtitleTrackCount(self, track_count: int) -> None:
+        normalized_count = max(0, int(track_count))
+        if self._state.player_subtitle_track_count == normalized_count:
+            return
+
+        logger.info("[Subtitles] Qt player subtitle tracks reported: count=%s", normalized_count)
+        self._state.player_subtitle_track_count = normalized_count
+        self._state.subtitle_candidates = attach_player_subtitle_track_indexes(
+            self._state.subtitle_candidates,
+            normalized_count,
+        )
+        if (
+            self._state.selected_analysis_subtitle_id
+            and self._state.selected_analysis_subtitle_id != OFF_SUBTITLE_OPTION_ID
+        ):
+            self._state.selected_analysis_subtitle = find_selectable_candidate(
+                self._state.subtitle_candidates,
+                self._state.selected_analysis_subtitle_id,
+            )
+        self._refresh_active_preview_subtitle_track()
+        self._emit_subtitle_state_changed()
+
     @Slot()
     @Slot(str, str)
     def startLosslessExport(self, input_path: str = "", output_path: str = ""):
@@ -550,6 +643,9 @@ class AppController(QObject):
         self._state.subtitle_status = "Subtitle: Detecting..."
         self._state.subtitle_candidates = []
         self._state.subtitle_error = ""
+        self._state.player_subtitle_track_count = 0
+        self._set_active_preview_subtitle_track_index(-1)
+        self._clear_analysis_subtitle_selection()
         self._state.subtitle_active_job_token = job_token
         self._state.subtitle_active_media_path = media_path
         self._emit_subtitle_state_changed()
@@ -590,11 +686,39 @@ class AppController(QObject):
         if not isinstance(candidates, list):
             candidates = []
 
+        prepared_candidates = attach_player_subtitle_track_indexes(
+            attach_candidate_ids(media_path, candidates),
+            self._state.player_subtitle_track_count,
+        )
+        selected_id = auto_select_analysis_subtitle_id(prepared_candidates)
+        selected_candidate = (
+            find_selectable_candidate(prepared_candidates, selected_id)
+            if selected_id
+            else None
+        )
+
         self._state.subtitle_detection_state = "ready"
-        self._state.subtitle_candidates = list(candidates)
+        self._state.subtitle_candidates = prepared_candidates
         self._state.subtitle_error = ""
-        self._state.subtitle_status = _subtitle_status_text(candidates)
+        self._state.selected_analysis_subtitle_id = selected_id or ""
+        self._state.selected_analysis_subtitle = selected_candidate
+        self._state.analysis_subtitle_auto_selected = selected_candidate is not None
+        self._state.subtitle_status = analysis_subtitle_status_text(
+            prepared_candidates,
+            self._state.selected_analysis_subtitle_id,
+            auto_selected=self._state.analysis_subtitle_auto_selected,
+        )
         self._state.subtitle_active_job_token = ""
+        self._refresh_active_preview_subtitle_track()
+        if selected_candidate is not None:
+            logger.info(
+                "[Subtitles] Analysis subtitle auto-selected: source=%s, language=%s, id=%s",
+                selected_candidate.get("source"),
+                selected_candidate.get("language_name")
+                or selected_candidate.get("language_code")
+                or "unknown",
+                selected_candidate.get("candidate_id"),
+            )
         self._emit_subtitle_state_changed()
 
     @Slot(str, str)
@@ -622,8 +746,49 @@ class AppController(QObject):
         self._state.subtitle_error = str(error_message)
         self._state.subtitle_status = "Subtitle: Detection error"
         self._state.subtitle_active_job_token = ""
+        self._clear_analysis_subtitle_selection()
         self._emit_subtitle_state_changed()
         return True
+
+    def _apply_preview_subtitle_selection(self, candidate: dict) -> None:
+        if candidate.get("source") == "external":
+            logger.info(
+                "[Subtitles] Cannot render selected external subtitle in current preview step: id=%s",
+                candidate.get("candidate_id"),
+            )
+            self._set_active_preview_subtitle_track_index(-1)
+            return
+
+        self._refresh_active_preview_subtitle_track()
+
+    def _refresh_active_preview_subtitle_track(self) -> None:
+        track_index = preview_subtitle_track_index_for_selection(
+            self._state.subtitle_candidates,
+            self._state.selected_analysis_subtitle_id,
+        )
+        selected_candidate = self._state.selected_analysis_subtitle or {}
+        if selected_candidate.get("source") == "embedded" and track_index >= 0:
+            logger.info(
+                "[Subtitles] Activating preview embedded subtitle: language=%s, qt_track_index=%s",
+                selected_candidate.get("language_name")
+                or selected_candidate.get("language_code")
+                or "unknown",
+                track_index,
+            )
+        elif selected_candidate.get("source") == "embedded":
+            logger.info(
+                "[Subtitles] Unable to map embedded candidate to Qt subtitle track: id=%s, "
+                "qt_track_count=%s",
+                selected_candidate.get("candidate_id"),
+                self._state.player_subtitle_track_count,
+            )
+        self._set_active_preview_subtitle_track_index(track_index)
+
+    def _set_active_preview_subtitle_track_index(self, track_index: int) -> None:
+        normalized_index = int(track_index)
+        if self._state.active_preview_subtitle_track_index != normalized_index:
+            self._state.active_preview_subtitle_track_index = normalized_index
+            self.activePreviewSubtitleTrackIndexChanged.emit()
 
     def _is_active_subtitle_job(self, media_path: str, job_token: str) -> bool:
         return (
@@ -638,7 +803,17 @@ class AppController(QObject):
         self._state.subtitle_error = ""
         self._state.subtitle_active_job_token = ""
         self._state.subtitle_active_media_path = ""
+        self._state.player_subtitle_track_count = 0
+        self._set_active_preview_subtitle_track_index(-1)
+        self._clear_analysis_subtitle_selection()
         self._emit_subtitle_state_changed()
+
+    def _clear_analysis_subtitle_selection(self) -> None:
+        if self._state.selected_analysis_subtitle_id:
+            logger.info("[Subtitles] Analysis subtitle cleared for newly loaded media")
+        self._state.selected_analysis_subtitle_id = ""
+        self._state.selected_analysis_subtitle = None
+        self._state.analysis_subtitle_auto_selected = False
 
     @Slot(str, object)
     def _on_keyframe_indexing_finished(self, job_token: str, result) -> None:
@@ -685,6 +860,9 @@ class AppController(QObject):
         self.subtitleDetectionStateChanged.emit()
         self.subtitleCandidatesChanged.emit()
         self.subtitleErrorChanged.emit()
+        self.analysisSubtitleOptionsChanged.emit()
+        self.selectedAnalysisSubtitleChanged.emit()
+        self.activePreviewSubtitleTrackIndexChanged.emit()
 
     def _append_available_videos(self, videos: list[dict]):
         existing_paths = {video.get("path") for video in self._state.available_videos}
@@ -787,26 +965,3 @@ class AppController(QObject):
 
 def _resolved_media_path(media_path: str | Path) -> str:
     return str(Path(media_path).expanduser().resolve())
-
-
-def _subtitle_status_text(candidates: list[dict]) -> str:
-    total_count = len(candidates)
-    if total_count == 0:
-        return "Subtitle: Not detected"
-
-    embedded_count = sum(1 for candidate in candidates if candidate.get("source") == "embedded")
-    external_count = sum(1 for candidate in candidates if candidate.get("source") == "external")
-    if total_count == 1:
-        if embedded_count == 1:
-            return "Subtitle: 1 embedded subtitle detected"
-        if external_count == 1:
-            return "Subtitle: 1 external subtitle detected"
-        return "Subtitle: 1 subtitle detected"
-
-    parts = []
-    if embedded_count:
-        parts.append(f"{embedded_count} embedded")
-    if external_count:
-        parts.append(f"{external_count} external")
-    summary = f" ({', '.join(parts)})" if parts else ""
-    return f"Subtitle: {total_count} subtitles detected{summary}"

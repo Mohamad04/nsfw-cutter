@@ -11,6 +11,11 @@ class AppState:
     subtitle_error: str = ""
     subtitle_active_job_token: str = ""
     subtitle_active_media_path: str = ""
+    selected_analysis_subtitle_id: str = ""
+    selected_analysis_subtitle: dict | None = None
+    analysis_subtitle_auto_selected: bool = False
+    player_subtitle_track_count: int = 0
+    active_preview_subtitle_track_index: int = -1
     project_status: str = "Ready"
     current_folder: str = ""
     available_videos: list = field(default_factory=list)

@@ -8,17 +8,20 @@ Rectangle {
     id: root
 
     required property var cutsModel
+    property bool compactMode: false
     property bool lightMode: false
     property bool narrowMode: false
     property bool shortMode: false
     property color textMain: "#F8FAFC"
     property color textMuted: "#94A3B8"
     property color accent: "#38BDF8"
+    property color panelColor: root.lightMode ? "#FFFFFF" : "#08111F"
     property int scrollbarGutter: 14
     property string outputDir: ""
     property int selectedIndex: -1
     property real durationMs: 0
     property real videoPositionMs: 0
+    property bool showExportControls: true
     readonly property bool denseMode: root.width < 760
     readonly property bool cardRows: root.width < 1120
     readonly property bool compactTable: root.width < 1500
@@ -42,7 +45,7 @@ Rectangle {
     signal fastExportAllRequested(string outputDir, string exportMode)
 
     radius: 14
-    color: root.lightMode ? "#FFFFFF" : "#08111F"
+    color: root.panelColor
     border.color: root.lightMode ? "#CBD5E1" : "#1F2F4A"
     clip: true
 
@@ -54,6 +57,17 @@ Rectangle {
         var seconds = Number(parts[2])
         if (!Number.isFinite(seconds)) return 0
         return (Number(parts[0]) * 3600 + Number(parts[1]) * 60 + seconds) * 1000
+    }
+
+    function totalRemovedMs() {
+        var total = 0
+        for (var index = 0; index < root.cutsModel.count; index += 1) {
+            var cut = root.cutsModel.get(index)
+            var start = root.parseTimeMs(cut.safeStart || cut.start)
+            var end = root.parseTimeMs(cut.safeEnd || cut.end)
+            if (end > start) total += end - start
+        }
+        return total
     }
 
     function setAllStatuses(value) {
@@ -101,12 +115,20 @@ Rectangle {
 
             Text {
                 Layout.minimumWidth: 0
-                text: "CUT LIST (" + root.cutsModel.count + ")"
+                text: "CUT TIMELINE"
                 color: root.accent
                 font.pixelSize: 15
                 font.bold: true
                 font.letterSpacing: 0.8
                 elide: Text.ElideRight
+            }
+
+            Text {
+                text: root.cutsModel.count + " cuts - Total removed: " + root.formatTime(root.totalRemovedMs())
+                color: root.textMuted
+                font.pixelSize: 12
+                elide: Text.ElideRight
+                visible: !root.narrowMode
             }
 
             Item { Layout.fillWidth: true }
@@ -157,7 +179,7 @@ Rectangle {
                 anchors.top: parent.top
                 anchors.leftMargin: 10
                 anchors.topMargin: 8
-                text: root.durationMs > 0 ? "Removal timeline | cyan requested, orange safe stream-copy cut" : "Removal timeline waits for loaded video duration"
+                text: root.durationMs > 0 ? "Removal timeline | orange requested, green safe adjusted removal" : "Removal timeline waits for loaded video duration"
                 color: root.textMuted
                 font.pixelSize: 11
             }
@@ -211,8 +233,8 @@ Rectangle {
                             width: parent.safeW
                             height: parent.height
                             radius: 8
-                            color: root.selectedIndex === parent.index ? "#F97316" : "#EA580C"
-                            border.color: "#FDE68A"
+                            color: root.selectedIndex === parent.index ? "#2FBF62" : "#1FA34A"
+                            border.color: root.lightMode ? "#166534" : "#8AE6A2"
                             border.width: root.selectedIndex === parent.index ? 1 : 0
                         }
 
@@ -222,7 +244,7 @@ Rectangle {
                             width: root.durationMs > 0 ? Math.max(6, (parent.endMs - parent.startMs) / root.durationMs * parent.width) : 0
                             height: parent.height - 8
                             radius: 4
-                            color: root.selectedIndex === parent.index ? "#38BDF8" : "#0891B2"
+                            color: root.selectedIndex === parent.index ? "#F59E3D" : "#F07818"
                         }
 
                         MouseArea {
@@ -264,14 +286,13 @@ Rectangle {
                 anchors.rightMargin: 8
                 spacing: root.tableSpacing
                 Text { text: "#"; color: root.textMuted; font.pixelSize: 11; Layout.preferredWidth: root.indexColumnWidth; Layout.minimumWidth: 0 }
+                Text { text: "Status"; color: root.textMuted; font.pixelSize: 11; Layout.preferredWidth: root.statusColumnWidth; Layout.minimumWidth: 0; elide: Text.ElideRight }
                 Text { text: "Requested Start"; color: root.textMuted; font.pixelSize: 11; Layout.preferredWidth: root.timeColumnWidth; Layout.minimumWidth: 0; elide: Text.ElideRight }
                 Text { text: "Requested End"; color: root.textMuted; font.pixelSize: 11; Layout.preferredWidth: root.timeColumnWidth; Layout.minimumWidth: 0; elide: Text.ElideRight }
                 Text { text: "Safe Start"; color: root.textMuted; font.pixelSize: 11; Layout.preferredWidth: root.timeColumnWidth; Layout.minimumWidth: 0; elide: Text.ElideRight }
                 Text { text: "Safe End"; color: root.textMuted; font.pixelSize: 11; Layout.preferredWidth: root.timeColumnWidth; Layout.minimumWidth: 0; elide: Text.ElideRight }
                 Text { text: "Removed Duration"; color: root.textMuted; font.pixelSize: 11; Layout.preferredWidth: root.durationColumnWidth; Layout.minimumWidth: 0; elide: Text.ElideRight }
-                Text { text: "Extra Removed"; color: root.textMuted; font.pixelSize: 11; Layout.preferredWidth: root.extraColumnWidth; Layout.minimumWidth: 0; elide: Text.ElideRight }
-                Text { text: "Reason"; color: root.textMuted; font.pixelSize: 11; Layout.fillWidth: true; Layout.minimumWidth: 56; elide: Text.ElideRight }
-                Text { text: "Status"; color: root.textMuted; font.pixelSize: 11; Layout.preferredWidth: root.statusColumnWidth; Layout.minimumWidth: 0; elide: Text.ElideRight }
+                Text { text: "Confidence"; color: root.textMuted; font.pixelSize: 11; Layout.fillWidth: true; Layout.minimumWidth: root.extraColumnWidth; elide: Text.ElideRight }
                 Text { text: "Actions"; color: root.textMuted; font.pixelSize: 11; Layout.preferredWidth: root.actionsColumnWidth; Layout.minimumWidth: 0; elide: Text.ElideRight }
             }
         }
@@ -364,9 +385,10 @@ Rectangle {
         }
 
         CutExportControls {
+            visible: root.showExportControls
             Layout.fillWidth: true
-            Layout.preferredHeight: root.shortMode ? 72 : 92
-            Layout.minimumHeight: root.shortMode ? 64 : 80
+            Layout.preferredHeight: root.showExportControls ? (root.shortMode ? 72 : 92) : 0
+            Layout.minimumHeight: root.showExportControls ? (root.shortMode ? 64 : 80) : 0
             outputDir: root.outputDir
             narrowMode: root.narrowMode
             hasSegments: root.cutsModel.count > 0

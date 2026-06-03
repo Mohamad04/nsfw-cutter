@@ -21,18 +21,17 @@ Item {
     property color videoBg: darkMode ? theme.darkVideoSurface : theme.lightVideoSurface
     property color textMain: darkMode ? theme.darkTextPrimary : theme.lightTextPrimary
     property color textMuted: darkMode ? theme.darkTextMuted : theme.lightTextMuted
-    property color accent: darkMode ? theme.darkAccent : theme.lightCyan
+    property color accent: darkMode ? theme.darkAccent : theme.lightAccent
     property color borderColor: darkMode ? theme.darkBorder : theme.lightBorder
     property int listScrollbarGutter: 14
     property int selectedCutIndex: -1
-    readonly property int footerHeight: {
-        var target = root.shortMode ? 280 : Math.floor(root.height * 0.42)
-        return Math.max(root.shortMode ? 260 : 390, Math.min(theme.bottomPanelHeight, target))
-    }
+    property string outputDir: ""
 
     ListModel { id: cutsModel }
 
     AppTheme { id: theme }
+
+    Component.onCompleted: root.outputDir = settingsController.getExportDir()
 
     function cutsToArray() {
         var cuts = []
@@ -231,6 +230,21 @@ Item {
         })
     }
 
+    function chooseOutputFolder() {
+        var folder = settingsController.chooseExportDir()
+        if (folder.length === 0) return
+        root.outputDir = folder
+        settingsController.setExportDir(folder)
+    }
+
+    function previewCuts() {
+        if (cutsModel.count === 0) return
+        var index = root.selectedCutIndex >= 0 && root.selectedCutIndex < cutsModel.count ? root.selectedCutIndex : 0
+        root.selectedCutIndex = index
+        var cut = cutsModel.get(index)
+        homeBody.previewCut(cut.safeStart || cut.start || "00:00:00")
+    }
+
     Rectangle {
         anchors.fill: parent
         color: root.bg
@@ -271,69 +285,55 @@ Item {
                 onSettingsClicked: root.settingsRequested()
             }
 
-            ColumnLayout {
+            HomeBody {
+                id: homeBody
                 Layout.fillWidth: true
                 Layout.fillHeight: true
-                spacing: root.compactMode ? 10 : theme.sectionGap
-
-                HomeBody {
-                    id: homeBody
-                    Layout.fillWidth: true
-                    Layout.fillHeight: true
-                    Layout.minimumHeight: root.shortMode ? 280 : 400
-                    cutsModel: cutsModel
-                    compactMode: root.compactMode
-                    lightMode: root.lightMode
-                    narrowMode: root.narrowMode
-                    shortMode: root.shortMode
-                    rightPanelWidth: theme.rightPanelWidth
-                    panelTone: root.panel
-                    videoTone: root.videoBg
-                    textMain: root.textMain
-                    textMuted: root.textMuted
-                    accent: root.accent
-                    headerCollapsed: appHeader.headerCollapsed
-                    selectedCutIndex: root.selectedCutIndex
-                    onCutAdded: function(cut) { root.appendCut(cut) }
-                    onCutSelected: function(index) { root.selectedCutIndex = index }
-                    onCutRangeChanged: function(index, startMs, endMs) {
-                        root.updateCutTiming(index, startMs, endMs)
-                    }
-                    onHeaderExpandRequested: appHeader.headerCollapsed = false
+                Layout.minimumHeight: root.shortMode ? 430 : 560
+                cutsModel: cutsModel
+                compactMode: root.compactMode
+                lightMode: root.lightMode
+                narrowMode: root.narrowMode
+                shortMode: root.shortMode
+                rightPanelWidth: theme.rightPanelWidth
+                panelTone: root.panel
+                videoTone: root.videoBg
+                textMain: root.textMain
+                textMuted: root.textMuted
+                accent: root.accent
+                headerCollapsed: appHeader.headerCollapsed
+                selectedCutIndex: root.selectedCutIndex
+                onCutAdded: function(cut) { root.appendCut(cut) }
+                onCutSelected: function(index) { root.selectedCutIndex = index }
+                onCutRangeChanged: function(index, startMs, endMs) {
+                    root.updateCutTiming(index, startMs, endMs)
                 }
+                onSuggestedCutAdded: function(startTime, endTime, reason, tags, score) {
+                    root.addSuggestedCut(startTime, endTime, reason, tags, score)
+                }
+                onImportRequested: root.importCutsFromJson()
+                onExportRequested: appController.exportCuts(root.cutsToArray())
+                onFastExportAllRequested: function(outputDir, exportMode) {
+                    videoCutController.exportSegments(appController.selectedVideoPath, root.cutsToArray(), outputDir, exportMode)
+                }
+                onHeaderExpandRequested: appHeader.headerCollapsed = false
+            }
 
-                HomeFooter {
-                    Layout.fillWidth: true
-                    Layout.preferredHeight: root.footerHeight
-                    Layout.minimumHeight: root.shortMode ? 260 : 340
-                    Layout.maximumHeight: 480
-                    cutsModel: cutsModel
-                    compactMode: root.compactMode
-                    lightMode: root.lightMode
-                    narrowMode: root.narrowMode
-                    shortMode: root.shortMode
-                    panelTone: root.panel
-                    textMain: root.textMain
-                    textMuted: root.textMuted
-                    accent: root.accent
-                    scrollbarGutter: root.listScrollbarGutter
-                    selectedCutIndex: root.selectedCutIndex
-                    videoDurationMs: homeBody.videoDurationMs
-                    videoPositionMs: homeBody.videoPositionMs
-                    onCutSelected: function(index) { root.selectedCutIndex = index }
-                    onEditRequested: function(startTime, endTime, reason, tags) {
-                        homeBody.applyRecommendation(startTime, endTime, reason, tags)
-                    }
-                    onPreviewRequested: function(startTime) { homeBody.previewCut(startTime) }
-                    onJumpRequested: function(timeText) { homeBody.seekToTime(timeText) }
-                    onSuggestedCutAdded: function(startTime, endTime, reason, tags, score) {
-                        root.addSuggestedCut(startTime, endTime, reason, tags, score)
-                    }
-                    onImportRequested: root.importCutsFromJson()
-                    onExportRequested: appController.exportCuts(root.cutsToArray())
-                    onFastExportAllRequested: function(outputDir, exportMode) {
-                        videoCutController.exportSegments(appController.selectedVideoPath, root.cutsToArray(), outputDir, exportMode)
-                    }
+            CutExportControls {
+                Layout.fillWidth: true
+                Layout.preferredHeight: root.shortMode ? 72 : 78
+                Layout.minimumHeight: root.shortMode ? 68 : 74
+                outputDir: root.outputDir
+                narrowMode: root.narrowMode
+                hasSegments: cutsModel.count > 0
+                lightMode: root.lightMode
+                textMain: root.textMain
+                textMuted: root.textMuted
+                accent: root.accent
+                onChooseFolderRequested: root.chooseOutputFolder()
+                onPreviewCutsRequested: root.previewCuts()
+                onExportRemoveRequested: {
+                    videoCutController.exportSegments(appController.selectedVideoPath, root.cutsToArray(), root.outputDir, "remove_intervals")
                 }
             }
         }

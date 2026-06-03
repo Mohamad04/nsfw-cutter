@@ -10,14 +10,14 @@ Item {
     property bool lightMode: false
     property bool narrowMode: false
     property url appIconSource: Qt.resolvedUrl("../../../assets/icons/app.png")
-    property color panelColor: "#0B1324"
-    property color strokeColor: "#1F2F4A"
-    property color textColor: "#F8FAFC"
-    property color mutedTextColor: "#94A3B8"
-    property color accentColor: "#38BDF8"
-    readonly property int expandedHeaderHeight: 76
+    property color panelColor: "#0C1625"
+    property color strokeColor: "#223247"
+    property color textColor: "#F3F6FB"
+    property color mutedTextColor: "#92A2B8"
+    property color accentColor: "#2F7BFF"
+    readonly property int expandedHeaderHeight: root.compactMode ? 64 : 70
     readonly property int collapsedHeaderHeight: 0
-    readonly property int preferredHeaderHeight: root.headerCollapsed ? root.collapsedHeaderHeight : root.expandedHeaderHeight
+    readonly property int preferredHeaderHeight: root.expandedHeaderHeight
 
     signal openFileRequested()
     signal openFilesRequested()
@@ -29,223 +29,188 @@ Item {
 
     AppTheme { id: theme }
 
-    function subtitleNoneReadable() {
-        return appController.subtitleStatus.indexOf("None text-readable") >= 0
+    function selectedSubtitleLabel() {
+        var options = appController.analysisSubtitleOptions
+        for (var index = 0; index < options.length; index += 1) {
+            if (options[index].selected) return options[index].label
+        }
+        if (appController.subtitleCandidates.length > 0) return "Select subtitle"
+        if (appController.subtitleDetectionState === "loading") return "Detecting"
+        return "Subtitles"
     }
 
-    function subtitlePillColor() {
-        if (appController.subtitleDetectionState === "error")
-            return root.lightMode ? theme.lightDangerSoft : theme.darkDangerSoft
-        if (appController.subtitleDetectionState === "loading")
-            return root.lightMode ? theme.lightCyanSoft : theme.darkCyanSoft
-        if (appController.subtitleCandidates.length > 0 && appController.selectedAnalysisSubtitleId.length === 0) {
-            if (root.subtitleNoneReadable())
-                return root.lightMode ? theme.lightWarningSoft : theme.darkWarningSoft
-            return root.lightMode ? theme.lightAccentSoft : theme.darkAccentSoft
-        }
-        if (appController.selectedAnalysisSubtitleId.length > 0)
-            return root.lightMode ? theme.lightSuccessSoft : theme.darkSuccessSoft
-        return root.lightMode ? "#F1F5F9" : "#162033"
+    function subtitleCountLabel() {
+        var count = appController.subtitleCandidates.length
+        if (count === 1) return "1 subtitle detected"
+        return count + " subtitles detected"
     }
 
-    function subtitlePillBorderColor() {
-        if (appController.subtitleDetectionState === "error")
-            return root.lightMode ? "#FCA5A5" : "#7F1D1D"
-        if (appController.subtitleDetectionState === "loading")
-            return root.lightMode ? "#7DD3FC" : "#075985"
-        if (appController.subtitleCandidates.length > 0 && appController.selectedAnalysisSubtitleId.length === 0) {
-            if (root.subtitleNoneReadable())
-                return root.lightMode ? "#FDE68A" : "#9A3412"
-            return root.lightMode ? "#93C5FD" : "#1D4ED8"
-        }
-        if (appController.selectedAnalysisSubtitleId.length > 0)
-            return root.lightMode ? "#86EFAC" : "#1B6F3A"
-        return root.lightMode ? theme.lightBorder : "#243244"
-    }
-
-    function subtitlePillTextColor() {
-        if (appController.subtitleDetectionState === "error")
-            return root.lightMode ? theme.lightDanger : theme.darkDanger
-        if (appController.subtitleDetectionState === "loading")
-            return root.lightMode ? theme.lightCyan : theme.darkCyan
-        if (appController.subtitleCandidates.length > 0 && appController.selectedAnalysisSubtitleId.length === 0) {
-            if (root.subtitleNoneReadable())
-                return root.lightMode ? theme.lightWarning : theme.darkWarning
-            return root.lightMode ? theme.lightAccent : theme.darkAccent
-        }
-        if (appController.selectedAnalysisSubtitleId.length > 0)
-            return root.lightMode ? theme.lightSuccess : theme.darkSuccess
-        return root.lightMode ? theme.lightTextMuted : theme.darkTextMuted
+    function toggleTheme() {
+        settingsController.setTheme(root.lightMode ? "dark" : "light")
     }
 
     implicitHeight: root.preferredHeaderHeight
     implicitWidth: 1200
 
-    Behavior on height {
-        NumberAnimation {
-            duration: 160
-            easing.type: Easing.OutCubic
-        }
-    }
-
     Panel {
-        id: expandedHeader
-
         anchors.fill: parent
         panelColor: root.panelColor
         strokeColor: root.strokeColor
-        visible: !root.headerCollapsed
-        opacity: root.headerCollapsed ? 0 : 1
-
-        Behavior on opacity {
-            NumberAnimation {
-                duration: 120
-                easing.type: Easing.OutQuad
-            }
-        }
 
         RowLayout {
             anchors.fill: parent
-            anchors.leftMargin: root.compactMode ? 14 : 18
-            anchors.rightMargin: 14
-            anchors.topMargin: 10
-            anchors.bottomMargin: 10
-            spacing: root.compactMode ? 10 : 12
+            anchors.leftMargin: root.compactMode ? 12 : 16
+            anchors.rightMargin: root.compactMode ? 12 : 16
+            anchors.topMargin: 8
+            anchors.bottomMargin: 8
+            spacing: root.compactMode ? 8 : 12
 
             Image {
                 source: root.appIconSource
                 fillMode: Image.PreserveAspectFit
                 smooth: true
                 mipmap: true
-                Layout.preferredWidth: root.compactMode ? 40 : 44
-                Layout.preferredHeight: root.compactMode ? 40 : 44
+                Layout.preferredWidth: root.compactMode ? 36 : 42
+                Layout.preferredHeight: root.compactMode ? 36 : 42
             }
 
             Text {
                 text: "NSFW Cutter"
                 color: root.textColor
-                font.pixelSize: root.compactMode ? 17 : 20
+                font.pixelSize: root.compactMode ? 18 : 22
                 font.bold: true
                 visible: !root.narrowMode
-                Layout.preferredWidth: root.compactMode ? 150 : 170
+                Layout.preferredWidth: root.compactMode ? 136 : 170
+                Layout.minimumWidth: 0
+                elide: Text.ElideRight
+            }
+
+            Rectangle {
+                Layout.preferredWidth: 1
+                Layout.preferredHeight: 34
+                color: root.lightMode ? theme.lightDivider : theme.darkDivider
+                visible: !root.narrowMode
+            }
+
+            ColumnLayout {
+                Layout.fillWidth: true
+                Layout.minimumWidth: 160
+                spacing: 2
+
+                Text {
+                    Layout.fillWidth: true
+                    text: appController.videoName.length > 0 && appController.selectedVideoPath.length > 0
+                        ? appController.videoName
+                        : "No video loaded"
+                    color: root.textColor
+                    font.pixelSize: root.compactMode ? 13 : 15
+                    font.weight: Font.DemiBold
+                    elide: Text.ElideMiddle
+                }
+
+                Text {
+                    Layout.fillWidth: true
+                    text: appController.selectedVideoPath.length > 0
+                        ? "Stream-copy preview  |  " + appController.selectedVideoPath
+                        : "Open a video to start marking removal intervals"
+                    color: root.mutedTextColor
+                    font.pixelSize: 11
+                    elide: Text.ElideMiddle
+                    visible: !root.compactMode || root.width > 1300
+                }
             }
 
             AppButton {
                 id: mediaButton
 
-                text: "Media v"
-                variant: "primary"
+                text: "+ Add / Open Video"
+                variant: "secondary"
                 size: "md"
                 lightMode: root.lightMode
-                Layout.preferredWidth: root.compactMode ? 110 : 130
+                Layout.preferredWidth: root.compactMode ? 132 : 160
+                Layout.preferredHeight: 40
                 onClicked: mediaMenu.showAt(mediaButton)
             }
 
+            AppButton {
+                id: subtitleButton
+
+                text: root.selectedSubtitleLabel() + " v"
+                variant: "secondary"
+                size: "md"
+                lightMode: root.lightMode
+                Layout.preferredWidth: root.compactMode ? 124 : 156
+                Layout.preferredHeight: 40
+                enabled: appController.subtitleCandidates.length > 0
+                    || appController.subtitleDetectionState === "loading"
+                onClicked: if (appController.subtitleCandidates.length > 0) subtitleSelector.showAt(subtitleButton)
+            }
+
             Rectangle {
-                Layout.preferredHeight: root.compactMode ? 42 : 46
-                Layout.fillWidth: true
-                radius: 16
-                color: root.lightMode ? theme.lightSurfaceAlt : "#0A1120"
-                border.color: root.lightMode ? theme.lightBorder : "#243244"
+                Layout.preferredWidth: root.compactMode ? 134 : 166
+                Layout.preferredHeight: 40
+                radius: 12
+                color: root.lightMode ? theme.lightSuccessSoft : "#0D2F1D"
+                border.color: root.lightMode ? "#A7F3D0" : "#1B6F3A"
+                visible: !root.narrowMode
 
-                RowLayout {
+                Text {
                     anchors.fill: parent
-                    anchors.leftMargin: 12
-                    anchors.rightMargin: 12
-                    spacing: 8
-
-                    Text {
-                        text: appController.videoName
-                        color: root.lightMode ? theme.lightTextPrimary : "#DDE7F6"
-                        font.pixelSize: 13
-                        elide: Text.ElideRight
-                        Layout.fillWidth: true
-                    }
-
-                    Rectangle {
-                        Layout.preferredWidth: 1
-                        Layout.preferredHeight: 18
-                        color: root.lightMode ? theme.lightDivider : "#243244"
-                        visible: !root.narrowMode
-                    }
-
-                    Rectangle {
-                        id: subtitlePill
-
-                        Layout.preferredWidth: root.compactMode ? 250 : 290
-                        Layout.preferredHeight: 28
-                        radius: 12
-                        visible: !root.narrowMode
-                        color: root.subtitlePillColor()
-                        border.color: root.subtitlePillBorderColor()
-
-                        Behavior on color {
-                            ColorAnimation { duration: 120 }
-                        }
-
-                        Text {
-                            anchors.fill: parent
-                            anchors.leftMargin: 10
-                            anchors.rightMargin: 10
-                            text: appController.subtitleStatus + (appController.subtitleCandidates.length > 0 ? " v" : "")
-                            color: root.subtitlePillTextColor()
-                            font.pixelSize: 12
-                            elide: Text.ElideRight
-                            verticalAlignment: Text.AlignVCenter
-                        }
-
-                        MouseArea {
-                            anchors.fill: parent
-                            enabled: appController.subtitleCandidates.length > 0
-                            hoverEnabled: true
-                            cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-                            onClicked: subtitleSelector.showAt(subtitlePill)
-                        }
-                    }
+                    anchors.leftMargin: 10
+                    anchors.rightMargin: 10
+                    text: root.subtitleCountLabel()
+                    color: root.lightMode ? theme.lightSuccess : theme.darkSuccess
+                    font.pixelSize: 12
+                    font.weight: Font.DemiBold
+                    elide: Text.ElideRight
+                    verticalAlignment: Text.AlignVCenter
+                    horizontalAlignment: Text.AlignHCenter
                 }
             }
 
             Rectangle {
-                Layout.preferredHeight: root.compactMode ? 38 : 40
-                Layout.preferredWidth: root.compactMode ? 150 : 165
-                radius: 16
-                color: root.lightMode ? theme.lightSuccessSoft : "#103D22"
-                border.color: root.lightMode ? "#86EFAC" : "#1B6F3A"
+                Layout.preferredWidth: root.compactMode ? 118 : 138
+                Layout.preferredHeight: 40
+                radius: 12
+                color: root.lightMode ? theme.lightSuccessSoft : "#0D2F1D"
+                border.color: root.lightMode ? "#A7F3D0" : "#1B6F3A"
 
                 Text {
-                    anchors.centerIn: parent
+                    anchors.fill: parent
+                    anchors.leftMargin: 10
+                    anchors.rightMargin: 10
                     text: appController.projectStatus
-                    color: root.lightMode ? "#166534" : "#86EFAC"
+                    color: root.lightMode ? theme.lightSuccess : theme.darkSuccess
                     font.pixelSize: 12
                     font.weight: Font.DemiBold
                     elide: Text.ElideRight
-                    width: parent.width - 16
+                    verticalAlignment: Text.AlignVCenter
                     horizontalAlignment: Text.AlignHCenter
                 }
             }
 
             AppButton {
-                text: "⚙"
+                text: root.lightMode ? "Dark" : "Light"
                 variant: "ghost"
-                size: "icon"
+                size: "sm"
                 lightMode: root.lightMode
-                Layout.preferredWidth: 52
-                Layout.preferredHeight: 52
+                Layout.preferredWidth: 70
+                Layout.preferredHeight: 40
                 ToolTip.visible: hovered
-                ToolTip.text: "Settings"
-                onClicked: root.settingsClicked()
+                ToolTip.text: "Toggle dark/light theme"
+                onClicked: root.toggleTheme()
             }
 
             AppButton {
-                text: "▲"
+                text: "Settings"
                 variant: "ghost"
-                size: "icon"
+                size: "sm"
                 lightMode: root.lightMode
-                Layout.preferredWidth: 52
-                Layout.preferredHeight: 52
+                Layout.preferredWidth: root.compactMode ? 72 : 88
+                Layout.preferredHeight: 40
                 ToolTip.visible: hovered
-                ToolTip.text: "Collapse header"
-                onClicked: root.headerCollapsed = true
+                ToolTip.text: "Settings"
+                onClicked: root.settingsClicked()
             }
         }
     }
@@ -299,5 +264,4 @@ Item {
         sequence: "Ctrl+O"
         onActivated: root.openFileRequested()
     }
-
 }

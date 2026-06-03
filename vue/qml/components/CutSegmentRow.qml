@@ -24,6 +24,8 @@ Rectangle {
     property color textMain: "#F8FAFC"
     property color textMuted: "#94A3B8"
     property color accent: "#38BDF8"
+    property color requestedColor: root.lightMode ? "#F07818" : "#F59E3D"
+    property color safeColor: root.lightMode ? "#1FA34A" : "#8AE6A2"
     property int indexColumnWidth: 44
     property int timeColumnWidth: 125
     property int durationColumnWidth: 135
@@ -72,14 +74,13 @@ Rectangle {
         visible: !root.narrowMode
 
         Text { text: root.segmentIndex; color: root.textMain; font.pixelSize: 11; Layout.preferredWidth: root.indexColumnWidth; Layout.minimumWidth: 0 }
-        Text { text: root.startTime; color: root.textMain; font.pixelSize: 11; Layout.preferredWidth: root.timeColumnWidth; Layout.minimumWidth: 0; elide: Text.ElideRight }
-        Text { text: root.endTime; color: root.textMain; font.pixelSize: 11; Layout.preferredWidth: root.timeColumnWidth; Layout.minimumWidth: 0; elide: Text.ElideRight }
-        Text { text: root.safeStartTime; color: root.lightMode ? "#B45309" : "#FED7AA"; font.pixelSize: 11; Layout.preferredWidth: root.timeColumnWidth; Layout.minimumWidth: 0; elide: Text.ElideRight }
-        Text { text: root.safeEndTime; color: root.lightMode ? "#B45309" : "#FED7AA"; font.pixelSize: 11; Layout.preferredWidth: root.timeColumnWidth; Layout.minimumWidth: 0; elide: Text.ElideRight }
+        Text { text: root.status; color: root.status === "Warning" ? (root.lightMode ? "#A16207" : "#FDE68A") : (root.status === "Failed" || root.status === "Safe unavailable" ? (root.lightMode ? "#DC2626" : "#FCA5A5") : (root.lightMode ? "#15803D" : "#8AE6A2")); font.pixelSize: 11; Layout.preferredWidth: root.statusColumnWidth; Layout.minimumWidth: 0; elide: Text.ElideRight }
+        Text { text: root.startTime; color: root.requestedColor; font.pixelSize: 11; font.bold: true; Layout.preferredWidth: root.timeColumnWidth; Layout.minimumWidth: 0; elide: Text.ElideRight }
+        Text { text: root.endTime; color: root.requestedColor; font.pixelSize: 11; font.bold: true; Layout.preferredWidth: root.timeColumnWidth; Layout.minimumWidth: 0; elide: Text.ElideRight }
+        Text { text: root.safeStartTime; color: root.safeColor; font.pixelSize: 11; font.bold: true; Layout.preferredWidth: root.timeColumnWidth; Layout.minimumWidth: 0; elide: Text.ElideRight }
+        Text { text: root.safeEndTime; color: root.safeColor; font.pixelSize: 11; font.bold: true; Layout.preferredWidth: root.timeColumnWidth; Layout.minimumWidth: 0; elide: Text.ElideRight }
         Text { text: root.durationText(); color: root.textMuted; font.pixelSize: 11; Layout.preferredWidth: root.durationColumnWidth; Layout.minimumWidth: 0; elide: Text.ElideRight }
-        Text { text: "-" + root.extraBefore + ", +" + root.extraAfter; color: root.lightMode ? "#A16207" : "#FDE68A"; font.pixelSize: 11; Layout.preferredWidth: root.extraColumnWidth; Layout.minimumWidth: 0; elide: Text.ElideRight }
-        Text { text: root.reason; color: root.lightMode ? root.textMain : "#E5E7EB"; font.pixelSize: 11; Layout.fillWidth: true; Layout.minimumWidth: 56; elide: Text.ElideRight }
-        Text { text: root.status; color: root.status === "Warning" ? (root.lightMode ? "#A16207" : "#FDE68A") : (root.lightMode ? "#16A34A" : "#86EFAC"); font.pixelSize: 11; Layout.preferredWidth: root.statusColumnWidth; Layout.minimumWidth: 0; elide: Text.ElideRight }
+        Text { text: root.score; color: root.textMain; font.pixelSize: 11; Layout.fillWidth: true; Layout.minimumWidth: root.extraColumnWidth; elide: Text.ElideRight }
 
         AppButton { text: "Jump"; variant: "secondary"; size: "sm"; lightMode: root.lightMode; Layout.preferredWidth: root.jumpButtonWidth; Layout.minimumWidth: 0; onClicked: root.jumpStartRequested() }
         AppButton { text: "Edit"; variant: "ghost"; size: "sm"; lightMode: root.lightMode; Layout.preferredWidth: root.editButtonWidth; Layout.minimumWidth: 0; onClicked: root.editRequested() }
@@ -94,7 +95,7 @@ Rectangle {
 
         Text {
             Layout.fillWidth: true
-            text: "#" + root.segmentIndex + "  Requested " + root.startTime + " -> " + root.endTime + "  Safe " + root.safeStartTime + " -> " + root.safeEndTime
+            text: "#" + root.segmentIndex + "  " + root.status + "  Requested " + root.startTime + " -> " + root.endTime + "  Safe " + root.safeStartTime + " -> " + root.safeEndTime
             color: root.textMain
             font.pixelSize: 11
             elide: Text.ElideRight
@@ -102,7 +103,7 @@ Rectangle {
 
         Text {
             Layout.fillWidth: true
-            text: "Extra -" + root.extraBefore + ", +" + root.extraAfter + " | " + root.reason + " | " + root.tags + " | " + root.status
+            text: "Removed " + root.durationText() + " | Confidence " + root.score + " | " + root.reason + " | " + root.tags
             color: root.textMuted
             font.pixelSize: 11
             elide: Text.ElideRight

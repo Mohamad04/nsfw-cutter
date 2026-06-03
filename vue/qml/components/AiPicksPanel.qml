@@ -8,134 +8,172 @@ Rectangle {
     property bool lightMode: false
     property bool narrowMode: false
     property bool shortMode: false
-    property color textMain: "#F8FAFC"
-    property color textMuted: "#94A3B8"
-    property color accent: "#38BDF8"
+    property color textMain: "#F3F6FB"
+    property color textMuted: "#92A2B8"
+    property color accent: "#2F7BFF"
     property int scrollbarGutter: 14
-    readonly property bool denseMode: root.narrowMode || root.width < 360
+    property var picksModel: emptyAiModel
+    readonly property int pickCount: root.picksModel ? root.picksModel.count : 0
 
     signal editRequested(string startTime, string endTime, string reason, string tags)
     signal addRequested(string startTime, string endTime, string reason, string tags, string score)
 
-    radius: 14
-    color: root.lightMode ? "#FFFFFF" : "#08111F"
-    border.color: root.lightMode ? "#CBD5E1" : "#1F2F4A"
+    radius: 16
+    color: root.lightMode ? theme.lightSurface : theme.darkSurface
+    border.color: root.lightMode ? theme.lightBorder : theme.darkBorder
     clip: true
 
-    ListModel {
-        id: aiModel
-        ListElement { start: "00:05:21"; end: "00:05:45"; label: "Kissing scene"; score: "0.87"; tags: "kissing, romance" }
-        ListElement { start: "00:12:36"; end: "00:12:55"; label: "AI suggested scene"; score: "0.92"; tags: "nsfw, kissing" }
-        ListElement { start: "00:18:43"; end: "00:19:10"; label: "Intimate scene"; score: "0.78"; tags: "intimate, nsfw" }
-    }
+    AppTheme { id: theme }
+    ListModel { id: emptyAiModel }
 
-    ColumnLayout {
+    RowLayout {
         anchors.fill: parent
         anchors.margins: 10
-        spacing: 8
+        spacing: 12
 
-        RowLayout {
-            Layout.fillWidth: true
+        ColumnLayout {
+            Layout.preferredWidth: root.narrowMode ? 138 : 168
+            Layout.fillHeight: true
+            spacing: 2
 
             Text {
+                Layout.fillWidth: true
                 text: "AI PICKS"
                 color: root.accent
-                font.pixelSize: 15
+                font.pixelSize: 14
                 font.bold: true
                 font.letterSpacing: 0.8
+                elide: Text.ElideRight
             }
 
-            Item { Layout.fillWidth: true }
-
             Text {
-                text: "Add is one click"
+                Layout.fillWidth: true
+                text: root.pickCount > 0 ? (root.pickCount + " detections") : "No detections loaded"
                 color: root.textMuted
                 font.pixelSize: 12
-                visible: !root.narrowMode
+                elide: Text.ElideRight
+            }
+
+            Item { Layout.fillHeight: true }
+
+            Text {
+                Layout.fillWidth: true
+                text: "Horizontal suggestions"
+                color: root.textMuted
+                opacity: 0.78
+                font.pixelSize: 10
+                visible: !root.shortMode
+                elide: Text.ElideRight
             }
         }
 
-        ListView {
-            id: aiListView
+        Rectangle {
             Layout.fillWidth: true
             Layout.fillHeight: true
-            model: aiModel
-            spacing: 6
+            radius: 14
+            color: root.lightMode ? "#F8FAFC" : "#081321"
+            border.color: root.lightMode ? "#DCE4EF" : "#1B2B45"
             clip: true
-            ScrollBar.vertical: AppScrollBar { lightMode: root.lightMode }
 
-            delegate: Rectangle {
-                required property int index
-                required property string start
-                required property string end
-                required property string label
-                required property string score
-                required property string tags
+            Text {
+                anchors.centerIn: parent
+                width: parent.width - 36
+                text: "AI detections will appear here when a real detection model exposes results to the UI."
+                color: root.textMuted
+                font.pixelSize: 12
+                wrapMode: Text.WordWrap
+                horizontalAlignment: Text.AlignHCenter
+                visible: root.pickCount === 0
+            }
 
-                width: aiListView.width - root.scrollbarGutter
-                height: root.shortMode ? 44 : 50
-                radius: 10
-                color: root.lightMode ? (index === 1 ? "#EFF6FF" : "#F8FAFC") : "#0A1120"
-                border.color: root.lightMode ? (index === 1 ? "#60A5FA" : "#CBD5E1") : (index === 1 ? "#155E9E" : "#1F2F4A")
+            ListView {
+                id: aiListView
+                anchors.fill: parent
+                anchors.margins: 8
+                visible: root.pickCount > 0
+                model: root.picksModel
+                orientation: ListView.Horizontal
+                spacing: 8
+                clip: true
+                boundsBehavior: Flickable.StopAtBounds
+                ScrollBar.horizontal: AppScrollBar { lightMode: root.lightMode }
 
-                RowLayout {
-                    anchors.fill: parent
-                    anchors.leftMargin: 10
-                    anchors.rightMargin: 8
-                    spacing: root.denseMode ? 4 : 8
+                delegate: Rectangle {
+                    required property int index
+                    required property string start
+                    required property string end
+                    required property string label
+                    required property string score
+                    required property string tags
+
+                    width: Math.min(300, Math.max(230, aiListView.width * 0.32))
+                    height: aiListView.height - root.scrollbarGutter
+                    radius: 12
+                    color: root.lightMode ? (index === 0 ? "#EFF6FF" : "#FFFFFF") : (index === 0 ? "#12223A" : "#0C1625")
+                    border.color: root.lightMode ? (index === 0 ? "#9BC2FF" : "#DCE4EF") : (index === 0 ? root.accent : "#223247")
 
                     ColumnLayout {
-                        Layout.fillWidth: true
-                        Layout.minimumWidth: 0
-                        spacing: 2
+                        anchors.fill: parent
+                        anchors.margins: 9
+                        spacing: 5
 
-                        Text {
+                        RowLayout {
                             Layout.fillWidth: true
-                            Layout.minimumWidth: 0
-                            text: start + " - " + end
-                            color: index === 1 ? root.accent : root.textMain
-                            font.pixelSize: 13
-                            font.weight: Font.DemiBold
-                            elide: Text.ElideRight
+                            Text {
+                                Layout.fillWidth: true
+                                text: start + " - " + end
+                                color: root.textMain
+                                font.pixelSize: 12
+                                font.bold: true
+                                elide: Text.ElideRight
+                            }
+                            Text {
+                                text: score
+                                color: root.lightMode ? "#15803D" : "#8AE6A2"
+                                font.pixelSize: 11
+                                font.bold: true
+                            }
                         }
 
                         Text {
+                            Layout.fillWidth: true
                             text: label
                             color: root.textMuted
                             font.pixelSize: 11
                             elide: Text.ElideRight
-                            Layout.fillWidth: true
-                            visible: !root.shortMode
                         }
-                    }
 
-                    Text {
-                        text: score
-                        color: root.lightMode ? "#16A34A" : "#86EFAC"
-                        font.pixelSize: 12
-                        font.bold: true
-                        Layout.preferredWidth: 34
-                        visible: !root.denseMode
-                    }
+                        Text {
+                            Layout.fillWidth: true
+                            text: tags
+                            color: root.textMuted
+                            opacity: 0.82
+                            font.pixelSize: 10
+                            elide: Text.ElideRight
+                        }
 
-                    AppButton {
-                        text: "Edit"
-                        variant: "ghost"
-                        size: "sm"
-                        lightMode: root.lightMode
-                        Layout.minimumWidth: 0
-                        Layout.preferredWidth: root.denseMode ? 44 : 52
-                        onClicked: root.editRequested(start, end, label, tags)
-                    }
+                        Item { Layout.fillHeight: true }
 
-                    AppButton {
-                        text: "Add"
-                        variant: "primary"
-                        size: "sm"
-                        lightMode: root.lightMode
-                        Layout.minimumWidth: 0
-                        Layout.preferredWidth: root.denseMode ? 44 : 52
-                        onClicked: root.addRequested(start, end, label, tags, score)
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 6
+                            AppButton {
+                                text: "Edit"
+                                variant: "ghost"
+                                size: "sm"
+                                lightMode: root.lightMode
+                                Layout.fillWidth: true
+                                onClicked: root.editRequested(start, end, label, tags)
+                            }
+                            AppButton {
+                                text: "Add"
+                                variant: "primary"
+                                size: "sm"
+                                lightMode: root.lightMode
+                                Layout.fillWidth: true
+                                onClicked: root.addRequested(start, end, label, tags, score)
+                            }
+                        }
                     }
                 }
             }

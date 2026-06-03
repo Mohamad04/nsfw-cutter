@@ -180,8 +180,8 @@ RowLayout {
                         width: parent.safeW
                         height: parent.height
                         radius: 3
-                        color: root.selectedCutIndex === parent.index ? "#F97316" : "#EA580C"
-                        border.color: "#FDE68A"
+                        color: root.selectedCutIndex === parent.index ? "#22B454" : "#1FA34A"
+                        border.color: root.lightMode ? "#86EFAC" : "#22C55E"
                         border.width: root.selectedCutIndex === parent.index ? 1 : 0
                         opacity: 0.92
                     }
@@ -192,7 +192,7 @@ RowLayout {
                         width: parent.requestedW
                         height: parent.height - 6
                         radius: 2
-                        color: root.selectedCutIndex === parent.index ? "#38BDF8" : "#0891B2"
+                        color: root.selectedCutIndex === parent.index ? "#F59E3D" : "#F07818"
                     }
 
                     MouseArea {
@@ -326,9 +326,9 @@ RowLayout {
                 width: visible ? Math.max(8, (endMs - startMs) / root.durationMs * parent.width) : 0
                 height: parent.height + 10
                 radius: 4
-                color: "#F97316"
+                color: "#22B454"
                 opacity: 0.68
-                border.color: "#FDE68A"
+                border.color: root.lightMode ? "#86EFAC" : "#22C55E"
                 border.width: 1
             }
 
@@ -345,7 +345,7 @@ RowLayout {
                 width: visible ? Math.max(8, (rightMs - leftMs) / root.durationMs * parent.width) : 0
                 height: parent.height + 4
                 radius: 4
-                color: root.cutPreview.valid === true ? "#22C55E" : "#EF4444"
+                color: root.cutPreview.valid === true ? "#F59E3D" : "#EF4444"
                 opacity: 0.82
                 border.color: root.lightMode ? "#FFFFFF" : "#F8FAFC"
                 border.width: 1
@@ -356,7 +356,7 @@ RowLayout {
                     hoverEnabled: true
                     ToolTip.visible: containsMouse
                     ToolTip.text: root.cutPreview.valid === true
-                        ? "Draft requested cut\nGreen: requested range\nOrange: safe stream-copy range"
+                        ? "Draft requested cut\nOrange: requested range\nGreen: safe adjusted removal"
                         : "Invalid draft cut\nEnd time must be after start time"
                 }
             }

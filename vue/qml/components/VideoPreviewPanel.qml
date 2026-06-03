@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Controls
 import QtQuick.Layouts
 import QtMultimedia
 
@@ -8,11 +9,11 @@ Panel {
     property bool compactMode: false
     property bool lightMode: false
     property bool shortMode: false
-    property color panelTone: "#0B1324"
+    property color panelTone: "#0C1625"
     property color videoTone: "#1E293B"
-    property color textMain: "#F8FAFC"
-    property color textMuted: "#94A3B8"
-    property color accent: "#38BDF8"
+    property color textMain: "#F3F6FB"
+    property color textMuted: "#92A2B8"
+    property color accent: "#2F7BFF"
     property int cutCount: 0
     property var cutsModel
     property int selectedCutIndex: -1
@@ -28,7 +29,7 @@ Panel {
     signal cutRangeChanged(int index, real startMs, real endMs)
 
     panelColor: root.panelTone
-    strokeColor: root.lightMode ? "#CBD5E1" : "#21324D"
+    strokeColor: root.lightMode ? "#DCE4EF" : "#223247"
 
     AppTheme { id: theme }
 
@@ -47,9 +48,7 @@ Panel {
             return "" + value
         }
         var text = pad(hours) + ":" + pad(minutes) + ":" + pad(seconds)
-        if (milliseconds > 0) {
-            text += "." + padMillis(milliseconds)
-        }
+        if (milliseconds > 0) text += "." + padMillis(milliseconds)
         return text
     }
 
@@ -76,6 +75,12 @@ Panel {
     function playFromTime(timeText) {
         player.position = parseTimeMs(timeText)
         player.play()
+    }
+
+    function previewSelectedCut() {
+        if (!root.cutsModel || root.selectedCutIndex < 0 || root.selectedCutIndex >= root.cutsModel.count) return
+        var cut = root.cutsModel.get(root.selectedCutIndex)
+        root.playFromTime(cut.safeStart || cut.start || "00:00:00")
     }
 
     function subtitleTrackCount() {
@@ -141,18 +146,18 @@ Panel {
 
     ColumnLayout {
         anchors.fill: parent
-        anchors.margins: theme.panelPadding
-        spacing: root.compactMode ? 10 : 12
+        anchors.margins: root.compactMode ? 10 : theme.panelPadding
+        spacing: root.compactMode ? 8 : 10
 
         RowLayout {
             Layout.fillWidth: true
-            Layout.preferredHeight: 28
+            Layout.preferredHeight: 24
             spacing: 8
 
             Text {
-                text: "VIDEO"
+                text: "VIDEO PREVIEW"
                 color: root.accent
-                font.pixelSize: 15
+                font.pixelSize: 14
                 font.bold: true
                 font.letterSpacing: 0.8
             }
@@ -176,7 +181,7 @@ Panel {
             id: videoPlayer
             Layout.fillWidth: true
             Layout.fillHeight: true
-            Layout.minimumHeight: root.shortMode ? 210 : (root.compactMode ? 320 : 360)
+            Layout.minimumHeight: root.shortMode ? 250 : (root.compactMode ? 330 : 430)
             compactMode: root.compactMode
             lightMode: root.lightMode
             playing: player.playbackState === MediaPlayer.PlayingState
@@ -192,23 +197,85 @@ Panel {
             textMuted: root.textMuted
             accent: root.accent
             onPlayRequested: player.play()
-            onSeekRequested: function(positionMs) { player.position = positionMs }
-            onSkipRequested: function(seconds) { root.seekBy(seconds) }
-            onPlaybackToggled: root.togglePlayback()
-            onStartRequested: root.startRequested(root.formatTime(player.position))
-            onEndRequested: root.endRequested(root.formatTime(player.position))
-            onAddCutRequested: root.addCutRequested()
-            onVolumeRequested: function(value) { root.volumeLevel = value }
-            onMarkerSelected: function(index, positionMs) {
-                player.position = positionMs
-                root.cutMarkerSelected(index)
-            }
-            onCutSelected: function(index) {
-                root.cutMarkerSelected(index)
-            }
-            onCutRangeChanged: function(index, startMs, endMs) {
-                root.cutRangeChanged(index, startMs, endMs)
+        }
+
+        Rectangle {
+            Layout.fillWidth: true
+            Layout.preferredHeight: root.compactMode ? 92 : 104
+            radius: 12
+            color: root.lightMode ? "#FFFFFF" : "#091321"
+            border.color: root.lightMode ? "#DCE4EF" : "#223247"
+
+            ColumnLayout {
+                anchors.fill: parent
+                anchors.margins: root.compactMode ? 8 : 10
+                spacing: 8
+
+                VideoTimeline {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 28
+                    positionMs: player.position
+                    durationMs: player.duration
+                    cutsModel: root.cutsModel
+                    selectedCutIndex: root.selectedCutIndex
+                    cutPreview: root.cutPreview
+                    lightMode: root.lightMode
+                    textMain: root.textMain
+                    accent: root.lightMode ? theme.lightPlayhead : theme.darkPlayhead
+                    onSeekRequested: function(positionMs) { player.position = positionMs }
+                    onMarkerSelected: function(index, positionMs) {
+                        player.position = positionMs
+                        root.cutMarkerSelected(index)
+                    }
+                    onCutSelected: function(index) { root.cutMarkerSelected(index) }
+                    onCutRangeChanged: function(index, startMs, endMs) {
+                        root.cutRangeChanged(index, startMs, endMs)
+                    }
+                }
+
+                VideoControls {
+                    id: controls
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: root.compactMode ? 38 : 42
+                    compactMode: root.compactMode
+                    lightMode: root.lightMode
+                    playing: player.playbackState === MediaPlayer.PlayingState
+                    volume: root.volumeLevel
+                    previewEnabled: root.selectedCutIndex >= 0 && root.cutsModel && root.selectedCutIndex < root.cutsModel.count
+                    onSeekRequested: function(seconds) { root.seekBy(seconds) }
+                    onPlaybackToggled: root.togglePlayback()
+                    onStartRequested: root.startRequested(root.formatTime(player.position))
+                    onEndRequested: root.endRequested(root.formatTime(player.position))
+                    onAddCutRequested: root.addCutRequested()
+                    onPreviewRequested: root.previewSelectedCut()
+                    onSubtitlesRequested: if (appController.subtitleCandidates.length > 0) subtitleSelector.showAt(controls)
+                    onVolumeRequested: function(value) { root.volumeLevel = value }
+                }
             }
         }
+    }
+
+    SubtitleSelectorPopup {
+        id: subtitleSelector
+
+        lightMode: root.lightMode
+        textColor: root.textMain
+        mutedTextColor: root.textMuted
+        options: appController.analysisSubtitleOptions
+        detectedCount: appController.subtitleCandidates.length
+        onCandidateSelected: function(candidateId) {
+            if (appController.selectAnalysisSubtitle(candidateId))
+                subtitleSelector.closeAfterAction()
+        }
+    }
+
+    Shortcut {
+        sequence: "I"
+        onActivated: root.startRequested(root.formatTime(player.position))
+    }
+
+    Shortcut {
+        sequence: "O"
+        onActivated: root.endRequested(root.formatTime(player.position))
     }
 }

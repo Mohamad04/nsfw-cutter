@@ -3,7 +3,7 @@ from pathlib import Path
 
 from services.infrastructure.ffmpeg.subtitles import probe_subtitle_streams
 from services.media.validation_service import validate_input_video
-from services.subtitles.discovery_service import LANGUAGE_NAMES
+from services.subtitles.language_resolver import resolve_language_name
 
 
 logger = logging.getLogger(__name__)
@@ -87,6 +87,4 @@ def _classify_embedded_codec(codec_name: str | None) -> tuple[str, bool, str | N
 
 
 def _language_name(language_code: str | None) -> str | None:
-    if not language_code:
-        return None
-    return LANGUAGE_NAMES.get(language_code.casefold())
+    return resolve_language_name(language_code)

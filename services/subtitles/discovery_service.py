@@ -3,6 +3,7 @@ import unicodedata
 from pathlib import Path
 
 from services.media.validation_service import validate_input_video
+from services.subtitles.language_resolver import resolve_external_language_token
 
 
 logger = logging.getLogger(__name__)
@@ -11,19 +12,6 @@ TEXT_SUBTITLE_EXTENSIONS = {".srt", ".ass", ".ssa", ".vtt"}
 VOBSUB_EXTENSIONS = {".idx", ".sub"}
 SUPPORTED_SUBTITLE_EXTENSIONS = TEXT_SUBTITLE_EXTENSIONS | VOBSUB_EXTENSIONS
 SAFE_SUFFIX_SEPARATORS = {".", "-", "_", " "}
-
-LANGUAGE_NAMES = {
-    "ar": "Arabic",
-    "ara": "Arabic",
-    "arabic": "Arabic",
-    "en": "English",
-    "eng": "English",
-    "english": "English",
-    "fr": "French",
-    "fra": "French",
-    "fre": "French",
-    "french": "French",
-}
 
 
 def find_matching_external_subtitles(video_path: str | Path) -> list[dict]:
@@ -176,10 +164,7 @@ def _language_from_suffix(suffix: str | None) -> tuple[str | None, str | None]:
         return None, None
 
     first_token = suffix.replace("-", ".").replace("_", ".").replace(" ", ".").split(".")[0]
-    normalized_token = _normalized_text(first_token)
-    if normalized_token in LANGUAGE_NAMES:
-        return normalized_token, LANGUAGE_NAMES[normalized_token]
-    return None, None
+    return resolve_external_language_token(first_token)
 
 
 def _normalized_text(value: str) -> str:

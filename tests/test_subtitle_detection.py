@@ -65,6 +65,27 @@ class SubtitleDetectionTests(unittest.TestCase):
 
         self.assertEqual(candidates, [])
 
+    def test_missing_embedded_language_tag_keeps_candidate(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            video = Path(temp_dir) / "movie.mkv"
+            video.touch()
+
+            candidates = get_embedded_subtitle_streams(
+                video,
+                subtitle_probe=lambda _path: [
+                    {
+                        "index": 5,
+                        "codec_type": "subtitle",
+                        "codec_name": "subrip",
+                        "tags": {},
+                    }
+                ],
+            )
+
+        self.assertEqual(len(candidates), 1)
+        self.assertIsNone(candidates[0]["language_code"])
+        self.assertIsNone(candidates[0]["language_name"])
+
     def test_external_exact_base_match_is_detected(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             folder = Path(temp_dir)
@@ -98,6 +119,37 @@ class SubtitleDetectionTests(unittest.TestCase):
         self.assertEqual(candidates[0]["filename_suffix"], "fra")
         self.assertEqual(candidates[0]["language_code"], "fra")
         self.assertEqual(candidates[0]["language_name"], "French")
+
+    def test_external_flag_suffix_is_preserved_without_language_resolution(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            folder = Path(temp_dir)
+            video = folder / "Movie.Name.2005.1080p.YIFY.mp4"
+            subtitle = folder / "Movie.Name.2005.1080p.YIFY.forced.srt"
+            video.touch()
+            subtitle.touch()
+
+            candidates = find_matching_external_subtitles(video)
+
+        self.assertEqual(len(candidates), 1)
+        self.assertEqual(candidates[0]["filename_suffix"], "forced")
+        self.assertEqual(candidates[0]["label"], "forced")
+        self.assertIsNone(candidates[0]["language_code"])
+        self.assertIsNone(candidates[0]["language_name"])
+
+    def test_external_unknown_suffix_keeps_candidate_without_language_resolution(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            folder = Path(temp_dir)
+            video = folder / "Movie.Name.2005.1080p.YIFY.mp4"
+            subtitle = folder / "Movie.Name.2005.1080p.YIFY.xx.srt"
+            video.touch()
+            subtitle.touch()
+
+            candidates = find_matching_external_subtitles(video)
+
+        self.assertEqual(len(candidates), 1)
+        self.assertEqual(candidates[0]["filename_suffix"], "xx")
+        self.assertIsNone(candidates[0]["language_code"])
+        self.assertIsNone(candidates[0]["language_name"])
 
     def test_external_matching_supports_accented_unicode_names(self):
         with tempfile.TemporaryDirectory() as temp_dir:

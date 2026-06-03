@@ -3,3 +3,4 @@ sqlalchemy == 2.0.49
 argon2-cffi == 25.1.0
 pydantic == 2.12.5
 platformdirs == 4.5.1
+pycountry == 26.2.16

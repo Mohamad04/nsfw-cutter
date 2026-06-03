@@ -13,6 +13,7 @@ Rectangle {
     property var cutsModel
     property int selectedCutIndex: -1
     property var cutPreview: ({ "visible": false })
+    property string previewSubtitleText: ""
     property bool overlayActive: true
     property color videoTone: "#1E293B"
     property color textMain: "#F8FAFC"
@@ -55,6 +56,41 @@ Rectangle {
         id: output
         anchors.fill: parent
         fillMode: VideoOutput.PreserveAspectFit
+    }
+
+    Rectangle {
+        id: subtitleOverlay
+
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.bottom: parent.bottom
+        anchors.bottomMargin: root.overlayActive && controlsOverlay.opacity > 0.15
+            ? controlsOverlay.height + (root.compactMode ? 18 : 22)
+            : (root.compactMode ? 22 : 28)
+        width: Math.min(parent.width * 0.82, subtitleText.implicitWidth + 28)
+        height: subtitleText.implicitHeight + 14
+        radius: 10
+        color: "#000000"
+        opacity: root.previewSubtitleText.length > 0 ? 0.78 : 0
+        visible: opacity > 0
+        z: 4
+
+        Behavior on opacity { NumberAnimation { duration: 80 } }
+
+        Text {
+            id: subtitleText
+
+            anchors.centerIn: parent
+            width: Math.min(root.width * 0.78, implicitWidth)
+            text: root.previewSubtitleText
+            color: "#FFFFFF"
+            font.pixelSize: root.compactMode ? 18 : 23
+            font.weight: Font.DemiBold
+            horizontalAlignment: Text.AlignHCenter
+            verticalAlignment: Text.AlignVCenter
+            wrapMode: Text.Wrap
+            style: Text.Outline
+            styleColor: "#000000"
+        }
     }
 
     MouseArea {

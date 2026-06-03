@@ -16,6 +16,9 @@ class AppState:
     analysis_subtitle_auto_selected: bool = False
     player_subtitle_track_count: int = 0
     active_preview_subtitle_track_index: int = -1
+    preview_subtitle_cues: list = field(default_factory=list)
+    preview_subtitle_candidate_id: str = ""
+    preview_subtitle_text: str = ""
     project_status: str = "Ready"
     current_folder: str = ""
     available_videos: list = field(default_factory=list)

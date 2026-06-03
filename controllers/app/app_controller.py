@@ -30,6 +30,7 @@ from services.subtitles.selection_service import (
     find_selectable_candidate,
     preview_subtitle_track_index_for_selection,
 )
+from services.subtitles.srt_preview_service import parse_srt_file, subtitle_text_at_position
 from workers.keyframe_index_worker import KeyframeIndexWorker
 from workers.prepare_export_job_worker import PrepareExportJobWorker
 from workers.subtitle_discovery_worker import SubtitleDiscoveryWorker
@@ -51,6 +52,7 @@ class AppController(QObject):
     analysisSubtitleOptionsChanged = Signal()
     selectedAnalysisSubtitleChanged = Signal()
     activePreviewSubtitleTrackIndexChanged = Signal()
+    previewSubtitleTextChanged = Signal()
     projectStatusChanged = Signal()
     currentFolderChanged = Signal()
     availableVideosChanged = Signal()
@@ -162,6 +164,10 @@ class AppController(QObject):
     @Property(int, notify=activePreviewSubtitleTrackIndexChanged)
     def activePreviewSubtitleTrackIndex(self):
         return self._state.active_preview_subtitle_track_index
+
+    @Property(str, notify=previewSubtitleTextChanged)
+    def previewSubtitleText(self):
+        return self._state.preview_subtitle_text
 
     @Property(str, notify=projectStatusChanged)
     def projectStatus(self):
@@ -403,6 +409,7 @@ class AppController(QObject):
                 self._state.selected_analysis_subtitle_id,
             )
             self._set_active_preview_subtitle_track_index(-1)
+            self._clear_preview_subtitle_overlay()
             logger.info("[Subtitles] Preview subtitles disabled")
             self._emit_subtitle_state_changed()
             return True
@@ -451,6 +458,19 @@ class AppController(QObject):
             )
         self._refresh_active_preview_subtitle_track()
         self._emit_subtitle_state_changed()
+
+    @Slot(int)
+    @Slot(float)
+    def updatePreviewSubtitlePosition(self, position_ms) -> None:
+        if not self._state.preview_subtitle_cues:
+            self._set_preview_subtitle_text("")
+            return
+
+        text = subtitle_text_at_position(
+            self._state.preview_subtitle_cues,
+            max(0, int(position_ms)),
+        )
+        self._set_preview_subtitle_text(text)
 
     @Slot()
     @Slot(str, str)
@@ -646,6 +666,7 @@ class AppController(QObject):
         self._state.player_subtitle_track_count = 0
         self._set_active_preview_subtitle_track_index(-1)
         self._clear_analysis_subtitle_selection()
+        self._clear_preview_subtitle_overlay()
         self._state.subtitle_active_job_token = job_token
         self._state.subtitle_active_media_path = media_path
         self._emit_subtitle_state_changed()
@@ -709,7 +730,11 @@ class AppController(QObject):
             auto_selected=self._state.analysis_subtitle_auto_selected,
         )
         self._state.subtitle_active_job_token = ""
-        self._refresh_active_preview_subtitle_track()
+        if selected_candidate is not None:
+            self._apply_preview_subtitle_selection(selected_candidate)
+        else:
+            self._clear_preview_subtitle_overlay()
+            self._refresh_active_preview_subtitle_track()
         if selected_candidate is not None:
             logger.info(
                 "[Subtitles] Analysis subtitle auto-selected: source=%s, language=%s, id=%s",
@@ -747,19 +772,54 @@ class AppController(QObject):
         self._state.subtitle_status = "Subtitle: Detection error"
         self._state.subtitle_active_job_token = ""
         self._clear_analysis_subtitle_selection()
+        self._clear_preview_subtitle_overlay()
         self._emit_subtitle_state_changed()
         return True
 
     def _apply_preview_subtitle_selection(self, candidate: dict) -> None:
         if candidate.get("source") == "external":
-            logger.info(
-                "[Subtitles] Cannot render selected external subtitle in current preview step: id=%s",
-                candidate.get("candidate_id"),
-            )
             self._set_active_preview_subtitle_track_index(-1)
+            self._load_external_preview_subtitle(candidate)
             return
 
+        self._clear_preview_subtitle_overlay()
         self._refresh_active_preview_subtitle_track()
+
+    def _load_external_preview_subtitle(self, candidate: dict) -> None:
+        subtitle_path = candidate.get("file_path") or candidate.get("path") or ""
+        if not subtitle_path:
+            logger.info(
+                "[Subtitles] Cannot render selected external subtitle without file path: id=%s",
+                candidate.get("candidate_id"),
+            )
+            self._clear_preview_subtitle_overlay()
+            return
+
+        if Path(subtitle_path).suffix.lower() != ".srt":
+            logger.info(
+                "[Subtitles] External subtitle preview supports SRT only for now: id=%s, path=%s",
+                candidate.get("candidate_id"),
+                subtitle_path,
+            )
+            self._clear_preview_subtitle_overlay()
+            return
+
+        try:
+            cues = parse_srt_file(subtitle_path)
+        except (OSError, UnicodeDecodeError, ValueError):
+            logger.exception("[Subtitles] Unable to load external subtitle preview: %s", subtitle_path)
+            self._clear_preview_subtitle_overlay()
+            return
+
+        self._state.preview_subtitle_cues = cues
+        self._state.preview_subtitle_candidate_id = candidate.get("candidate_id", "")
+        self._set_preview_subtitle_text("")
+        logger.info(
+            "[Subtitles] Activating external subtitle overlay: language=%s, cues=%s, path=%s",
+            candidate.get("language_name") or candidate.get("language_code") or "unknown",
+            len(cues),
+            subtitle_path,
+        )
 
     def _refresh_active_preview_subtitle_track(self) -> None:
         track_index = preview_subtitle_track_index_for_selection(
@@ -790,6 +850,17 @@ class AppController(QObject):
             self._state.active_preview_subtitle_track_index = normalized_index
             self.activePreviewSubtitleTrackIndexChanged.emit()
 
+    def _clear_preview_subtitle_overlay(self) -> None:
+        self._state.preview_subtitle_cues = []
+        self._state.preview_subtitle_candidate_id = ""
+        self._set_preview_subtitle_text("")
+
+    def _set_preview_subtitle_text(self, text: str) -> None:
+        normalized_text = str(text or "")
+        if self._state.preview_subtitle_text != normalized_text:
+            self._state.preview_subtitle_text = normalized_text
+            self.previewSubtitleTextChanged.emit()
+
     def _is_active_subtitle_job(self, media_path: str, job_token: str) -> bool:
         return (
             self._state.subtitle_active_media_path == media_path
@@ -806,6 +877,7 @@ class AppController(QObject):
         self._state.player_subtitle_track_count = 0
         self._set_active_preview_subtitle_track_index(-1)
         self._clear_analysis_subtitle_selection()
+        self._clear_preview_subtitle_overlay()
         self._emit_subtitle_state_changed()
 
     def _clear_analysis_subtitle_selection(self) -> None:

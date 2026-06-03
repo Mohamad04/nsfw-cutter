@@ -124,6 +124,13 @@ Panel {
         Component.onCompleted: root.scheduleSubtitleTrackSync()
     }
 
+    Timer {
+        interval: 100
+        repeat: true
+        running: appController.videoUrl.length > 0
+        onTriggered: appController.updatePreviewSubtitlePosition(player.position)
+    }
+
     Connections {
         target: appController
 
@@ -179,6 +186,7 @@ Panel {
             cutsModel: root.cutsModel
             selectedCutIndex: root.selectedCutIndex
             cutPreview: root.cutPreview
+            previewSubtitleText: appController.previewSubtitleText
             videoTone: root.videoTone
             textMain: root.textMain
             textMuted: root.textMuted

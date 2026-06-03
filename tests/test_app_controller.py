@@ -517,28 +517,79 @@ class AppControllerTests(unittest.TestCase):
         self.assertEqual(self.controller.subtitleStatus, "Subtitles found · None text-readable")
         self.assertFalse(self.controller.analysisSubtitleOptions[1]["enabled"])
 
-    def test_selecting_external_analysis_subtitle_does_not_activate_preview_track(self):
-        self.controller.loadVideoFile("/tmp/a.mp4")
-        self.controller.updatePlayerSubtitleTrackCount(2)
-        worker = self._workers_of_type(FakeSubtitleWorker)[0]
-        self.controller._on_subtitle_discovery_finished(
-            worker.job_token,
-            {
-                "input_path": worker.input_path,
-                "candidates": [
-                    {
-                        "source": "external",
-                        "file_path": "/tmp/a.fra.srt",
-                        "kind": "text",
-                        "language_name": "French",
-                        "is_text_readable": True,
-                    }
-                ],
-            },
-        )
+    def test_selecting_external_analysis_subtitle_uses_overlay_not_preview_track(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            subtitle = Path(temp_dir) / "a.fra.srt"
+            subtitle.write_text(
+                "1\n"
+                "00:00:01,000 --> 00:00:03,000\n"
+                "External subtitle text\n",
+                encoding="utf-8",
+            )
+
+            self.controller.loadVideoFile("/tmp/a.mp4")
+            self.controller.updatePlayerSubtitleTrackCount(2)
+            worker = self._workers_of_type(FakeSubtitleWorker)[0]
+            self.controller._on_subtitle_discovery_finished(
+                worker.job_token,
+                {
+                    "input_path": worker.input_path,
+                    "candidates": [
+                        {
+                            "source": "external",
+                            "file_path": str(subtitle),
+                            "kind": "text",
+                            "format": "srt",
+                            "language_name": "French",
+                            "is_text_readable": True,
+                        }
+                    ],
+                },
+            )
+
+            self.controller.updatePreviewSubtitlePosition(1500)
 
         self.assertNotEqual(self.controller.selectedAnalysisSubtitleId, "")
         self.assertEqual(self.controller.selectedAnalysisSubtitle["source"], "external")
+        self.assertEqual(self.controller.activePreviewSubtitleTrackIndex, -1)
+        self.assertEqual(self.controller.previewSubtitleText, "External subtitle text")
+
+    def test_off_selection_clears_external_subtitle_overlay(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            subtitle = Path(temp_dir) / "a.eng.srt"
+            subtitle.write_text(
+                "1\n"
+                "00:00:01,000 --> 00:00:03,000\n"
+                "External subtitle text\n",
+                encoding="utf-8",
+            )
+
+            self.controller.loadVideoFile("/tmp/a.mp4")
+            worker = self._workers_of_type(FakeSubtitleWorker)[0]
+            self.controller._on_subtitle_discovery_finished(
+                worker.job_token,
+                {
+                    "input_path": worker.input_path,
+                    "candidates": [
+                        {
+                            "source": "external",
+                            "file_path": str(subtitle),
+                            "kind": "text",
+                            "format": "srt",
+                            "language_name": "English",
+                            "is_text_readable": True,
+                        }
+                    ],
+                },
+            )
+            self.controller.updatePreviewSubtitlePosition(1500)
+            self.assertEqual(self.controller.previewSubtitleText, "External subtitle text")
+
+            selected = self.controller.selectAnalysisSubtitle("__subtitle_preview_off__")
+            self.controller.updatePreviewSubtitlePosition(1500)
+
+        self.assertTrue(selected)
+        self.assertEqual(self.controller.previewSubtitleText, "")
         self.assertEqual(self.controller.activePreviewSubtitleTrackIndex, -1)
 
     def test_stale_subtitle_discovery_result_does_not_replace_new_video_state(self):

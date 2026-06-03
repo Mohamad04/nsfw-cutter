@@ -4,7 +4,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from core.job_registry import JobRegistry
-from services.video_export_service import export_lossless_video
+from services.editing.export_service import export_lossless_video
 from workers.video_export_worker import VideoExportWorker
 
 

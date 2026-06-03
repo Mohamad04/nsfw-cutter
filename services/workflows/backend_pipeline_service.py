@@ -5,12 +5,12 @@ from repositories.export_job_repository import create_export_job
 from repositories.metadata_repository import create_video_metadata
 from repositories.subtitle_repository import create_subtitle_info
 from repositories.video_repository import update_video_rows_for_metadata, upsert_video_file
-from services.export_job_service import create_export_job_data
-from services.subtitle_discovery_service import find_matching_external_subtitles
-from services.subtitle_inspection_service import get_embedded_subtitle_streams
-from services.subtitle_policy_service import decide_subtitle_action
-from services.video_metadata_service import get_video_metadata
-from services.video_validation_service import validate_input_video
+from services.media.metadata_service import get_video_metadata
+from services.media.validation_service import validate_input_video
+from services.subtitles.discovery_service import find_matching_external_subtitles
+from services.subtitles.inspection_service import get_embedded_subtitle_streams
+from services.subtitles.policy_service import decide_subtitle_action
+from services.workflows.export_job_service import create_export_job_data
 
 
 def prepare_export_job_pipeline(video_path: str, output_path: str | None = None, progress_callback=None) -> dict:

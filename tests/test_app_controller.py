@@ -1,9 +1,14 @@
 import json
 import tempfile
+import threading
+import time
 import unittest
 from pathlib import Path
 
+from PySide6.QtCore import QCoreApplication, QThreadPool
+
 from controllers.app_controller import AppController
+from services.editing.keyframe_service import KeyframeService
 from workers.worker_signals import WorkerSignals
 
 
@@ -88,6 +93,14 @@ class FakePrepareWorker:
         self.signals = WorkerSignals()
 
 
+class FakeKeyframeWorker:
+    def __init__(self, job_token, input_path, keyframe_service):
+        self.job_token = job_token
+        self.input_path = input_path
+        self.keyframe_service = keyframe_service
+        self.signals = WorkerSignals()
+
+
 class FakeSettingsService:
     def __init__(self, last_video=None):
         self.last_video = last_video
@@ -152,6 +165,7 @@ class AppControllerTests(unittest.TestCase):
             worker_factory=FakeExportWorker,
             prepare_worker_factory=FakePrepareWorker,
             settings_service=self.settings_service,
+            keyframe_worker_factory=FakeKeyframeWorker,
         )
 
     def test_controller_configures_default_thread_limit(self):
@@ -201,6 +215,94 @@ class AppControllerTests(unittest.TestCase):
         self.assertEqual(self.controller.projectStatus, "Video loaded")
         self.assertEqual(self.controller.selectedVideoPath, "/tmp/a.mp4")
         self.assertEqual(self.settings_service.saved_videos, ["/tmp/a.mp4"])
+
+    def test_load_video_file_starts_background_keyframe_indexing(self):
+        self.controller.loadVideoFile("/tmp/a.mp4")
+
+        self.assertEqual(self.controller.keyframeState, "loading")
+        self.assertEqual(self.controller.keyframeCount, 0)
+        self.assertEqual(len(self.thread_pool.workers), 1)
+        self.assertIsInstance(self.thread_pool.workers[0], FakeKeyframeWorker)
+
+    def test_loading_same_video_while_indexing_does_not_start_duplicate_worker(self):
+        self.controller.loadVideoFile("/tmp/a.mp4")
+        self.controller.loadVideoFile("/tmp/a.mp4")
+
+        self.assertEqual(self.controller.keyframeState, "loading")
+        self.assertEqual(len(self.thread_pool.workers), 1)
+
+    def test_stale_keyframe_result_does_not_replace_new_video_state(self):
+        self.controller.loadVideoFile("/tmp/a.mp4")
+        first_worker = self.thread_pool.workers[0]
+        self.controller.loadVideoFile("/tmp/b.mkv")
+        second_worker = self.thread_pool.workers[1]
+
+        self.controller._on_keyframe_indexing_finished(
+            first_worker.job_token,
+            {
+                "input_path": first_worker.input_path,
+                "keyframes": [0.0, 10.0],
+                "elapsed_seconds": 0.1,
+            },
+        )
+
+        self.assertEqual(self.controller.keyframeState, "loading")
+        self.assertEqual(self.controller.keyframeMediaPath, second_worker.input_path)
+        self.assertEqual(self.controller.keyframeCount, 0)
+
+    def test_keyframe_worker_failure_sets_error_state(self):
+        self.controller.loadVideoFile("/tmp/a.mp4")
+        worker = self.thread_pool.workers[0]
+
+        self.controller._on_keyframe_indexing_error(worker.job_token, "ffprobe failed")
+
+        self.assertEqual(self.controller.keyframeState, "error")
+        self.assertEqual(self.controller.keyframeError, "ffprobe failed")
+        self.assertEqual(self.controller.keyframeCount, 0)
+
+    def test_keyframe_indexing_runs_off_caller_thread_and_completes(self):
+        app = QCoreApplication.instance() or QCoreApplication([])
+        pool = QThreadPool()
+        probe_started = threading.Event()
+        release_probe = threading.Event()
+        probe_thread_ids = []
+
+        def keyframe_probe(_input_path, **_kwargs):
+            probe_thread_ids.append(threading.get_ident())
+            probe_started.set()
+            release_probe.wait(timeout=2)
+            return [10.0, 0.0, 5.0]
+
+        service = KeyframeService(keyframe_probe=keyframe_probe)
+        controller = AppController(
+            video_import_service=FakeVideoImportService(),
+            thread_pool=pool,
+            worker_factory=FakeExportWorker,
+            prepare_worker_factory=FakePrepareWorker,
+            settings_service=FakeSettingsService(),
+            keyframe_service=service,
+        )
+
+        try:
+            controller.loadVideoFile("/tmp/a.mp4")
+
+            self.assertTrue(probe_started.wait(timeout=1))
+            self.assertEqual(controller.keyframeState, "loading")
+            self.assertNotEqual(probe_thread_ids, [threading.get_ident()])
+
+            release_probe.set()
+            deadline = time.monotonic() + 2
+            while controller.keyframeState == "loading" and time.monotonic() < deadline:
+                app.processEvents()
+                time.sleep(0.01)
+
+            self.assertEqual(controller.keyframeState, "ready")
+            self.assertEqual(controller.keyframeCount, 3)
+            self.assertEqual(service.keyframe_timestamps, [0.0, 5.0, 10.0])
+        finally:
+            release_probe.set()
+            pool.waitForDone(2000)
+            app.processEvents()
 
     def test_restore_last_video_loads_existing_settings_path(self):
         controller = AppController(

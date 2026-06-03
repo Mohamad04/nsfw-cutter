@@ -2,15 +2,16 @@ import logging
 from pathlib import Path
 
 from core.time_utils import timecode_to_seconds
+from services.editing.cut_plan_service import CutPlanService
 
 
 logger = logging.getLogger(__name__)
 
 
 class KeyframeAlignmentController:
-    def __init__(self, keyframe_service):
+    def __init__(self, keyframe_service, cut_plan_service=None):
         self._keyframe_service = keyframe_service
-        self._keyframe_cache: dict[str, list[float]] = {}
+        self._cut_plan_service = cut_plan_service or CutPlanService()
 
     def get_cut_info(
         self,
@@ -26,7 +27,7 @@ class KeyframeAlignmentController:
                 raise ValueError("End time must be after start time.")
 
             keyframes = self._keyframes_for_path(input_path)
-            return self._keyframe_service.align_interval(
+            return self._cut_plan_service.align_interval(
                 keyframes,
                 start_seconds,
                 end_seconds,
@@ -42,9 +43,18 @@ class KeyframeAlignmentController:
             raise ValueError("Select a video before reading keyframes.")
 
         cache_key = str(video_path.resolve())
-        if cache_key not in self._keyframe_cache:
-            self._keyframe_cache[cache_key] = self._keyframe_service.extract_keyframes(video_path)
-        return self._keyframe_cache[cache_key]
+        keyframes = self._keyframe_service.get_cached_keyframes(video_path)
+        if keyframes is not None:
+            return keyframes
+
+        if self._keyframe_service.active_media_path == cache_key:
+            if self._keyframe_service.keyframe_state == "loading":
+                raise ValueError("Keyframes are still being indexed. Try again shortly.")
+            if self._keyframe_service.keyframe_state == "error":
+                error = self._keyframe_service.keyframe_error or "Unknown FFprobe error."
+                raise ValueError(f"Keyframe analysis failed: {error}")
+
+        raise ValueError("Keyframe cache unavailable. Reload the video to index keyframes.")
 
 
 def fallback_keyframe_info(requested_start: str, requested_end: str, error: str) -> dict:

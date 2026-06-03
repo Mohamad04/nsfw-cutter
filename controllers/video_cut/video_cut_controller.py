@@ -7,7 +7,8 @@ from controllers.video_cut.output_preferences import OutputPreferences
 from controllers.video_cut.segment_mapper import segment_to_payload
 from controllers.video_cut.video_cut_state import VideoCutState
 from core.job_registry import JobRegistry
-from services.keyframe_service import KeyframeService
+from services.editing.cut_plan_service import CutPlanService
+from services.editing.keyframe_service import KeyframeService
 from services.settings_service import SettingsService
 from workers.video_cut_worker import VideoCutWorker
 
@@ -32,6 +33,7 @@ class VideoCutController(QObject):
         worker_factory=None,
         settings_service: SettingsService | None = None,
         keyframe_service: KeyframeService | None = None,
+        cut_plan_service: CutPlanService | None = None,
     ):
         super().__init__()
         self._thread_pool = thread_pool or QThreadPool.globalInstance()
@@ -39,8 +41,12 @@ class VideoCutController(QObject):
         self._worker_factory = worker_factory or VideoCutWorker
         self._settings_service = settings_service or SettingsService()
         self._keyframe_service = keyframe_service or KeyframeService()
+        self._cut_plan_service = cut_plan_service or CutPlanService()
         self._state = VideoCutState()
-        self._keyframe_alignment = KeyframeAlignmentController(self._keyframe_service)
+        self._keyframe_alignment = KeyframeAlignmentController(
+            self._keyframe_service,
+            self._cut_plan_service,
+        )
         self._output_preferences = OutputPreferences(self._settings_service)
         self._cut_export_runner = CutExportRunner(
             self._thread_pool,

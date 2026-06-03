@@ -9,7 +9,7 @@ from sqlalchemy.pool import StaticPool
 
 from database.base import Base
 from models import User, Video
-from services.video_import_service import LOCAL_USER_EMAIL, VideoImportService
+from services.media.import_service import LOCAL_USER_EMAIL, VideoImportService
 
 
 class VideoImportServiceTests(unittest.TestCase):

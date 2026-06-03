@@ -1,6 +1,11 @@
 import unittest
+import tempfile
+from pathlib import Path
 
+from controllers.video_cut.keyframe_alignment import KeyframeAlignmentController
 from controllers.video_cut_controller import VideoCutController
+from services.editing.cut_plan_service import CutPlanService
+from services.editing.keyframe_service import KeyframeService
 
 
 class VideoCutControllerTests(unittest.TestCase):
@@ -40,6 +45,62 @@ class VideoCutControllerTests(unittest.TestCase):
 
         self.assertEqual(controller.cutStatus, "Video export failed")
         self.assertIn("Safe cut start is unavailable", controller.cutError)
+
+
+class KeyframeAlignmentControllerTests(unittest.TestCase):
+    def test_cached_keyframes_are_used_without_triggering_extraction(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            video = Path(temp_dir) / "movie.mp4"
+            video.touch()
+            service = KeyframeService(
+                keyframe_probe=lambda *_args, **_kwargs: self.fail(
+                    "Set End must not trigger keyframe extraction."
+                )
+            )
+            request = service.request_indexing(video)
+            service.complete_indexing(video, request.job_token, [0.0, 5.0, 10.0, 15.0])
+            controller = KeyframeAlignmentController(service, CutPlanService())
+
+            info = controller.get_cut_info(str(video), "00:00:06", "00:00:09", 15.0)
+
+        self.assertTrue(info["valid"])
+        self.assertEqual(info["safe_start"], 5.0)
+        self.assertEqual(info["safe_end"], 10.0)
+
+    def test_loading_cache_returns_immediately_without_triggering_extraction(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            video = Path(temp_dir) / "movie.mp4"
+            video.touch()
+            service = KeyframeService(
+                keyframe_probe=lambda *_args, **_kwargs: self.fail(
+                    "Set End must not trigger keyframe extraction."
+                )
+            )
+            service.request_indexing(video)
+            controller = KeyframeAlignmentController(service)
+
+            info = controller.get_cut_info(str(video), "00:00:01", "00:00:02", 10.0)
+
+        self.assertFalse(info["valid"])
+        self.assertIn("still being indexed", info["error"])
+
+    def test_failed_cache_returns_error_without_triggering_extraction(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            video = Path(temp_dir) / "movie.mp4"
+            video.touch()
+            service = KeyframeService(
+                keyframe_probe=lambda *_args, **_kwargs: self.fail(
+                    "Set End must not trigger keyframe extraction."
+                )
+            )
+            request = service.request_indexing(video)
+            service.fail_indexing(video, request.job_token, "ffprobe failed")
+            controller = KeyframeAlignmentController(service)
+
+            info = controller.get_cut_info(str(video), "00:00:01", "00:00:02", 10.0)
+
+        self.assertFalse(info["valid"])
+        self.assertIn("Keyframe analysis failed: ffprobe failed", info["error"])
 
 
 if __name__ == "__main__":

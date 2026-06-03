@@ -3,13 +3,13 @@ import logging
 from database.session import SessionLocal
 from repositories.cut_job_repository import create_job, mark_completed, mark_failed, mark_running
 from schemas.video_cut_schema import VideoCutRequest
-from services.video_cut_service import VideoCutService
+from services.editing.cut_execution_service import CutExecutionService
 
 
 logger = logging.getLogger(__name__)
 
 
-def run_video_cut_job(request_data: dict, progress_callback=None, service_factory=VideoCutService) -> dict:
+def run_video_cut_job(request_data: dict, progress_callback=None, service_factory=CutExecutionService) -> dict:
     request = VideoCutRequest.model_validate(request_data)
 
     with SessionLocal() as db:

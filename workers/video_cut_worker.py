@@ -1,6 +1,6 @@
 from PySide6.QtCore import QRunnable, Slot
 
-from services.video_cut_pipeline_service import run_video_cut_job
+from services.editing.cut_pipeline_service import run_video_cut_job
 from workers.worker_signals import WorkerSignals
 
 

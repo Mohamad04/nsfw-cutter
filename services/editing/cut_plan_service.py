@@ -1,57 +1,7 @@
-import json
-import subprocess
 from bisect import bisect_left, bisect_right
-from pathlib import Path
-
-from services.ffmpeg_service import FFmpegService
 
 
-class KeyframeService:
-    def __init__(self, ffmpeg_service: FFmpegService | None = None, probe_runner=None):
-        self._ffmpeg_service = ffmpeg_service
-        self.probe_runner = probe_runner or subprocess.run
-
-    @property
-    def ffmpeg_service(self) -> FFmpegService:
-        if self._ffmpeg_service is None:
-            self._ffmpeg_service = FFmpegService()
-        return self._ffmpeg_service
-
-    def extract_keyframes(self, input_path: str | Path) -> list[float]:
-        command = [
-            str(self.ffmpeg_service.ffprobe_path),
-            "-v",
-            "error",
-            "-select_streams",
-            "v:0",
-            "-skip_frame",
-            "nokey",
-            "-show_entries",
-            "frame=best_effort_timestamp_time",
-            "-of",
-            "json",
-            str(input_path),
-        ]
-        completed = self.probe_runner(
-            command,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-        )
-        if completed.returncode != 0:
-            raise RuntimeError(completed.stderr or "Unable to read keyframes with ffprobe.")
-
-        payload = json.loads(completed.stdout or "{}")
-        keyframes = []
-        for frame in payload.get("frames", []):
-            value = frame.get("best_effort_timestamp_time")
-            if value in (None, ""):
-                continue
-            keyframes.append(round(float(value), 3))
-        return sorted(set(keyframes))
-
+class CutPlanService:
     def align_interval(
         self,
         keyframes: list[float],
@@ -62,7 +12,7 @@ class KeyframeService:
         if requested_end <= requested_start:
             raise ValueError("End time must be after start time.")
 
-        normalized_keyframes = sorted(set(round(float(value), 3) for value in keyframes if value is not None))
+        normalized_keyframes = _normalize_keyframes(keyframes)
         if not normalized_keyframes:
             raise ValueError("Keyframe data unavailable. Safe stream-copy cut cannot be computed.")
 
@@ -99,7 +49,11 @@ def previous_keyframe(keyframes: list[float], seconds: float) -> float | None:
     return keyframes[index]
 
 
-def next_keyframe(keyframes: list[float], seconds: float, duration_seconds: float | None = None) -> float | None:
+def next_keyframe(
+    keyframes: list[float],
+    seconds: float,
+    duration_seconds: float | None = None,
+) -> float | None:
     index = bisect_left(keyframes, seconds)
     if index < len(keyframes):
         return keyframes[index]
@@ -117,7 +71,7 @@ def compute_safe_cut(
     if requested_end <= requested_start:
         raise ValueError("End time must be after start time.")
 
-    normalized_keyframes = sorted(set(round(float(value), 3) for value in keyframes if value is not None))
+    normalized_keyframes = _normalize_keyframes(keyframes)
     if not normalized_keyframes:
         raise ValueError("Keyframe data unavailable. Safe stream-copy cut cannot be computed.")
 
@@ -138,3 +92,7 @@ def compute_safe_cut(
         raise ValueError("Computed safe cut is invalid.")
 
     return round(float(safe_start), 3), round(float(safe_end), 3)
+
+
+def _normalize_keyframes(keyframes: list[float]) -> list[float]:
+    return sorted(set(round(float(value), 3) for value in keyframes if value is not None))

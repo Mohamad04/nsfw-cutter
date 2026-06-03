@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from services.video_discovery_service import VideoDiscoveryService
+from services.media.discovery_service import VideoDiscoveryService
 
 
 class SubtitleService:

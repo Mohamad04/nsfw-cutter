@@ -4,8 +4,8 @@ from pathlib import Path
 from database.session import get_db_session
 from repositories.user_repository import create_user, get_user_by_email
 from repositories.video_repository import add_video
-from services.subtitle_service import SubtitleService
-from services.video_discovery_service import VideoDiscoveryService
+from services.media.discovery_service import VideoDiscoveryService
+from services.subtitles.processing_service import SubtitleService
 
 
 LOCAL_USER_EMAIL = "local@example.local"

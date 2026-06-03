@@ -1,9 +1,13 @@
 .idea/
 .venv/
+.env
+.env.*
+!.env.example
 __pycache__/
 *.py[cod]
 *.pyc
 *.pyo
+*.log
 *.db
 *.sqlite
 *.sqlite3

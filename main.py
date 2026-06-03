@@ -12,6 +12,7 @@ from controllers.video_cut_controller import VideoCutController
 from core.logging_config import configure_logging
 from core.paths import APP_AUTHOR, APP_NAME, get_resource_path
 from database.init_db import init_database
+from services.editing.keyframe_service import KeyframeService
 from services.settings_service import SettingsService
 
 
@@ -42,7 +43,11 @@ def main():
     engine = QQmlApplicationEngine()
 
     settings_service = SettingsService()
-    controller = AppController(settings_service=settings_service)
+    keyframe_service = KeyframeService()
+    controller = AppController(
+        settings_service=settings_service,
+        keyframe_service=keyframe_service,
+    )
     controller.setParent(app)
     engine.rootContext().setContextProperty("appController", controller)
 
@@ -50,7 +55,10 @@ def main():
     settings_controller.setParent(app)
     engine.rootContext().setContextProperty("settingsController", settings_controller)
 
-    video_cut_controller = VideoCutController(settings_service=settings_service)
+    video_cut_controller = VideoCutController(
+        settings_service=settings_service,
+        keyframe_service=keyframe_service,
+    )
     video_cut_controller.setParent(app)
     engine.rootContext().setContextProperty("videoCutController", video_cut_controller)
 

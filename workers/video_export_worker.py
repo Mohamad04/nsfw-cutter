@@ -1,6 +1,6 @@
 from PySide6.QtCore import QRunnable, Slot
 
-from services.video_export_service import export_lossless_video
+from services.editing.export_service import export_lossless_video
 from workers.worker_signals import WorkerSignals
 
 

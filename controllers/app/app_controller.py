@@ -15,8 +15,10 @@ from controllers.app.lossless_export_runner import ExportCallbacks, LosslessExpo
 from controllers.app.video_loader import VideoLoader
 from controllers.common.qt_state import clamp_percent
 from core.job_registry import JobRegistry
+from services.editing.keyframe_service import KeyframeService
 from services.settings_service import SettingsService
-from services.video_import_service import VideoImportService
+from services.media.import_service import VideoImportService
+from workers.keyframe_index_worker import KeyframeIndexWorker
 from workers.prepare_export_job_worker import PrepareExportJobWorker
 from workers.video_export_worker import VideoExportWorker
 
@@ -43,6 +45,10 @@ class AppController(QObject):
     currentExportJobIdChanged = Signal()
     currentExportJobJsonPathChanged = Signal()
     recentFilesChanged = Signal()
+    keyframeStateChanged = Signal()
+    keyframeErrorChanged = Signal()
+    keyframeCountChanged = Signal()
+    keyframeMediaPathChanged = Signal()
 
     def __init__(
         self,
@@ -53,6 +59,8 @@ class AppController(QObject):
         max_thread_count=None,
         prepare_worker_factory=None,
         settings_service=None,
+        keyframe_service=None,
+        keyframe_worker_factory=None,
     ):
         super().__init__()
         self.video_import_service = video_import_service or VideoImportService()
@@ -65,6 +73,9 @@ class AppController(QObject):
         self._job_registry = job_registry or JobRegistry()
         self._worker_factory = worker_factory or VideoExportWorker
         self._prepare_worker_factory = prepare_worker_factory or PrepareExportJobWorker
+        self.keyframe_service = keyframe_service or KeyframeService()
+        self._keyframe_worker_factory = keyframe_worker_factory or KeyframeIndexWorker
+        self._keyframe_workers = {}
 
         self._state = AppState()
         self._video_loader = VideoLoader(self.video_import_service, self.settings_service)
@@ -143,6 +154,22 @@ class AppController(QObject):
     @Property(str, notify=currentExportJobJsonPathChanged)
     def currentExportJobJsonPath(self):
         return self._state.current_export_job_json_path
+
+    @Property(str, notify=keyframeStateChanged)
+    def keyframeState(self):
+        return self.keyframe_service.keyframe_state
+
+    @Property(str, notify=keyframeErrorChanged)
+    def keyframeError(self):
+        return self.keyframe_service.keyframe_error
+
+    @Property(int, notify=keyframeCountChanged)
+    def keyframeCount(self):
+        return len(self.keyframe_service.keyframe_timestamps)
+
+    @Property(str, notify=keyframeMediaPathChanged)
+    def keyframeMediaPath(self):
+        return self.keyframe_service.active_media_path
 
     @Slot()
     def browseFolder(self):
@@ -297,12 +324,14 @@ class AppController(QObject):
         self._state.subtitle_status = "Subtitle: not detected"
         self._state.project_status = "Ready"
         self._state.selected_video_path = ""
+        self.keyframe_service.clear_active_media()
 
         self.videoUrlChanged.emit()
         self.videoNameChanged.emit()
         self.subtitleStatusChanged.emit()
         self.projectStatusChanged.emit()
         self.selectedVideoPathChanged.emit()
+        self._emit_keyframe_state_changed()
 
     @Slot()
     @Slot(str, str)
@@ -444,11 +473,86 @@ class AppController(QObject):
         self.selectedVideoPathChanged.emit()
 
         if self._state.selected_video_path:
+            self._start_keyframe_indexing(self._state.selected_video_path)
+
+        if self._state.selected_video_path:
             try:
                 self._video_loader.save_last_video(self._state.selected_video_path)
                 self.recentFilesChanged.emit()
             except OSError:
                 logger.exception("Unable to persist last opened video")
+
+    def _start_keyframe_indexing(self, input_path: str) -> bool:
+        logger.info(
+            "[Keyframes] Video loaded; scheduling background indexing: %s",
+            input_path,
+        )
+        request = self.keyframe_service.request_indexing(input_path)
+        self._emit_keyframe_state_changed()
+        if request is None:
+            return False
+
+        try:
+            worker = self._keyframe_worker_factory(
+                job_token=request.job_token,
+                input_path=request.media_path,
+                keyframe_service=self.keyframe_service,
+            )
+            self._keyframe_workers[request.job_token] = worker
+            worker.signals.finished.connect(self._on_keyframe_indexing_finished)
+            worker.signals.error.connect(self._on_keyframe_indexing_error)
+            self._thread_pool.start(worker)
+        except Exception as exc:
+            self._keyframe_workers.pop(request.job_token, None)
+            self.keyframe_service.fail_indexing(
+                request.media_path,
+                request.job_token,
+                str(exc),
+            )
+            self._emit_keyframe_state_changed()
+            logger.exception("[Keyframes] Unable to start background indexing worker")
+            return False
+        return True
+
+    @Slot(str, object)
+    def _on_keyframe_indexing_finished(self, job_token: str, result) -> None:
+        worker = self._keyframe_workers.pop(job_token, None)
+        input_path = result.get("input_path", "") if isinstance(result, dict) else ""
+        if not input_path and worker is not None:
+            input_path = worker.input_path
+        if not input_path:
+            logger.info("[Keyframes] Ignoring result without media path: job=%s", job_token)
+            return
+
+        applied = self.keyframe_service.complete_indexing(
+            input_path,
+            job_token,
+            result.get("keyframes", []) if isinstance(result, dict) else [],
+            result.get("elapsed_seconds") if isinstance(result, dict) else None,
+        )
+        if applied:
+            self._emit_keyframe_state_changed()
+
+    @Slot(str, str)
+    def _on_keyframe_indexing_error(self, job_token: str, error_message: str) -> None:
+        worker = self._keyframe_workers.pop(job_token, None)
+        if worker is None:
+            logger.info("[Keyframes] Ignoring failure for unknown job: %s", job_token)
+            return
+
+        applied = self.keyframe_service.fail_indexing(
+            worker.input_path,
+            job_token,
+            error_message,
+        )
+        if applied:
+            self._emit_keyframe_state_changed()
+
+    def _emit_keyframe_state_changed(self) -> None:
+        self.keyframeStateChanged.emit()
+        self.keyframeErrorChanged.emit()
+        self.keyframeCountChanged.emit()
+        self.keyframeMediaPathChanged.emit()
 
     def _append_available_videos(self, videos: list[dict]):
         existing_paths = {video.get("path") for video in self._state.available_videos}

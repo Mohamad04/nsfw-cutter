@@ -1,9 +1,8 @@
-import json
 from pathlib import Path
 
-from core.ffmpeg_runner import ensure_ffprobe_available, run_command
 from core.time_utils import parse_fraction_to_float
-from services.video_validation_service import validate_input_video
+from services.infrastructure.ffmpeg.probe import probe_media
+from services.media.validation_service import validate_input_video
 
 
 def _first_stream(raw: dict, codec_type: str) -> dict | None:
@@ -31,23 +30,9 @@ def _optional_float(value) -> float | None:
         return None
 
 
-def get_video_metadata(video_path: str | Path) -> dict:
+def get_video_metadata(video_path: str | Path, media_probe=None) -> dict:
     resolved_path = validate_input_video(video_path)
-    ensure_ffprobe_available()
-
-    output = run_command(
-        [
-            "ffprobe",
-            "-v",
-            "quiet",
-            "-print_format",
-            "json",
-            "-show_format",
-            "-show_streams",
-            str(resolved_path),
-        ]
-    )
-    raw = json.loads(output)
+    raw = (media_probe or probe_media)(resolved_path)
     format_data = raw.get("format") or {}
     video_stream = _first_stream(raw, "video") or {}
     audio_stream = _first_stream(raw, "audio") or {}

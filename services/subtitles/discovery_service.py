@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from services.video_validation_service import validate_input_video
+from services.media.validation_service import validate_input_video
 
 
 SUPPORTED_SUBTITLE_EXTENSIONS = [".srt"]

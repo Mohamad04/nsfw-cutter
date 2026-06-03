@@ -5,8 +5,9 @@ from pathlib import Path
 from unittest.mock import patch
 
 from schemas.video_cut_schema import VideoCutRequest, VideoCutSegment
-from services.ffmpeg_service import FFmpegNotFoundError, FFmpegService
-from services.video_cut_service import VideoCutService, make_unique_path
+from services.editing.cut_execution_service import CutExecutionService, make_unique_path
+from services.infrastructure.ffmpeg.cutting import FFmpegCuttingService
+from services.infrastructure.ffmpeg.runner import FFmpegNotFoundError, FFmpegService
 
 
 class FakeFFmpegService:
@@ -14,9 +15,9 @@ class FakeFFmpegService:
     ffprobe_path = Path("ffprobe")
 
 
-class VideoCutServiceTests(unittest.TestCase):
+class CutExecutionServiceTests(unittest.TestCase):
     def test_cut_command_uses_stream_copy_ss_and_duration(self):
-        service = VideoCutService(ffmpeg_service=FakeFFmpegService(), command_runner=lambda *args, **kwargs: None)
+        service = FFmpegCuttingService(ffmpeg_service=FakeFFmpegService(), command_runner=lambda *args, **kwargs: None)
         command = service.build_cut_command(Path("in.mp4"), Path("out.mp4"), 70.5, 150.75)
 
         self.assertIn("-c", command)
@@ -25,7 +26,7 @@ class VideoCutServiceTests(unittest.TestCase):
         self.assertEqual(command[command.index("-t") + 1], "00:01:20.250")
 
     def test_tail_cut_command_runs_to_end_of_source(self):
-        service = VideoCutService(ffmpeg_service=FakeFFmpegService(), command_runner=lambda *args, **kwargs: None)
+        service = FFmpegCuttingService(ffmpeg_service=FakeFFmpegService(), command_runner=lambda *args, **kwargs: None)
         command = service.build_cut_command(Path("in.mp4"), Path("out.mp4"), 55, 72)
 
         self.assertEqual(command[command.index("-ss") + 1], "00:00:55.000")
@@ -53,7 +54,7 @@ class VideoCutServiceTests(unittest.TestCase):
                 segments=[VideoCutSegment(index=1, start_seconds=0, end_seconds=5)],
             )
 
-            result = VideoCutService(
+            result = CutExecutionService(
                 ffmpeg_service=FakeFFmpegService(),
                 command_runner=command_runner,
                 metadata_probe=lambda path: {
@@ -84,12 +85,18 @@ class VideoCutServiceTests(unittest.TestCase):
                 export_mode="remove_intervals",
                 cut_mode="stream_copy",
                 segments=[
-                    VideoCutSegment(index=1, start_seconds=1, end_seconds=2),
+                    VideoCutSegment(
+                        index=1,
+                        start_seconds=1,
+                        end_seconds=2,
+                        requested_start_seconds=1.2,
+                        requested_end_seconds=1.8,
+                    ),
                     VideoCutSegment(index=2, start_seconds=4, end_seconds=5),
                 ],
             )
 
-            result = VideoCutService(
+            result = CutExecutionService(
                 ffmpeg_service=FakeFFmpegService(),
                 command_runner=command_runner,
                 metadata_probe=lambda path: {
@@ -112,6 +119,9 @@ class VideoCutServiceTests(unittest.TestCase):
             self.assertEqual(result.merged_output_path.name, "movie_removed_intervals.mp4")
             self.assertEqual([segment.segment_index for segment in result.segments], [1, 2])
             self.assertTrue(all(segment.output_path == result.merged_output_path for segment in result.segments))
+            self.assertEqual(result.segments[0].requested_start_seconds, 1.2)
+            self.assertEqual(result.segments[0].requested_end_seconds, 1.8)
+            self.assertEqual(result.normalized_intervals, [(1.0, 2.0), (4.0, 5.0)])
             self.assertEqual(result.kept_intervals, [(0.0, 1.0), (2.0, 4.0), (5.0, 10.0)])
 
     def test_merged_selected_clips_uses_only_stream_copy_commands(self):
@@ -136,7 +146,7 @@ class VideoCutServiceTests(unittest.TestCase):
                 ],
             )
 
-            result = VideoCutService(
+            result = CutExecutionService(
                 ffmpeg_service=FakeFFmpegService(),
                 command_runner=command_runner,
                 metadata_probe=lambda path: {
@@ -166,8 +176,8 @@ class VideoCutServiceTests(unittest.TestCase):
             self.assertEqual(make_unique_path(path).name, "clip_1.mp4")
 
     def test_ffmpeg_not_found_has_clear_error(self):
-        with patch("services.ffmpeg_service.get_resource_path", return_value=Path("missing")):
-            with patch("services.ffmpeg_service.shutil.which", return_value=None):
+        with patch("services.infrastructure.ffmpeg.runner.get_resource_path", return_value=Path("missing")):
+            with patch("services.infrastructure.ffmpeg.runner.shutil.which", return_value=None):
                 with self.assertRaisesRegex(FFmpegNotFoundError, "FFmpeg was not found"):
                     FFmpegService()
 

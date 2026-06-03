@@ -11,11 +11,12 @@ from sqlalchemy.pool import StaticPool
 from core.json_writer import write_json_artifact
 from core.time_utils import parse_fraction_to_float
 from database.base import Base
-from services.export_job_service import create_export_job_data
-from services.subtitle_discovery_service import find_matching_external_subtitles
-from services.subtitle_policy_service import decide_subtitle_action
-from services.video_metadata_service import get_video_metadata
-from services.video_validation_service import validate_input_video
+from services.media.metadata_service import get_video_metadata
+from services.media.validation_service import validate_input_video
+from services.subtitles.discovery_service import find_matching_external_subtitles
+from services.subtitles.inspection_service import get_embedded_subtitle_streams
+from services.subtitles.policy_service import decide_subtitle_action
+from services.workflows.export_job_service import create_export_job_data
 from repositories.user_repository import create_user
 from repositories.video_repository import add_video
 
@@ -78,9 +79,7 @@ class BackendPipelineV1Tests(unittest.TestCase):
             video = Path(temp_dir) / "movie.mp4"
             video.write_bytes(b"fake")
 
-            with patch("services.video_metadata_service.ensure_ffprobe_available", return_value=True):
-                with patch("services.video_metadata_service.run_command", return_value=json.dumps(ffprobe_output)):
-                    metadata = get_video_metadata(video)
+            metadata = get_video_metadata(video, media_probe=lambda _path: ffprobe_output)
 
         self.assertEqual(metadata["filename"], "movie.mp4")
         self.assertEqual(metadata["duration_seconds"], 12.5)
@@ -108,6 +107,34 @@ class BackendPipelineV1Tests(unittest.TestCase):
             video.touch()
 
             self.assertEqual(find_matching_external_subtitles(video), [])
+
+    def test_subtitle_inspection_maps_embedded_streams(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            video = Path(temp_dir) / "movie.mp4"
+            video.touch()
+
+            streams = get_embedded_subtitle_streams(
+                video,
+                subtitle_probe=lambda _path: [
+                    {
+                        "index": 2,
+                        "codec_name": "subrip",
+                        "tags": {"language": "eng", "title": "English"},
+                    }
+                ],
+            )
+
+        self.assertEqual(
+            streams,
+            [
+                {
+                    "index": 2,
+                    "codec_name": "subrip",
+                    "language": "eng",
+                    "title": "English",
+                }
+            ],
+        )
 
     def test_subtitle_policy(self):
         embedded = [{"index": 2, "codec_name": "subrip"}]
@@ -145,7 +172,7 @@ class BackendPipelineV1Tests(unittest.TestCase):
         self.assertEqual(loaded, {"key": "value"})
 
     def test_backend_pipeline_persists_db_records_and_json_artifacts(self):
-        from services import backend_pipeline_service
+        from services.workflows import backend_pipeline_service
 
         engine = create_engine(
             "sqlite:///:memory:",

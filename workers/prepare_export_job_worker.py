@@ -1,6 +1,6 @@
 from PySide6.QtCore import QRunnable, Slot
 
-from services.backend_pipeline_service import prepare_export_job_pipeline
+from services.workflows.backend_pipeline_service import prepare_export_job_pipeline
 from workers.worker_signals import WorkerSignals
 
 

@@ -22,7 +22,7 @@ class VideoImportService:
     ):
         self.db_session_factory = db_session_factory or get_db_session
         self.video_discovery_service = video_discovery_service or VideoDiscoveryService()
-        self.subtitle_service = subtitle_service or SubtitleService(self.video_discovery_service)
+        self.subtitle_service = subtitle_service or SubtitleService()
 
     def list_importable_videos(self, folder: str | Path) -> list[dict]:
         videos = self.video_discovery_service.find_videos_in_folder(folder)

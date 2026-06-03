@@ -9,6 +9,7 @@ from PySide6.QtCore import QCoreApplication, QThreadPool
 
 from controllers.app_controller import AppController
 from services.editing.keyframe_service import KeyframeService
+from services.subtitles.processing_service import SubtitleService
 from workers.worker_signals import WorkerSignals
 
 
@@ -101,6 +102,14 @@ class FakeKeyframeWorker:
         self.signals = WorkerSignals()
 
 
+class FakeSubtitleWorker:
+    def __init__(self, job_token, input_path, subtitle_service):
+        self.job_token = job_token
+        self.input_path = input_path
+        self.subtitle_service = subtitle_service
+        self.signals = WorkerSignals()
+
+
 class FakeSettingsService:
     def __init__(self, last_video=None):
         self.last_video = last_video
@@ -166,7 +175,11 @@ class AppControllerTests(unittest.TestCase):
             prepare_worker_factory=FakePrepareWorker,
             settings_service=self.settings_service,
             keyframe_worker_factory=FakeKeyframeWorker,
+            subtitle_worker_factory=FakeSubtitleWorker,
         )
+
+    def _workers_of_type(self, worker_type):
+        return [worker for worker in self.thread_pool.workers if isinstance(worker, worker_type)]
 
     def test_controller_configures_default_thread_limit(self):
         self.assertEqual(self.thread_pool.max_thread_count, AppController.DEFAULT_MAX_THREAD_COUNT)
@@ -211,7 +224,9 @@ class AppControllerTests(unittest.TestCase):
 
         self.assertEqual(self.controller.videoUrl, "file:///tmp/a.mp4")
         self.assertEqual(self.controller.videoName, "a.mp4")
-        self.assertEqual(self.controller.subtitleStatus, "Subtitle: not detected")
+        self.assertEqual(self.controller.subtitleStatus, "Subtitle: Detecting...")
+        self.assertEqual(self.controller.subtitleDetectionState, "loading")
+        self.assertEqual(self.controller.subtitleCandidates, [])
         self.assertEqual(self.controller.projectStatus, "Video loaded")
         self.assertEqual(self.controller.selectedVideoPath, "/tmp/a.mp4")
         self.assertEqual(self.settings_service.saved_videos, ["/tmp/a.mp4"])
@@ -221,21 +236,22 @@ class AppControllerTests(unittest.TestCase):
 
         self.assertEqual(self.controller.keyframeState, "loading")
         self.assertEqual(self.controller.keyframeCount, 0)
-        self.assertEqual(len(self.thread_pool.workers), 1)
-        self.assertIsInstance(self.thread_pool.workers[0], FakeKeyframeWorker)
+        self.assertEqual(len(self._workers_of_type(FakeKeyframeWorker)), 1)
+        self.assertEqual(len(self._workers_of_type(FakeSubtitleWorker)), 1)
 
     def test_loading_same_video_while_indexing_does_not_start_duplicate_worker(self):
         self.controller.loadVideoFile("/tmp/a.mp4")
         self.controller.loadVideoFile("/tmp/a.mp4")
 
         self.assertEqual(self.controller.keyframeState, "loading")
-        self.assertEqual(len(self.thread_pool.workers), 1)
+        self.assertEqual(len(self._workers_of_type(FakeKeyframeWorker)), 1)
+        self.assertEqual(len(self._workers_of_type(FakeSubtitleWorker)), 1)
 
     def test_stale_keyframe_result_does_not_replace_new_video_state(self):
         self.controller.loadVideoFile("/tmp/a.mp4")
-        first_worker = self.thread_pool.workers[0]
+        first_worker = self._workers_of_type(FakeKeyframeWorker)[0]
         self.controller.loadVideoFile("/tmp/b.mkv")
-        second_worker = self.thread_pool.workers[1]
+        second_worker = self._workers_of_type(FakeKeyframeWorker)[1]
 
         self.controller._on_keyframe_indexing_finished(
             first_worker.job_token,
@@ -252,13 +268,78 @@ class AppControllerTests(unittest.TestCase):
 
     def test_keyframe_worker_failure_sets_error_state(self):
         self.controller.loadVideoFile("/tmp/a.mp4")
-        worker = self.thread_pool.workers[0]
+        worker = self._workers_of_type(FakeKeyframeWorker)[0]
 
         self.controller._on_keyframe_indexing_error(worker.job_token, "ffprobe failed")
 
         self.assertEqual(self.controller.keyframeState, "error")
         self.assertEqual(self.controller.keyframeError, "ffprobe failed")
         self.assertEqual(self.controller.keyframeCount, 0)
+
+    def test_subtitle_discovery_finished_updates_status_and_candidates(self):
+        self.controller.loadVideoFile("/tmp/a.mp4")
+        worker = self._workers_of_type(FakeSubtitleWorker)[0]
+        candidates = [
+            {"source": "embedded", "kind": "text", "is_text_readable": True},
+            {"source": "external", "kind": "text", "is_text_readable": True},
+        ]
+
+        self.controller._on_subtitle_discovery_finished(
+            worker.job_token,
+            {"input_path": worker.input_path, "candidates": candidates},
+        )
+
+        self.assertEqual(self.controller.subtitleDetectionState, "ready")
+        self.assertEqual(
+            self.controller.subtitleStatus,
+            "Subtitle: 2 subtitles detected (1 embedded, 1 external)",
+        )
+        self.assertEqual(self.controller.subtitleCandidates, candidates)
+        self.assertEqual(self.controller.subtitleError, "")
+
+    def test_subtitle_discovery_finished_without_candidates_sets_not_detected(self):
+        self.controller.loadVideoFile("/tmp/a.mp4")
+        worker = self._workers_of_type(FakeSubtitleWorker)[0]
+
+        self.controller._on_subtitle_discovery_finished(
+            worker.job_token,
+            {"input_path": worker.input_path, "candidates": []},
+        )
+
+        self.assertEqual(self.controller.subtitleDetectionState, "ready")
+        self.assertEqual(self.controller.subtitleStatus, "Subtitle: Not detected")
+        self.assertEqual(self.controller.subtitleCandidates, [])
+
+    def test_subtitle_discovery_failure_sets_error_state(self):
+        self.controller.loadVideoFile("/tmp/a.mp4")
+        worker = self._workers_of_type(FakeSubtitleWorker)[0]
+
+        self.controller._on_subtitle_discovery_error(worker.job_token, "ffprobe failed")
+
+        self.assertEqual(self.controller.subtitleDetectionState, "error")
+        self.assertEqual(self.controller.subtitleStatus, "Subtitle: Detection error")
+        self.assertEqual(self.controller.subtitleError, "ffprobe failed")
+        self.assertEqual(self.controller.subtitleCandidates, [])
+
+    def test_stale_subtitle_discovery_result_does_not_replace_new_video_state(self):
+        self.controller.loadVideoFile("/tmp/a.mp4")
+        first_worker = self._workers_of_type(FakeSubtitleWorker)[0]
+        self.controller.loadVideoFile("/tmp/b.mkv")
+        second_worker = self._workers_of_type(FakeSubtitleWorker)[1]
+
+        self.controller._on_subtitle_discovery_finished(
+            first_worker.job_token,
+            {
+                "input_path": first_worker.input_path,
+                "candidates": [{"source": "external", "kind": "text"}],
+            },
+        )
+
+        self.assertEqual(self.controller.subtitleDetectionState, "loading")
+        self.assertEqual(self.controller.subtitleStatus, "Subtitle: Detecting...")
+        self.assertEqual(self.controller.subtitleCandidates, [])
+        self.assertEqual(self.controller.selectedVideoPath, "/tmp/b.mkv")
+        self.assertNotEqual(first_worker.job_token, second_worker.job_token)
 
     def test_keyframe_indexing_runs_off_caller_thread_and_completes(self):
         app = QCoreApplication.instance() or QCoreApplication([])
@@ -281,6 +362,10 @@ class AppControllerTests(unittest.TestCase):
             prepare_worker_factory=FakePrepareWorker,
             settings_service=FakeSettingsService(),
             keyframe_service=service,
+            subtitle_service=SubtitleService(
+                embedded_inspection=lambda _path: [],
+                external_discovery=lambda _path: [],
+            ),
         )
 
         try:
@@ -311,6 +396,7 @@ class AppControllerTests(unittest.TestCase):
             worker_factory=FakeExportWorker,
             prepare_worker_factory=FakePrepareWorker,
             settings_service=FakeSettingsService(last_video=Path("/tmp/a.mp4")),
+            subtitle_worker_factory=FakeSubtitleWorker,
         )
 
         controller.restoreLastVideo()
@@ -372,7 +458,9 @@ class AppControllerTests(unittest.TestCase):
 
         self.assertEqual(self.controller.videoUrl, "")
         self.assertEqual(self.controller.videoName, "No video selected")
-        self.assertEqual(self.controller.subtitleStatus, "Subtitle: not detected")
+        self.assertEqual(self.controller.subtitleStatus, "Subtitle: Not detected")
+        self.assertEqual(self.controller.subtitleDetectionState, "idle")
+        self.assertEqual(self.controller.subtitleCandidates, [])
         self.assertEqual(self.controller.projectStatus, "Ready")
         self.assertEqual(self.controller.selectedVideoPath, "")
 

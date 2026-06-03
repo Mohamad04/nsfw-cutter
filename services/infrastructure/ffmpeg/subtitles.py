@@ -13,11 +13,11 @@ def probe_subtitle_streams(
     command = [
         str(ffprobe_path),
         "-v",
-        "quiet",
+        "error",
         "-select_streams",
         "s",
         "-show_entries",
-        "stream=index,codec_name:stream_tags=language,title",
+        "stream=index,codec_name,codec_type:stream_tags=language,title,handler_name",
         "-of",
         "json",
         str(media_path),

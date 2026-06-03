@@ -1,4 +1,5 @@
 import logging
+import uuid
 from pathlib import Path
 
 from PySide6.QtCore import QObject, Property, QThreadPool, Signal, Slot
@@ -18,8 +19,10 @@ from core.job_registry import JobRegistry
 from services.editing.keyframe_service import KeyframeService
 from services.settings_service import SettingsService
 from services.media.import_service import VideoImportService
+from services.subtitles.processing_service import SubtitleService
 from workers.keyframe_index_worker import KeyframeIndexWorker
 from workers.prepare_export_job_worker import PrepareExportJobWorker
+from workers.subtitle_discovery_worker import SubtitleDiscoveryWorker
 from workers.video_export_worker import VideoExportWorker
 
 
@@ -32,6 +35,9 @@ class AppController(QObject):
     videoUrlChanged = Signal()
     videoNameChanged = Signal()
     subtitleStatusChanged = Signal()
+    subtitleDetectionStateChanged = Signal()
+    subtitleCandidatesChanged = Signal()
+    subtitleErrorChanged = Signal()
     projectStatusChanged = Signal()
     currentFolderChanged = Signal()
     availableVideosChanged = Signal()
@@ -61,6 +67,8 @@ class AppController(QObject):
         settings_service=None,
         keyframe_service=None,
         keyframe_worker_factory=None,
+        subtitle_service=None,
+        subtitle_worker_factory=None,
     ):
         super().__init__()
         self.video_import_service = video_import_service or VideoImportService()
@@ -76,6 +84,13 @@ class AppController(QObject):
         self.keyframe_service = keyframe_service or KeyframeService()
         self._keyframe_worker_factory = keyframe_worker_factory or KeyframeIndexWorker
         self._keyframe_workers = {}
+        self.subtitle_service = (
+            subtitle_service
+            or getattr(self.video_import_service, "subtitle_service", None)
+            or SubtitleService()
+        )
+        self._subtitle_worker_factory = subtitle_worker_factory or SubtitleDiscoveryWorker
+        self._subtitle_workers = {}
 
         self._state = AppState()
         self._video_loader = VideoLoader(self.video_import_service, self.settings_service)
@@ -102,6 +117,18 @@ class AppController(QObject):
     @Property(str, notify=subtitleStatusChanged)
     def subtitleStatus(self):
         return self._state.subtitle_status
+
+    @Property(str, notify=subtitleDetectionStateChanged)
+    def subtitleDetectionState(self):
+        return self._state.subtitle_detection_state
+
+    @Property("QVariantList", notify=subtitleCandidatesChanged)
+    def subtitleCandidates(self):
+        return list(self._state.subtitle_candidates)
+
+    @Property(str, notify=subtitleErrorChanged)
+    def subtitleError(self):
+        return self._state.subtitle_error
 
     @Property(str, notify=projectStatusChanged)
     def projectStatus(self):
@@ -321,14 +348,13 @@ class AppController(QObject):
     def clearVideo(self):
         self._state.video_url = ""
         self._state.video_name = "No video selected"
-        self._state.subtitle_status = "Subtitle: not detected"
+        self._clear_subtitle_discovery()
         self._state.project_status = "Ready"
         self._state.selected_video_path = ""
         self.keyframe_service.clear_active_media()
 
         self.videoUrlChanged.emit()
         self.videoNameChanged.emit()
-        self.subtitleStatusChanged.emit()
         self.projectStatusChanged.emit()
         self.selectedVideoPathChanged.emit()
         self._emit_keyframe_state_changed()
@@ -458,22 +484,18 @@ class AppController(QObject):
         self._state.video_url = result.get("video_url", "")
         self._state.video_name = result.get("video_name", "No video selected")
         self._state.selected_video_path = result.get("video_path", "")
-
-        if result.get("subtitle_found"):
-            self._state.subtitle_status = f"Subtitle found: {result.get('subtitle_name')}"
-        else:
-            self._state.subtitle_status = "Subtitle: not detected"
-
         self._state.project_status = result.get("status", "Video loaded")
 
         self.videoUrlChanged.emit()
         self.videoNameChanged.emit()
-        self.subtitleStatusChanged.emit()
         self.projectStatusChanged.emit()
         self.selectedVideoPathChanged.emit()
 
         if self._state.selected_video_path:
             self._start_keyframe_indexing(self._state.selected_video_path)
+            self._start_subtitle_discovery(self._state.selected_video_path)
+        else:
+            self._clear_subtitle_discovery()
 
         if self._state.selected_video_path:
             try:
@@ -514,6 +536,110 @@ class AppController(QObject):
             return False
         return True
 
+    def _start_subtitle_discovery(self, input_path: str) -> bool:
+        media_path = _resolved_media_path(input_path)
+        if (
+            self._state.subtitle_detection_state == "loading"
+            and self._state.subtitle_active_media_path == media_path
+        ):
+            logger.info("[Subtitles] Duplicate discovery ignored; already loading: %s", media_path)
+            return False
+
+        job_token = uuid.uuid4().hex
+        self._state.subtitle_detection_state = "loading"
+        self._state.subtitle_status = "Subtitle: Detecting..."
+        self._state.subtitle_candidates = []
+        self._state.subtitle_error = ""
+        self._state.subtitle_active_job_token = job_token
+        self._state.subtitle_active_media_path = media_path
+        self._emit_subtitle_state_changed()
+
+        try:
+            worker = self._subtitle_worker_factory(
+                job_token=job_token,
+                input_path=media_path,
+                subtitle_service=self.subtitle_service,
+            )
+            self._subtitle_workers[job_token] = worker
+            worker.signals.finished.connect(self._on_subtitle_discovery_finished)
+            worker.signals.error.connect(self._on_subtitle_discovery_error)
+            self._thread_pool.start(worker)
+        except Exception as exc:
+            self._subtitle_workers.pop(job_token, None)
+            self._apply_subtitle_discovery_error(media_path, job_token, str(exc))
+            logger.exception("[Subtitles] Unable to start background discovery worker")
+            return False
+        return True
+
+    @Slot(str, object)
+    def _on_subtitle_discovery_finished(self, job_token: str, result) -> None:
+        worker = self._subtitle_workers.pop(job_token, None)
+        input_path = result.get("input_path", "") if isinstance(result, dict) else ""
+        if not input_path and worker is not None:
+            input_path = worker.input_path
+        if not input_path:
+            logger.info("[Subtitles] Ignoring result without media path: job=%s", job_token)
+            return
+
+        media_path = _resolved_media_path(input_path)
+        if not self._is_active_subtitle_job(media_path, job_token):
+            logger.info("[Subtitles] Ignoring stale discovery result: %s", media_path)
+            return
+
+        candidates = result.get("candidates", []) if isinstance(result, dict) else []
+        if not isinstance(candidates, list):
+            candidates = []
+
+        self._state.subtitle_detection_state = "ready"
+        self._state.subtitle_candidates = list(candidates)
+        self._state.subtitle_error = ""
+        self._state.subtitle_status = _subtitle_status_text(candidates)
+        self._state.subtitle_active_job_token = ""
+        self._emit_subtitle_state_changed()
+
+    @Slot(str, str)
+    def _on_subtitle_discovery_error(self, job_token: str, error_message: str) -> None:
+        worker = self._subtitle_workers.pop(job_token, None)
+        if worker is None:
+            logger.info("[Subtitles] Ignoring failure for unknown job: %s", job_token)
+            return
+
+        media_path = _resolved_media_path(worker.input_path)
+        self._apply_subtitle_discovery_error(media_path, job_token, error_message)
+
+    def _apply_subtitle_discovery_error(
+        self,
+        media_path: str,
+        job_token: str,
+        error_message: str,
+    ) -> bool:
+        if not self._is_active_subtitle_job(media_path, job_token):
+            logger.info("[Subtitles] Ignoring stale discovery failure: %s", media_path)
+            return False
+
+        self._state.subtitle_detection_state = "error"
+        self._state.subtitle_candidates = []
+        self._state.subtitle_error = str(error_message)
+        self._state.subtitle_status = "Subtitle: Detection error"
+        self._state.subtitle_active_job_token = ""
+        self._emit_subtitle_state_changed()
+        return True
+
+    def _is_active_subtitle_job(self, media_path: str, job_token: str) -> bool:
+        return (
+            self._state.subtitle_active_media_path == media_path
+            and self._state.subtitle_active_job_token == job_token
+        )
+
+    def _clear_subtitle_discovery(self) -> None:
+        self._state.subtitle_status = "Subtitle: Not detected"
+        self._state.subtitle_detection_state = "idle"
+        self._state.subtitle_candidates = []
+        self._state.subtitle_error = ""
+        self._state.subtitle_active_job_token = ""
+        self._state.subtitle_active_media_path = ""
+        self._emit_subtitle_state_changed()
+
     @Slot(str, object)
     def _on_keyframe_indexing_finished(self, job_token: str, result) -> None:
         worker = self._keyframe_workers.pop(job_token, None)
@@ -553,6 +679,12 @@ class AppController(QObject):
         self.keyframeErrorChanged.emit()
         self.keyframeCountChanged.emit()
         self.keyframeMediaPathChanged.emit()
+
+    def _emit_subtitle_state_changed(self) -> None:
+        self.subtitleStatusChanged.emit()
+        self.subtitleDetectionStateChanged.emit()
+        self.subtitleCandidatesChanged.emit()
+        self.subtitleErrorChanged.emit()
 
     def _append_available_videos(self, videos: list[dict]):
         existing_paths = {video.get("path") for video in self._state.available_videos}
@@ -651,3 +783,30 @@ class AppController(QObject):
 
     def _parse_time_to_seconds(self, value: str) -> int:
         return parse_hh_mm_ss_to_seconds(value)
+
+
+def _resolved_media_path(media_path: str | Path) -> str:
+    return str(Path(media_path).expanduser().resolve())
+
+
+def _subtitle_status_text(candidates: list[dict]) -> str:
+    total_count = len(candidates)
+    if total_count == 0:
+        return "Subtitle: Not detected"
+
+    embedded_count = sum(1 for candidate in candidates if candidate.get("source") == "embedded")
+    external_count = sum(1 for candidate in candidates if candidate.get("source") == "external")
+    if total_count == 1:
+        if embedded_count == 1:
+            return "Subtitle: 1 embedded subtitle detected"
+        if external_count == 1:
+            return "Subtitle: 1 external subtitle detected"
+        return "Subtitle: 1 subtitle detected"
+
+    parts = []
+    if embedded_count:
+        parts.append(f"{embedded_count} embedded")
+    if external_count:
+        parts.append(f"{external_count} external")
+    summary = f" ({', '.join(parts)})" if parts else ""
+    return f"Subtitle: {total_count} subtitles detected{summary}"

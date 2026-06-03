@@ -124,17 +124,15 @@ class BackendPipelineV1Tests(unittest.TestCase):
                 ],
             )
 
-        self.assertEqual(
-            streams,
-            [
-                {
-                    "index": 2,
-                    "codec_name": "subrip",
-                    "language": "eng",
-                    "title": "English",
-                }
-            ],
-        )
+        self.assertEqual(len(streams), 1)
+        self.assertEqual(streams[0]["source"], "embedded")
+        self.assertEqual(streams[0]["kind"], "text")
+        self.assertTrue(streams[0]["is_text_readable"])
+        self.assertEqual(streams[0]["stream_index"], 2)
+        self.assertEqual(streams[0]["codec_name"], "subrip")
+        self.assertEqual(streams[0]["language_code"], "eng")
+        self.assertEqual(streams[0]["language_name"], "English")
+        self.assertEqual(streams[0]["label"], "English")
 
     def test_subtitle_policy(self):
         embedded = [{"index": 2, "codec_name": "subrip"}]

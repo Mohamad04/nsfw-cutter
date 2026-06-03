@@ -6,6 +6,11 @@ class AppState:
     video_url: str = ""
     video_name: str = "No video selected"
     subtitle_status: str = "Subtitle: not detected"
+    subtitle_detection_state: str = "idle"
+    subtitle_candidates: list = field(default_factory=list)
+    subtitle_error: str = ""
+    subtitle_active_job_token: str = ""
+    subtitle_active_media_path: str = ""
     project_status: str = "Ready"
     current_folder: str = ""
     available_videos: list = field(default_factory=list)

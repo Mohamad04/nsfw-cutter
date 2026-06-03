@@ -1,5 +1,7 @@
 from pathlib import Path
 
+from services.subtitles.discovery_service import find_matching_external_subtitles
+
 
 class VideoDiscoveryService:
     VIDEO_EXTENSIONS = {".mp4", ".mkv"}
@@ -29,6 +31,7 @@ class VideoDiscoveryService:
         return video_path.resolve()
 
     def find_subtitle_for_video(self, video_path: str | Path) -> Path | None:
-        validated_video_path = Path(video_path).expanduser()
-        candidates = sorted(validated_video_path.parent.glob(f"{validated_video_path.stem}*.srt"))
-        return candidates[0].resolve() if candidates else None
+        for candidate in find_matching_external_subtitles(video_path):
+            if candidate.get("is_text_readable") and candidate.get("file_path"):
+                return Path(candidate["file_path"]).resolve()
+        return None

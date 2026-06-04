@@ -18,8 +18,37 @@ Item {
     property color borderColor: root.darkMode ? theme.darkBorder : theme.lightBorder
     property color textMain: root.darkMode ? theme.darkTextPrimary : theme.lightTextPrimary
     property color textMuted: root.darkMode ? theme.darkTextMuted : theme.lightTextMuted
+    property int selectedCutIndex: -1
 
     AppTheme { id: theme }
+    ListModel { id: cutsModel }
+
+    function appendCut(cut) {
+        cutsModel.append({
+            "start": cut.start || "00:00:00",
+            "end": cut.end || "00:00:00",
+            "safeStart": cut.safeStart || "",
+            "safeEnd": cut.safeEnd || "",
+            "requestedStartSeconds": cut.requestedStartSeconds !== undefined ? cut.requestedStartSeconds : "",
+            "requestedEndSeconds": cut.requestedEndSeconds !== undefined ? cut.requestedEndSeconds : "",
+            "safeStartSeconds": cut.safeStartSeconds !== undefined ? cut.safeStartSeconds : "",
+            "safeEndSeconds": cut.safeEndSeconds !== undefined ? cut.safeEndSeconds : "",
+            "safeAvailable": cut.safeAvailable === true,
+            "previousKeyframeStart": cut.previousKeyframeStart || "",
+            "nextKeyframeStart": cut.nextKeyframeStart || "",
+            "previousKeyframeEnd": cut.previousKeyframeEnd || "",
+            "nextKeyframeEnd": cut.nextKeyframeEnd || "",
+            "extraBefore": cut.extraBefore || "0.0s",
+            "extraAfter": cut.extraAfter || "0.0s",
+            "reason": cut.reason || "Manual removal",
+            "tags": cut.tags || "manual",
+            "source": cut.source || "Manual",
+            "score": cut.score || "--",
+            "cutType": cut.cutType || "Remove",
+            "status": cut.status || "Pending"
+        })
+        root.selectedCutIndex = cutsModel.count - 1
+    }
 
     Rectangle {
         anchors.fill: parent
@@ -47,20 +76,18 @@ Item {
                 Layout.fillHeight: true
                 spacing: 12
 
-                Rectangle {
+                VideoWorkspace {
                     Layout.fillWidth: true
                     Layout.fillHeight: true
-                    radius: 10
-                    color: root.videoSurface
-                    border.color: root.borderColor
-
-                    Text {
-                        anchors.centerIn: parent
-                        text: "Video workspace placeholder"
-                        color: root.textMain
-                        font.pixelSize: 22
-                        font.bold: true
-                    }
+                    cutsModel: cutsModel
+                    lightMode: root.lightMode
+                    panelColor: root.surface
+                    videoColor: root.darkMode ? "#020617" : "#0F172A"
+                    strokeColor: root.borderColor
+                    textColor: root.textMain
+                    mutedTextColor: root.textMuted
+                    accentColor: root.darkMode ? theme.darkAccent : theme.lightAccent
+                    onCutAdded: function(cut) { root.appendCut(cut) }
                 }
 
                 Rectangle {

@@ -18,7 +18,7 @@ Rectangle {
     property var cutPreview: ({ "visible": false })
     property var keyframeInfo: ({
         "valid": false,
-        "error": "Set Start and End to preview the safe removal.",
+        "error": "Set Start and Set End to preview the safe removal.",
         "requested_start": 0,
         "requested_end": 0,
         "safe_start": null,
@@ -105,17 +105,39 @@ Rectangle {
         return prefix + value.toFixed(1) + "s"
     }
 
+    function formatClockDuration(seconds) {
+        var value = Math.max(0, Math.round(Number(seconds) || 0))
+        var hours = Math.floor(value / 3600)
+        var minutes = Math.floor((value % 3600) / 60)
+        var wholeSeconds = value % 60
+        function pad(numberValue) { return numberValue < 10 ? "0" + numberValue : "" + numberValue }
+        return pad(hours) + ":" + pad(minutes) + ":" + pad(wholeSeconds)
+    }
+
+    function formatSignedClockDelta(seconds) {
+        var value = Number(seconds) || 0
+        var prefix = value > 0 ? "+" : (value < 0 ? "-" : "")
+        return prefix + root.formatClockDuration(Math.abs(value))
+    }
+
     function formatDuration(startSeconds, endSeconds) {
         var startValue = Number(startSeconds)
         var endValue = Number(endSeconds)
         if (!Number.isFinite(startValue) || !Number.isFinite(endValue) || endValue < startValue) return "--"
-        return root.formatDelta(endValue - startValue)
+        return root.formatClockDuration(endValue - startValue)
+    }
+
+    function showOptionalDetails() {
+        return root.selectedCutIndex >= 0
+            || root.canAddCut()
+            || reasonInput.text.length > 0
+            || tagsInput.text.length > 0
     }
 
     function resetKeyframeInfo(message) {
         root.keyframeInfo = {
             "valid": false,
-            "error": message || "Set Start and End to preview the safe removal.",
+            "error": message || "Set Start and Set End to preview the safe removal.",
             "requested_start": 0,
             "requested_end": 0,
             "safe_start": null,
@@ -474,24 +496,24 @@ Rectangle {
                             Text { text: "Start"; color: root.textMuted; font.pixelSize: 11 }
                             Text { text: startInput.text; color: root.requestedColor; font.pixelSize: 11; font.bold: true }
                             Text { text: root.hasSafeKeyframeInfo() ? root.formatSeconds(root.keyframeInfo.safe_start) : "--"; color: root.safeColor; font.pixelSize: 11; font.bold: true }
-                            Text { text: root.hasSafeKeyframeInfo() ? root.formatDeltaSigned(root.keyframeInfo.safe_start - root.keyframeInfo.requested_start) : "--"; color: root.textMuted; font.pixelSize: 11 }
+                            Text { text: root.hasSafeKeyframeInfo() ? root.formatSignedClockDelta(root.keyframeInfo.safe_start - root.keyframeInfo.requested_start) : "--"; color: root.textMuted; font.pixelSize: 11 }
 
                             Text { text: "End"; color: root.textMuted; font.pixelSize: 11 }
                             Text { text: endInput.text; color: root.requestedColor; font.pixelSize: 11; font.bold: true }
                             Text { text: root.hasSafeKeyframeInfo() ? root.formatSeconds(root.keyframeInfo.safe_end) : "--"; color: root.safeColor; font.pixelSize: 11; font.bold: true }
-                            Text { text: root.hasSafeKeyframeInfo() ? root.formatDeltaSigned(root.keyframeInfo.safe_end - root.keyframeInfo.requested_end) : "--"; color: root.textMuted; font.pixelSize: 11 }
+                            Text { text: root.hasSafeKeyframeInfo() ? root.formatSignedClockDelta(root.keyframeInfo.safe_end - root.keyframeInfo.requested_end) : "--"; color: root.textMuted; font.pixelSize: 11 }
 
                             Text { text: "Duration"; color: root.textMuted; font.pixelSize: 11 }
                             Text { text: root.formatDuration(root.parseSeconds(startInput.text), root.parseSeconds(endInput.text)); color: root.requestedColor; font.pixelSize: 11; font.bold: true }
                             Text { text: root.hasSafeKeyframeInfo() ? root.formatDuration(root.keyframeInfo.safe_start, root.keyframeInfo.safe_end) : "--"; color: root.safeColor; font.pixelSize: 11; font.bold: true }
-                            Text { text: root.hasSafeKeyframeInfo() ? root.formatDeltaSigned((root.keyframeInfo.safe_end - root.keyframeInfo.safe_start) - (root.keyframeInfo.requested_end - root.keyframeInfo.requested_start)) : "--"; color: root.textMuted; font.pixelSize: 11 }
+                            Text { text: root.hasSafeKeyframeInfo() ? root.formatSignedClockDelta((root.keyframeInfo.safe_end - root.keyframeInfo.safe_start) - (root.keyframeInfo.requested_end - root.keyframeInfo.requested_start)) : "--"; color: root.textMuted; font.pixelSize: 11 }
                         }
 
                         Text {
                             Layout.fillWidth: true
                             text: root.hasSafeKeyframeInfo()
-                                  ? (root.formatDelta(root.keyframeInfo.extra_before + root.keyframeInfo.extra_after) + " extra removed for stream-copy keyframe alignment.")
-                                  : (root.keyframeInfo.error || "Safe keyframe data unavailable.")
+                                  ? (root.formatSignedClockDelta(root.keyframeInfo.extra_before + root.keyframeInfo.extra_after) + " extra removed - Keyframe-aligned stream-copy.")
+                                  : (root.keyframeInfo.error || "Set Start and Set End to calculate the adjusted removal.")
                             color: root.hasSafeKeyframeInfo() ? root.textMuted : (root.lightMode ? theme.lightWarning : theme.darkWarning)
                             font.pixelSize: 11
                             wrapMode: Text.WordWrap
@@ -499,22 +521,47 @@ Rectangle {
                     }
                 }
 
-                Text { text: "Reason"; color: root.textMuted; font.pixelSize: 11; font.bold: true }
+                Text {
+                    Layout.fillWidth: true
+                    text: "Optional reason and tags appear after setting a valid interval."
+                    color: root.textMuted
+                    font.pixelSize: 11
+                    wrapMode: Text.WordWrap
+                    visible: !root.showOptionalDetails()
+                }
+
+                Text {
+                    text: "Reason"
+                    color: root.textMuted
+                    font.pixelSize: 11
+                    font.bold: true
+                    visible: root.showOptionalDetails()
+                }
+
                 AppTextArea {
                     id: reasonInput
                     Layout.fillWidth: true
                     Layout.preferredHeight: root.shortMode ? 50 : 62
                     lightMode: root.lightMode
                     placeholderText: "Reason for this cut..."
+                    visible: root.showOptionalDetails()
                 }
 
-                Text { text: "Tags"; color: root.textMuted; font.pixelSize: 11; font.bold: true }
+                Text {
+                    text: "Tags"
+                    color: root.textMuted
+                    font.pixelSize: 11
+                    font.bold: true
+                    visible: root.showOptionalDetails()
+                }
+
                 AppTextField {
                     id: tagsInput
                     Layout.fillWidth: true
                     Layout.preferredHeight: 42
                     lightMode: root.lightMode
                     placeholderText: "kissing, romance, nsfw"
+                    visible: root.showOptionalDetails()
                     onAccepted: root.addCut("Manual", "--")
                 }
 
@@ -543,12 +590,6 @@ Rectangle {
                     }
                 }
 
-                ExportJobSection {
-                    Layout.fillWidth: true
-                    textMuted: root.textMuted
-                    accent: root.accent
-                    lightMode: root.lightMode
-                }
             }
         }
     }

@@ -15,6 +15,7 @@ Item {
     property color textColor: "#F3F6FB"
     property color mutedTextColor: "#92A2B8"
     property color accentColor: "#2F7BFF"
+    property real durationMs: 0
     readonly property int expandedHeaderHeight: root.compactMode ? 64 : 70
     readonly property int collapsedHeaderHeight: 0
     readonly property int preferredHeaderHeight: root.expandedHeaderHeight
@@ -29,20 +30,70 @@ Item {
 
     AppTheme { id: theme }
 
-    function selectedSubtitleLabel() {
+    function selectedSubtitleOption() {
         var options = appController.analysisSubtitleOptions
         for (var index = 0; index < options.length; index += 1) {
-            if (options[index].selected) return options[index].label
+            if (options[index].selected) return options[index]
         }
-        if (appController.subtitleCandidates.length > 0) return "Select subtitle"
-        if (appController.subtitleDetectionState === "loading") return "Detecting"
-        return "Subtitles"
+        return null
     }
 
-    function subtitleCountLabel() {
-        var count = appController.subtitleCandidates.length
-        if (count === 1) return "1 subtitle detected"
-        return count + " subtitles detected"
+    function selectableSubtitleCount() {
+        var options = appController.analysisSubtitleOptions
+        var count = 0
+        for (var index = 0; index < options.length; index += 1) {
+            if (options[index].source !== "off" && options[index].enabled) count += 1
+        }
+        return count
+    }
+
+    function cleanSubtitleName(option) {
+        if (!option) return ""
+        if (option.languageName) return option.languageName
+        if (option.label) return String(option.label).split(" · ")[0]
+        return ""
+    }
+
+    function selectedSubtitleLabel() {
+        if (appController.subtitleDetectionState === "loading") return "Detecting subtitles"
+
+        var selected = root.selectedSubtitleOption()
+        if (selected && selected.source === "off") return "Subtitles Off"
+        var selectedName = root.cleanSubtitleName(selected)
+        if (selectedName.length > 0) return selectedName
+
+        var available = root.selectableSubtitleCount()
+        if (available > 1) return "Select subtitle - " + available + " available"
+        if (available === 1) return "Select subtitle - 1 available"
+        if (appController.subtitleCandidates.length > 0) return "Subtitles unavailable"
+        return "Subtitle: Not detected"
+    }
+
+    function mediaExtensionLabel() {
+        var path = appController.selectedVideoPath
+        var dotIndex = String(path).lastIndexOf(".")
+        if (dotIndex < 0 || dotIndex >= path.length - 1) return "Video"
+        return String(path).substring(dotIndex + 1).toUpperCase()
+    }
+
+    function formatDuration(ms) {
+        if (!Number.isFinite(ms) || ms <= 0) return ""
+        var totalSeconds = Math.floor(ms / 1000)
+        var hours = Math.floor(totalSeconds / 3600)
+        var minutes = Math.floor((totalSeconds % 3600) / 60)
+        var seconds = totalSeconds % 60
+        function pad(value) { return value < 10 ? "0" + value : "" + value }
+        return pad(hours) + ":" + pad(minutes) + ":" + pad(seconds)
+    }
+
+    function mediaInfoLabel() {
+        if (appController.selectedVideoPath.length === 0) return "Open a video to start marking removal intervals"
+        var parts = []
+        var duration = root.formatDuration(root.durationMs)
+        if (duration.length > 0) parts.push(duration)
+        parts.push(root.mediaExtensionLabel())
+        parts.push("Stream-copy")
+        return parts.join(" - ")
     }
 
     function toggleTheme() {
@@ -93,6 +144,8 @@ Item {
             }
 
             ColumnLayout {
+                id: mediaInfoArea
+
                 Layout.fillWidth: true
                 Layout.minimumWidth: 160
                 spacing: 2
@@ -110,13 +163,19 @@ Item {
 
                 Text {
                     Layout.fillWidth: true
-                    text: appController.selectedVideoPath.length > 0
-                        ? "Stream-copy preview  |  " + appController.selectedVideoPath
-                        : "Open a video to start marking removal intervals"
+                    text: root.mediaInfoLabel()
                     color: root.mutedTextColor
                     font.pixelSize: 11
                     elide: Text.ElideMiddle
                     visible: !root.compactMode || root.width > 1300
+                }
+
+                MouseArea {
+                    anchors.fill: parent
+                    acceptedButtons: Qt.NoButton
+                    hoverEnabled: true
+                    ToolTip.visible: containsMouse && appController.selectedVideoPath.length > 0
+                    ToolTip.text: appController.selectedVideoPath
                 }
             }
 
@@ -135,11 +194,11 @@ Item {
             AppButton {
                 id: subtitleButton
 
-                text: root.selectedSubtitleLabel() + " v"
+                text: root.selectedSubtitleLabel() + (appController.subtitleCandidates.length > 0 ? " v" : "")
                 variant: "secondary"
                 size: "md"
                 lightMode: root.lightMode
-                Layout.preferredWidth: root.compactMode ? 124 : 156
+                Layout.preferredWidth: root.compactMode ? 174 : 214
                 Layout.preferredHeight: 40
                 enabled: appController.subtitleCandidates.length > 0
                     || appController.subtitleDetectionState === "loading"
@@ -152,7 +211,7 @@ Item {
                 radius: 12
                 color: root.lightMode ? theme.lightSuccessSoft : "#0D2F1D"
                 border.color: root.lightMode ? "#A7F3D0" : "#1B6F3A"
-                visible: !root.narrowMode
+                visible: false
 
                 Text {
                     anchors.fill: parent

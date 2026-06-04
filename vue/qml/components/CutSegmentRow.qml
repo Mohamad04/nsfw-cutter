@@ -80,7 +80,7 @@ Rectangle {
         Text { text: root.safeStartTime; color: root.safeColor; font.pixelSize: 11; font.bold: true; Layout.preferredWidth: root.timeColumnWidth; Layout.minimumWidth: 0; elide: Text.ElideRight }
         Text { text: root.safeEndTime; color: root.safeColor; font.pixelSize: 11; font.bold: true; Layout.preferredWidth: root.timeColumnWidth; Layout.minimumWidth: 0; elide: Text.ElideRight }
         Text { text: root.durationText(); color: root.textMuted; font.pixelSize: 11; Layout.preferredWidth: root.durationColumnWidth; Layout.minimumWidth: 0; elide: Text.ElideRight }
-        Text { text: root.score; color: root.textMain; font.pixelSize: 11; Layout.fillWidth: true; Layout.minimumWidth: root.extraColumnWidth; elide: Text.ElideRight }
+        Item { Layout.fillWidth: true; Layout.minimumWidth: root.extraColumnWidth }
 
         AppButton { text: "Jump"; variant: "secondary"; size: "sm"; lightMode: root.lightMode; Layout.preferredWidth: root.jumpButtonWidth; Layout.minimumWidth: 0; onClicked: root.jumpStartRequested() }
         AppButton { text: "Edit"; variant: "ghost"; size: "sm"; lightMode: root.lightMode; Layout.preferredWidth: root.editButtonWidth; Layout.minimumWidth: 0; onClicked: root.editRequested() }
@@ -103,7 +103,7 @@ Rectangle {
 
         Text {
             Layout.fillWidth: true
-            text: "Removed " + root.durationText() + " | Confidence " + root.score + " | " + root.reason + " | " + root.tags
+            text: "Removed " + root.durationText() + " | " + root.reason + " | " + root.tags
             color: root.textMuted
             font.pixelSize: 11
             elide: Text.ElideRight

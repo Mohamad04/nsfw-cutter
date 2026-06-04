@@ -273,6 +273,7 @@ Item {
                 textColor: root.textMain
                 mutedTextColor: root.textMuted
                 accentColor: root.accent
+                durationMs: homeBody.videoDurationMs
                 onOpenFileRequested: appController.openFile()
                 onOpenFilesRequested: appController.openFiles()
                 onOpenFolderRequested: appController.browseFolder()

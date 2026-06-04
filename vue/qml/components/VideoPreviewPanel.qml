@@ -201,7 +201,7 @@ Panel {
 
         Rectangle {
             Layout.fillWidth: true
-            Layout.preferredHeight: root.compactMode ? 92 : 104
+            Layout.preferredHeight: root.compactMode ? 128 : 142
             radius: 12
             color: root.lightMode ? "#FFFFFF" : "#091321"
             border.color: root.lightMode ? "#DCE4EF" : "#223247"
@@ -236,12 +236,17 @@ Panel {
                 VideoControls {
                     id: controls
                     Layout.fillWidth: true
-                    Layout.preferredHeight: root.compactMode ? 38 : 42
+                    Layout.preferredHeight: root.compactMode ? 78 : 86
                     compactMode: root.compactMode
                     lightMode: root.lightMode
                     playing: player.playbackState === MediaPlayer.PlayingState
                     volume: root.volumeLevel
+                    addEnabled: root.cutPreview
+                        && root.cutPreview.visible === true
+                        && root.cutPreview.valid === true
+                        && root.cutPreview.has_safe === true
                     previewEnabled: root.selectedCutIndex >= 0 && root.cutsModel && root.selectedCutIndex < root.cutsModel.count
+                    subtitlesAvailable: appController.subtitleCandidates.length > 0
                     onSeekRequested: function(seconds) { root.seekBy(seconds) }
                     onPlaybackToggled: root.togglePlayback()
                     onStartRequested: root.startRequested(root.formatTime(player.position))

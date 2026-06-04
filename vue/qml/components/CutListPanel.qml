@@ -107,11 +107,11 @@ Rectangle {
     ColumnLayout {
         anchors.fill: parent
         anchors.margins: 10
-        spacing: 8
+        spacing: root.cutsModel.count === 0 ? 6 : 8
 
         RowLayout {
             Layout.fillWidth: true
-            Layout.preferredHeight: root.shortMode ? 36 : 44
+            Layout.preferredHeight: root.cutsModel.count === 0 ? 30 : (root.shortMode ? 34 : 40)
 
             Text {
                 Layout.minimumWidth: 0
@@ -168,8 +168,8 @@ Rectangle {
 
         Rectangle {
             Layout.fillWidth: true
-            Layout.preferredHeight: root.shortMode ? 58 : 84
-            Layout.minimumHeight: root.shortMode ? 52 : 70
+            Layout.preferredHeight: root.cutsModel.count === 0 ? 42 : (root.shortMode ? 54 : 70)
+            Layout.minimumHeight: root.cutsModel.count === 0 ? 38 : 50
             radius: 10
             color: root.lightMode ? "#F8FAFC" : "#050B14"
             border.color: root.lightMode ? "#E2E8F0" : "#142033"
@@ -178,8 +178,8 @@ Rectangle {
                 anchors.left: parent.left
                 anchors.top: parent.top
                 anchors.leftMargin: 10
-                anchors.topMargin: 8
-                text: root.durationMs > 0 ? "Removal timeline | orange requested, green safe adjusted removal" : "Removal timeline waits for loaded video duration"
+                anchors.topMargin: root.cutsModel.count === 0 ? 6 : 8
+                text: root.durationMs > 0 ? "Orange requested - green safe adjusted removal" : "Timeline waits for loaded video duration"
                 color: root.textMuted
                 font.pixelSize: 11
             }
@@ -188,7 +188,7 @@ Rectangle {
                 anchors.right: parent.right
                 anchors.top: parent.top
                 anchors.rightMargin: 10
-                anchors.topMargin: 8
+                anchors.topMargin: root.cutsModel.count === 0 ? 6 : 8
                 text: root.durationMs > 0 ? "Full video: 00:00:00 -> " + root.formatTime(root.durationMs) : ""
                 color: root.textMuted
                 font.pixelSize: 11
@@ -201,8 +201,8 @@ Rectangle {
                 anchors.bottom: parent.bottom
                 anchors.leftMargin: 10
                 anchors.rightMargin: 10
-                anchors.bottomMargin: 18
-                height: 16
+                anchors.bottomMargin: root.cutsModel.count === 0 ? 8 : 16
+                height: root.cutsModel.count === 0 ? 10 : 16
                 radius: 8
                 color: root.lightMode ? "#CBD5E1" : "#243244"
 
@@ -292,16 +292,16 @@ Rectangle {
                 Text { text: "Safe Start"; color: root.textMuted; font.pixelSize: 11; Layout.preferredWidth: root.timeColumnWidth; Layout.minimumWidth: 0; elide: Text.ElideRight }
                 Text { text: "Safe End"; color: root.textMuted; font.pixelSize: 11; Layout.preferredWidth: root.timeColumnWidth; Layout.minimumWidth: 0; elide: Text.ElideRight }
                 Text { text: "Removed Duration"; color: root.textMuted; font.pixelSize: 11; Layout.preferredWidth: root.durationColumnWidth; Layout.minimumWidth: 0; elide: Text.ElideRight }
-                Text { text: "Confidence"; color: root.textMuted; font.pixelSize: 11; Layout.fillWidth: true; Layout.minimumWidth: root.extraColumnWidth; elide: Text.ElideRight }
+                Item { Layout.fillWidth: true; Layout.minimumWidth: root.extraColumnWidth }
                 Text { text: "Actions"; color: root.textMuted; font.pixelSize: 11; Layout.preferredWidth: root.actionsColumnWidth; Layout.minimumWidth: 0; elide: Text.ElideRight }
             }
         }
 
         Rectangle {
             Layout.fillWidth: true
-            Layout.fillHeight: true
-            Layout.preferredHeight: root.shortMode ? 82 : 190
-            Layout.minimumHeight: root.shortMode ? 70 : (root.narrowMode ? 120 : 140)
+            Layout.fillHeight: root.cutsModel.count > 0
+            Layout.preferredHeight: root.cutsModel.count === 0 ? 32 : (root.shortMode ? 82 : 170)
+            Layout.minimumHeight: root.cutsModel.count === 0 ? 30 : (root.shortMode ? 70 : (root.narrowMode ? 110 : 130))
             radius: 10
             color: root.lightMode ? "#F8FAFC" : "#050B14"
             border.color: root.lightMode ? "#E2E8F0" : "#142033"
@@ -310,9 +310,9 @@ Rectangle {
             Text {
                 anchors.centerIn: parent
                 visible: root.cutsModel.count === 0
-                text: "Mark Start and End, then Add Cut. The interval appears here immediately."
+                text: "No cuts added yet. Use Set Start and Set End, then Add Cut."
                 color: root.textMuted
-                font.pixelSize: 13
+                font.pixelSize: 12
             }
 
             ListView {

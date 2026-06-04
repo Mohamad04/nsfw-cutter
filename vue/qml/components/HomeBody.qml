@@ -58,19 +58,19 @@ Item {
 
     RowLayout {
         anchors.fill: parent
-        spacing: root.compactMode ? 10 : theme.sectionGap
+        spacing: root.compactMode ? 8 : theme.sectionGap
 
         ColumnLayout {
             Layout.fillWidth: true
             Layout.fillHeight: true
             Layout.minimumWidth: 0
-            spacing: root.compactMode ? 10 : theme.sectionGap
+            spacing: root.compactMode ? 8 : theme.sectionGap
 
             VideoPreviewPanel {
                 id: videoPanel
                 Layout.fillWidth: true
                 Layout.fillHeight: true
-                Layout.minimumHeight: root.shortMode ? 300 : 430
+                Layout.minimumHeight: root.shortMode ? 360 : 460
                 compactMode: root.compactMode
                 lightMode: root.lightMode
                 shortMode: root.shortMode
@@ -93,9 +93,11 @@ Item {
             }
 
             AiPicksPanel {
+                id: aiPicksPanel
                 Layout.fillWidth: true
-                Layout.preferredHeight: root.shortMode ? 104 : 124
-                Layout.minimumHeight: root.shortMode ? 96 : 112
+                Layout.preferredHeight: aiPicksPanel.pickCount === 0 ? 44 : (root.shortMode ? 94 : 108)
+                Layout.minimumHeight: aiPicksPanel.pickCount === 0 ? 44 : 88
+                Layout.maximumHeight: aiPicksPanel.pickCount === 0 ? 44 : 116
                 lightMode: root.lightMode
                 narrowMode: root.narrowMode
                 shortMode: root.shortMode
@@ -112,9 +114,9 @@ Item {
 
             CutListPanel {
                 Layout.fillWidth: true
-                Layout.preferredHeight: root.shortMode ? 190 : 260
-                Layout.minimumHeight: root.shortMode ? 150 : 210
-                Layout.maximumHeight: root.shortMode ? 220 : 320
+                Layout.preferredHeight: root.cutsModel.count === 0 ? 126 : (root.shortMode ? 190 : 250)
+                Layout.minimumHeight: root.cutsModel.count === 0 ? 116 : 160
+                Layout.maximumHeight: root.cutsModel.count === 0 ? 136 : (root.shortMode ? 220 : 300)
                 cutsModel: root.cutsModel
                 compactMode: root.compactMode
                 lightMode: root.lightMode

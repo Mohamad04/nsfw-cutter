@@ -81,12 +81,6 @@ Panel {
                 onHeaderExpandRequested: root.headerExpandRequested()
             }
 
-            ExportJobSection {
-                Layout.fillWidth: true
-                textMuted: root.textMuted
-                accent: root.accent
-                lightMode: root.lightMode
-            }
         }
     }
 }

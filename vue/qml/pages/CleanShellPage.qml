@@ -7,6 +7,7 @@ import "../components"
 
 Item {
     id: root
+    objectName: "cleanShellPage"
 
     signal settingsRequested()
 
@@ -19,9 +20,12 @@ Item {
     property color textMain: root.darkMode ? theme.darkTextPrimary : theme.lightTextPrimary
     property color textMuted: root.darkMode ? theme.darkTextMuted : theme.lightTextMuted
     property int selectedCutIndex: -1
+    property string outputDir: ""
 
     AppTheme { id: theme }
-    ListModel { id: cutsModel }
+    ListModel { id: cutsModel; objectName: "cutsModel" }
+
+    Component.onCompleted: root.outputDir = settingsController.getExportDir()
 
     function appendCut(cut) {
         cutsModel.append({
@@ -48,6 +52,51 @@ Item {
             "status": cut.status || "Pending"
         })
         root.selectedCutIndex = cutsModel.count - 1
+    }
+
+    function cutsToArray() {
+        var cuts = []
+        for (var index = 0; index < cutsModel.count; index += 1) {
+            var cut = cutsModel.get(index)
+            cuts.push({
+                "start": cut.start,
+                "end": cut.end,
+                "safe_start": cut.safeStart,
+                "safe_end": cut.safeEnd,
+                "requested_start_seconds": cut.requestedStartSeconds,
+                "requested_end_seconds": cut.requestedEndSeconds,
+                "safe_start_seconds": cut.safeStartSeconds,
+                "safe_end_seconds": cut.safeEndSeconds,
+                "previous_keyframe_start": cut.previousKeyframeStart,
+                "next_keyframe_start": cut.nextKeyframeStart,
+                "previous_keyframe_end": cut.previousKeyframeEnd,
+                "next_keyframe_end": cut.nextKeyframeEnd,
+                "reason": cut.reason,
+                "tags": cut.tags,
+                "source": cut.source,
+                "score": cut.score,
+                "type": cut.cutType,
+                "status": cut.status
+            })
+        }
+        return cuts
+    }
+
+    function chooseOutputFolder() {
+        var folder = settingsController.chooseExportDir()
+        if (folder.length === 0) return
+        root.outputDir = folder
+        settingsController.setExportDir(folder)
+    }
+
+    function exportCleanVideo() {
+        if (appController.selectedVideoPath.length === 0 || cutsModel.count === 0) return
+        videoCutController.exportSegments(
+            appController.selectedVideoPath,
+            root.cutsToArray(),
+            root.outputDir,
+            "remove_intervals"
+        )
     }
 
     Rectangle {
@@ -77,6 +126,8 @@ Item {
                 spacing: 12
 
                 VideoWorkspace {
+                    id: videoWorkspace
+
                     Layout.fillWidth: true
                     Layout.fillHeight: true
                     cutsModel: cutsModel
@@ -90,38 +141,38 @@ Item {
                     onCutAdded: function(cut) { root.appendCut(cut) }
                 }
 
-                Rectangle {
-                    Layout.preferredWidth: 320
-                    Layout.minimumWidth: 260
+                CutManagementPanel {
+                    Layout.preferredWidth: 340
+                    Layout.minimumWidth: 320
                     Layout.maximumWidth: 360
                     Layout.fillHeight: true
-                    radius: 10
-                    color: root.surface
-                    border.color: root.borderColor
-
-                    Text {
-                        anchors.centerIn: parent
-                        text: "Cut list placeholder"
-                        color: root.textMain
-                        font.pixelSize: 16
-                        font.bold: true
-                    }
+                    cutsModel: cutsModel
+                    selectedIndex: root.selectedCutIndex
+                    durationMs: videoWorkspace.durationMs
+                    lightMode: root.lightMode
+                    panelColor: root.surface
+                    strokeColor: root.borderColor
+                    textColor: root.textMain
+                    mutedTextColor: root.textMuted
+                    accentColor: root.darkMode ? theme.darkAccent : theme.lightAccent
+                    onCutSelected: function(index) { root.selectedCutIndex = index }
                 }
             }
 
-            Rectangle {
+            ExportActionBar {
                 Layout.fillWidth: true
                 Layout.preferredHeight: 72
-                radius: 10
-                color: root.surface
-                border.color: root.borderColor
-
-                Text {
-                    anchors.centerIn: parent
-                    text: "Export/actions bar placeholder"
-                    color: root.textMuted
-                    font.pixelSize: 16
-                }
+                outputDir: root.outputDir
+                lightMode: root.lightMode
+                hasVideo: appController.selectedVideoPath.length > 0
+                hasCuts: cutsModel.count > 0
+                panelColor: root.surface
+                strokeColor: root.borderColor
+                textColor: root.textMain
+                mutedTextColor: root.textMuted
+                accentColor: root.darkMode ? theme.darkAccent : theme.lightAccent
+                onChooseFolderRequested: root.chooseOutputFolder()
+                onExportCleanVideoRequested: root.exportCleanVideo()
             }
         }
     }

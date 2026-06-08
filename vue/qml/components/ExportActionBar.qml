@@ -21,20 +21,18 @@ Rectangle {
     signal chooseFolderRequested()
     signal exportCleanVideoRequested()
 
-    radius: 10
-    color: root.panelColor
-    border.color: root.strokeColor
+    radius: 14
+    color: root.lightMode ? root.panelColor : "#081321"
+    border.color: root.lightMode ? root.strokeColor : "#223754"
     clip: true
 
-    AppTheme { id: theme }
-
-    function statusText() {
-        if (videoCutController.cutBusy) return videoCutController.cutStatus
-        if (videoCutController.cutError.length > 0) return videoCutController.cutError
-        if (videoCutController.cutWarning.length > 0) return videoCutController.cutWarning
-        if (!root.hasVideo) return "Open a video to export"
-        if (!root.hasCuts) return "Add at least one cut to export"
-        return "Ready to export"
+    Rectangle {
+        anchors.fill: parent
+        anchors.margins: 1
+        radius: 13
+        color: "transparent"
+        border.color: root.lightMode ? "#FFFFFF" : "#163456"
+        opacity: root.lightMode ? 0.36 : 0.42
     }
 
     RowLayout {
@@ -58,8 +56,8 @@ Rectangle {
             Layout.minimumWidth: 180
             Layout.preferredHeight: 42
             radius: 11
-            color: root.lightMode ? "#F8FAFC" : "#081321"
-            border.color: root.lightMode ? "#DCE4EF" : "#1B2B45"
+            color: root.lightMode ? "#F8FAFC" : "#06101D"
+            border.color: root.lightMode ? "#DCE4EF" : "#1C3150"
 
             RowLayout {
                 anchors.fill: parent
@@ -67,12 +65,11 @@ Rectangle {
                 anchors.rightMargin: 12
                 spacing: 8
 
-                Text {
-                    text: "Dir"
-                    color: root.mutedTextColor
-                    font.pixelSize: 11
-                    font.weight: Font.DemiBold
-                    verticalAlignment: Text.AlignVCenter
+                VectorIcon {
+                    Layout.preferredWidth: 18
+                    Layout.preferredHeight: 18
+                    name: "folder"
+                    iconColor: root.outputDir.length > 0 ? root.accentColor : root.mutedTextColor
                 }
 
                 Text {
@@ -89,61 +86,24 @@ Rectangle {
 
         AppButton {
             text: "Change..."
+            iconName: "folder"
             variant: "ghost"
             size: "sm"
             lightMode: root.lightMode
             enabled: !videoCutController.cutBusy
-            Layout.preferredWidth: 94
+            Layout.preferredWidth: 122
             Layout.preferredHeight: 40
             onClicked: root.chooseFolderRequested()
         }
 
-        ColumnLayout {
-            Layout.preferredWidth: 170
-            Layout.minimumWidth: 130
-            spacing: 3
-
-            Text {
-                Layout.fillWidth: true
-                text: root.statusText()
-                color: videoCutController.cutError.length > 0
-                    ? (root.lightMode ? theme.lightDanger : theme.darkDanger)
-                    : root.mutedTextColor
-                font.pixelSize: 11
-                elide: Text.ElideRight
-            }
-
-            ProgressBar {
-                Layout.fillWidth: true
-                Layout.preferredHeight: 5
-                visible: videoCutController.cutBusy
-                from: 0
-                to: 1
-                value: videoCutController.cutProgressValue / 100
-
-                background: Rectangle {
-                    radius: 3
-                    color: root.lightMode ? "#E2E8F0" : "#111827"
-                }
-
-                contentItem: Item {
-                    Rectangle {
-                        width: parent.width * videoCutController.cutProgressValue / 100
-                        height: parent.height
-                        radius: 3
-                        color: root.accentColor
-                    }
-                }
-            }
-        }
-
         AppButton {
             text: "Preview Cuts"
+            iconName: "eye"
             variant: "ghost"
             size: "sm"
             lightMode: root.lightMode
             enabled: false
-            Layout.preferredWidth: 120
+            Layout.preferredWidth: 144
             Layout.preferredHeight: 40
             ToolTip.visible: hovered
             ToolTip.text: root.hasCuts
@@ -153,11 +113,12 @@ Rectangle {
 
         AppButton {
             text: "Export Clean Video"
+            iconName: "export"
             variant: "success"
             size: "sm"
             lightMode: root.lightMode
             enabled: root.hasVideo && root.hasCuts && !videoCutController.cutBusy
-            Layout.preferredWidth: 172
+            Layout.preferredWidth: 196
             Layout.preferredHeight: 40
             onClicked: root.exportCleanVideoRequested()
         }

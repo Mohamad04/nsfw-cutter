@@ -22,10 +22,19 @@ Rectangle {
 
     signal cutSelected(int index)
 
-    radius: 10
-    color: root.panelColor
-    border.color: root.strokeColor
+    radius: 14
+    color: root.lightMode ? root.panelColor : "#081321"
+    border.color: root.lightMode ? root.strokeColor : "#223754"
     clip: true
+
+    Rectangle {
+        anchors.fill: parent
+        anchors.margins: 1
+        radius: 13
+        color: "transparent"
+        border.color: root.lightMode ? "#FFFFFF" : "#163456"
+        opacity: root.lightMode ? 0.36 : 0.42
+    }
 
     AppTheme { id: theme }
 
@@ -169,13 +178,25 @@ Rectangle {
             Layout.preferredHeight: 46
             spacing: 3
 
-            Text {
+            RowLayout {
                 Layout.fillWidth: true
-                text: "Cut List"
-                color: root.textColor
-                font.pixelSize: 18
-                font.weight: Font.DemiBold
-                elide: Text.ElideRight
+                spacing: 8
+
+                VectorIcon {
+                    Layout.preferredWidth: 18
+                    Layout.preferredHeight: 18
+                    name: "list"
+                    iconColor: root.accentColor
+                }
+
+                Text {
+                    Layout.fillWidth: true
+                    text: "Cut List"
+                    color: root.textColor
+                    font.pixelSize: 18
+                    font.weight: Font.DemiBold
+                    elide: Text.ElideRight
+                }
             }
 
             Text {
@@ -194,20 +215,30 @@ Rectangle {
             Layout.minimumHeight: 170
             radius: 12
             color: root.lightMode ? "#F8FAFC" : "#050B14"
-            border.color: root.lightMode ? "#E2E8F0" : "#142033"
+            border.color: root.lightMode ? "#E2E8F0" : "#17263E"
             clip: true
 
             Column {
                 anchors.centerIn: parent
                 width: parent.width - 32
-                spacing: 10
+                spacing: 11
                 visible: root.cutsModel.count === 0
 
-                Text {
+                Rectangle {
                     anchors.horizontalCenter: parent.horizontalCenter
-                    text: "✂"
-                    color: root.lightMode ? "#CBD5E1" : "#334155"
-                    font.pixelSize: 34
+                    width: 48
+                    height: 48
+                    radius: 18
+                    color: root.lightMode ? "#EFF6FF" : "#0B1D33"
+                    border.color: root.lightMode ? "#BFDBFE" : "#213A5E"
+
+                    VectorIcon {
+                        anchors.centerIn: parent
+                        width: 24
+                        height: 24
+                        name: "scissors"
+                        iconColor: root.lightMode ? "#2563EB" : "#5AA4FF"
+                    }
                 }
 
                 Text {
@@ -268,6 +299,23 @@ Rectangle {
                         : (rowMouse.containsMouse ? (root.lightMode ? "#CBD5E1" : "#243244") : "transparent")
                     border.width: selected || rowMouse.containsMouse ? 1 : 0
 
+                    Rectangle {
+                        anchors.fill: parent
+                        radius: parent.radius
+                        color: root.accentColor
+                        opacity: rowRoot.selected ? 0.08 : 0
+                    }
+
+                    Rectangle {
+                        anchors.left: parent.left
+                        anchors.top: parent.top
+                        anchors.bottom: parent.bottom
+                        width: 3
+                        radius: 2
+                        color: root.accentColor
+                        visible: rowRoot.selected
+                    }
+
                     MouseArea {
                         id: rowMouse
                         anchors.fill: parent
@@ -301,7 +349,7 @@ Rectangle {
                                 }
 
                                 Rectangle {
-                                    Layout.preferredWidth: rowStatusText.implicitWidth + 14
+                                    Layout.preferredWidth: rowStatusText.implicitWidth + 34
                                     Layout.preferredHeight: 22
                                     radius: 11
                                     color: rowRoot.rowStatus === "Adjusted"
@@ -311,15 +359,28 @@ Rectangle {
                                         ? (root.lightMode ? "#F59E0B" : "#F59E3D")
                                         : (root.lightMode ? "#22C55E" : "#22B454")
 
-                                    Text {
-                                        id: rowStatusText
+                                    RowLayout {
                                         anchors.centerIn: parent
-                                        text: rowRoot.rowStatus
-                                        color: rowRoot.rowStatus === "Adjusted"
-                                            ? (root.lightMode ? "#A16207" : "#FDE68A")
-                                            : root.safeColor
-                                        font.pixelSize: 10
-                                        font.weight: Font.DemiBold
+                                        spacing: 4
+
+                                        VectorIcon {
+                                            Layout.preferredWidth: 12
+                                            Layout.preferredHeight: 12
+                                            name: rowRoot.rowStatus === "Adjusted" ? "warning" : "shield"
+                                            iconColor: rowRoot.rowStatus === "Adjusted"
+                                                ? (root.lightMode ? "#A16207" : "#FDE68A")
+                                                : root.safeColor
+                                        }
+
+                                        Text {
+                                            id: rowStatusText
+                                            text: rowRoot.rowStatus
+                                            color: rowRoot.rowStatus === "Adjusted"
+                                                ? (root.lightMode ? "#A16207" : "#FDE68A")
+                                                : root.safeColor
+                                            font.pixelSize: 10
+                                            font.weight: Font.DemiBold
+                                        }
                                     }
                                 }
                             }
@@ -347,12 +408,15 @@ Rectangle {
                         }
 
                         AppButton {
-                            text: "Delete"
-                            variant: "danger"
+                            text: ""
+                            iconName: "trash"
+                            variant: "ghost"
                             size: "sm"
                             lightMode: root.lightMode
-                            Layout.preferredWidth: 62
+                            Layout.preferredWidth: 38
                             Layout.preferredHeight: 32
+                            ToolTip.visible: hovered
+                            ToolTip.text: "Delete cut"
                             onClicked: root.deleteCut(rowRoot.index)
                         }
                     }
@@ -364,8 +428,8 @@ Rectangle {
             Layout.fillWidth: true
             Layout.preferredHeight: root.cutsModel.count > 0 ? 230 : 86
             radius: 12
-            color: root.lightMode ? "#F8FAFC" : "#091321"
-            border.color: root.lightMode ? "#E2E8F0" : "#142033"
+            color: root.lightMode ? "#F8FAFC" : "#07101D"
+            border.color: root.lightMode ? "#E2E8F0" : "#17263E"
 
             Text {
                 anchors.centerIn: parent
@@ -409,15 +473,28 @@ Rectangle {
                             ? (root.lightMode ? "#F59E0B" : "#F59E3D")
                             : (root.lightMode ? "#22C55E" : "#22B454")
 
-                        Text {
-                            id: detailStatusText
+                        RowLayout {
                             anchors.centerIn: parent
-                            text: root.statusText(root.selectedCut())
-                            color: root.isAdjusted(root.selectedCut())
-                                ? (root.lightMode ? "#A16207" : "#FDE68A")
-                                : root.safeColor
-                            font.pixelSize: 10
-                            font.weight: Font.DemiBold
+                            spacing: 4
+
+                            VectorIcon {
+                                Layout.preferredWidth: 12
+                                Layout.preferredHeight: 12
+                                name: root.isAdjusted(root.selectedCut()) ? "warning" : "shield"
+                                iconColor: root.isAdjusted(root.selectedCut())
+                                    ? (root.lightMode ? "#A16207" : "#FDE68A")
+                                    : root.safeColor
+                            }
+
+                            Text {
+                                id: detailStatusText
+                                text: root.statusText(root.selectedCut())
+                                color: root.isAdjusted(root.selectedCut())
+                                    ? (root.lightMode ? "#A16207" : "#FDE68A")
+                                    : root.safeColor
+                                font.pixelSize: 10
+                                font.weight: Font.DemiBold
+                            }
                         }
                     }
                 }
@@ -464,7 +541,7 @@ Rectangle {
             Layout.preferredHeight: 74
             radius: 12
             color: root.lightMode ? "#F8FAFC" : "#050B14"
-            border.color: root.lightMode ? "#E2E8F0" : "#142033"
+            border.color: root.lightMode ? "#E2E8F0" : "#17263E"
 
             ColumnLayout {
                 anchors.fill: parent

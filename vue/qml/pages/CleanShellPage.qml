@@ -102,6 +102,11 @@ Item {
     Rectangle {
         anchors.fill: parent
         color: root.pageBg
+        gradient: Gradient {
+            GradientStop { position: 0.0; color: root.lightMode ? root.pageBg : "#050A13" }
+            GradientStop { position: 0.55; color: root.lightMode ? "#F8FAFC" : "#07111F" }
+            GradientStop { position: 1.0; color: root.lightMode ? "#EEF2F7" : "#030711" }
+        }
 
         ColumnLayout {
             anchors.fill: parent

@@ -15,8 +15,8 @@ Item {
     property color textColor: "#F3F6FB"
     property color mutedTextColor: "#92A2B8"
     property color accentColor: "#2F7BFF"
-    readonly property color elevatedPanel: root.lightMode ? "#FFFFFF" : "#07111E"
-    readonly property color elevatedBorder: root.lightMode ? "#CBD5E1" : "#26354A"
+    readonly property color elevatedPanel: root.lightMode ? "#FFFFFF" : "#06101D"
+    readonly property color elevatedBorder: root.lightMode ? "#CBD5E1" : "#2B4260"
 
     signal settingsRequested()
 
@@ -55,12 +55,12 @@ Item {
         if (appController.subtitleDetectionState === "loading") return "Detecting subtitles"
 
         var selected = root.selectedSubtitleOption()
-        if (selected && selected.source === "off") return "Select subtitle  ▾"
+        if (selected && selected.source === "off") return "Select subtitle"
 
         var name = root.subtitleName(selected)
-        if (name.length > 0) return "Subtitles: " + name + "  ▾"
+        if (name.length > 0) return "Subtitles: " + name
 
-        return "Select subtitle  ▾"
+        return "Select subtitle"
     }
 
     function formatLabel() {
@@ -108,27 +108,67 @@ Item {
     Rectangle {
         anchors.fill: parent
         radius: 14
-        color: root.panelColor
-        border.color: root.strokeColor
+        color: root.lightMode ? root.panelColor : "#0A1423"
+        border.color: root.lightMode ? root.strokeColor : "#233754"
+
+        Rectangle {
+            anchors.fill: parent
+            anchors.margins: 1
+            radius: 13
+            color: "transparent"
+            border.color: root.lightMode ? "#FFFFFF" : "#163456"
+            border.width: 1
+            opacity: root.lightMode ? 0.42 : 0.42
+        }
+
+        Rectangle {
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.top: parent.top
+            anchors.leftMargin: 16
+            anchors.rightMargin: 16
+            anchors.topMargin: 1
+            height: 1
+            color: root.lightMode ? "#FFFFFF" : "#7DB7FF"
+            opacity: root.lightMode ? 0.55 : 0.18
+        }
 
         RowLayout {
             anchors.fill: parent
             anchors.leftMargin: 16
             anchors.rightMargin: 16
-            spacing: 14
+            spacing: 16
 
             RowLayout {
-                Layout.preferredWidth: 164
-                Layout.minimumWidth: 144
-                spacing: 9
+                Layout.preferredWidth: 174
+                Layout.minimumWidth: 150
+                spacing: 10
 
-                Image {
-                    source: root.appIconSource
-                    fillMode: Image.PreserveAspectFit
-                    smooth: true
-                    mipmap: true
+                Rectangle {
                     Layout.preferredWidth: 32
                     Layout.preferredHeight: 32
+                    radius: 10
+                    color: root.lightMode ? "#EFF6FF" : "#0B2548"
+                    border.color: root.lightMode ? "#BFDBFE" : "#2F7BFF"
+
+                    Rectangle {
+                        anchors.centerIn: parent
+                        width: 20
+                        height: 20
+                        radius: 8
+                        color: "#2F7BFF"
+                        opacity: root.lightMode ? 0.16 : 0.18
+                    }
+
+                    Image {
+                        anchors.centerIn: parent
+                        width: 23
+                        height: 23
+                        source: root.appIconSource
+                        fillMode: Image.PreserveAspectFit
+                        smooth: true
+                        mipmap: true
+                    }
                 }
 
                 Text {
@@ -146,10 +186,10 @@ Item {
                 id: openButton
                 objectName: "openMenuButton"
 
-                text: openMenu.opened ? "Open  ▴" : "Open  ▾"
+                text: "Open"
                 font.pixelSize: 13
                 font.weight: Font.DemiBold
-                Layout.preferredWidth: 104
+                Layout.preferredWidth: 112
                 Layout.preferredHeight: 40
                 onClicked: openMenu.opened ? openMenu.closeAfterAction() : openMenu.showAt(openButton)
 
@@ -164,13 +204,35 @@ Item {
                     border.width: 1
                 }
 
-                contentItem: Text {
-                    text: openButton.text
-                    color: "#F8FAFC"
-                    font: openButton.font
-                    horizontalAlignment: Text.AlignHCenter
-                    verticalAlignment: Text.AlignVCenter
-                    elide: Text.ElideRight
+                contentItem: RowLayout {
+                    anchors.fill: parent
+                    anchors.leftMargin: 12
+                    anchors.rightMargin: 10
+                    spacing: 7
+
+                    VectorIcon {
+                        Layout.preferredWidth: 16
+                        Layout.preferredHeight: 16
+                        name: "open"
+                        iconColor: "#F8FAFC"
+                    }
+
+                    Text {
+                        Layout.fillWidth: true
+                        text: openButton.text
+                        color: "#F8FAFC"
+                        font: openButton.font
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                        elide: Text.ElideRight
+                    }
+
+                    VectorIcon {
+                        Layout.preferredWidth: 14
+                        Layout.preferredHeight: 14
+                        name: openMenu.opened ? "chevronUp" : "chevronDown"
+                        iconColor: "#F8FAFC"
+                    }
                 }
             }
 
@@ -213,6 +275,7 @@ Item {
                 id: subtitleButton
 
                 text: root.subtitleButtonLabel()
+                iconName: "cc"
                 variant: "ghost"
                 size: "md"
                 lightMode: root.lightMode
@@ -222,43 +285,23 @@ Item {
                 onClicked: subtitleSelector.showAt(subtitleButton)
             }
 
-            Button {
-                id: themeButton
-
-                text: root.lightMode ? "☾" : "☀"
-                font.pixelSize: 16
-                font.weight: Font.DemiBold
-                Layout.preferredWidth: 40
-                Layout.preferredHeight: 40
-                ToolTip.visible: hovered
-                ToolTip.text: "Toggle theme"
+            ThemeToggleButton {
+                lightMode: root.lightMode
+                Layout.preferredWidth: 64
+                Layout.preferredHeight: 44
                 onClicked: root.toggleTheme()
-
-                background: Rectangle {
-                    radius: 10
-                    color: themeButton.hovered
-                        ? (root.lightMode ? "#EFF6FF" : "#121C2C")
-                        : (root.lightMode ? "#FFFFFF" : "#101826")
-                    border.color: root.lightMode ? "#CBD5E1" : "#334155"
-                    border.width: 1
-                }
-
-                contentItem: Text {
-                    text: themeButton.text
-                    color: root.lightMode ? "#334155" : "#F8FAFC"
-                    font: themeButton.font
-                    horizontalAlignment: Text.AlignHCenter
-                    verticalAlignment: Text.AlignVCenter
-                }
             }
 
             AppButton {
-                text: "⚙  Settings"
+                text: ""
+                accessibilityLabel: "Settings"
+                iconSource: Qt.resolvedUrl("../../../assets/icons/settings.png")
+                imageIconSize: 32
                 variant: "ghost"
-                size: "sm"
+                size: "icon"
                 lightMode: root.lightMode
-                Layout.preferredWidth: 108
-                Layout.preferredHeight: 40
+                Layout.preferredWidth: 44
+                Layout.preferredHeight: 44
                 ToolTip.visible: hovered
                 ToolTip.text: "Settings"
                 onClicked: root.settingsRequested()
@@ -328,6 +371,7 @@ Item {
                 spacing: 5
 
                 MenuAction {
+                    iconName: "open"
                     label: "Select Video..."
                     shortcut: "Ctrl+O"
                     onTriggered: {
@@ -337,6 +381,7 @@ Item {
                 }
 
                 MenuAction {
+                    iconName: "folder"
                     label: "Select Folder..."
                     shortcut: "Ctrl+Shift+O"
                     onTriggered: {
@@ -365,7 +410,7 @@ Item {
 
                         required property var modelData
 
-                        iconText: "↻"
+                        iconName: "history"
                         label: root.recentDisplayName(recentRow.modelData)
                         tooltip: root.recentDisplayPath(recentRow.modelData)
                         onTriggered: {
@@ -380,6 +425,7 @@ Item {
                 MenuSeparator {}
 
                 MenuAction {
+                    iconName: "trash"
                     label: "Clear Recent List"
                     enabled: appController.recentFiles.length > 0
                     onTriggered: {
@@ -421,6 +467,7 @@ Item {
             id: actionRoot
 
             property string iconText: ""
+            property string iconName: ""
             property string label: ""
             property string shortcut: ""
             property string tooltip: ""
@@ -441,8 +488,18 @@ Item {
                 anchors.rightMargin: 10
                 spacing: 8
 
+                VectorIcon {
+                    visible: actionRoot.iconName.length > 0
+                    Layout.preferredWidth: 18
+                    Layout.preferredHeight: 18
+                    name: actionRoot.iconName
+                    iconColor: actionRoot.enabled
+                        ? (root.lightMode ? "#1F6FEB" : "#60A5FA")
+                        : (root.lightMode ? "#94A3B8" : "#64748B")
+                }
+
                 Text {
-                    visible: actionRoot.iconText.length > 0
+                    visible: actionRoot.iconText.length > 0 && actionRoot.iconName.length === 0
                     Layout.preferredWidth: 18
                     text: actionRoot.iconText
                     color: actionRoot.enabled

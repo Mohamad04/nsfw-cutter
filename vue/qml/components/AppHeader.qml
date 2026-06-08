@@ -248,25 +248,23 @@ Item {
                 }
             }
 
-            AppButton {
-                text: root.lightMode ? "Dark" : "Light"
-                variant: "ghost"
-                size: "sm"
+            ThemeToggleButton {
                 lightMode: root.lightMode
-                Layout.preferredWidth: 70
-                Layout.preferredHeight: 40
-                ToolTip.visible: hovered
-                ToolTip.text: "Toggle dark/light theme"
+                Layout.preferredWidth: 64
+                Layout.preferredHeight: 44
                 onClicked: root.toggleTheme()
             }
 
             AppButton {
-                text: "Settings"
+                text: ""
+                accessibilityLabel: "Settings"
+                iconSource: Qt.resolvedUrl("../../../assets/icons/settings.png")
+                imageIconSize: 32
                 variant: "ghost"
-                size: "sm"
+                size: "icon"
                 lightMode: root.lightMode
-                Layout.preferredWidth: root.compactMode ? 72 : 88
-                Layout.preferredHeight: 40
+                Layout.preferredWidth: 44
+                Layout.preferredHeight: 44
                 ToolTip.visible: hovered
                 ToolTip.text: "Settings"
                 onClicked: root.settingsClicked()

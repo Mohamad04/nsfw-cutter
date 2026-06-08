@@ -29,10 +29,19 @@ Rectangle {
 
     signal cutAdded(var cut)
 
-    radius: 10
-    color: root.panelColor
-    border.color: root.strokeColor
+    radius: 14
+    color: root.lightMode ? root.panelColor : "#081321"
+    border.color: root.lightMode ? root.strokeColor : "#223754"
     clip: true
+
+    Rectangle {
+        anchors.fill: parent
+        anchors.margins: 1
+        radius: 13
+        color: "transparent"
+        border.color: root.lightMode ? "#FFFFFF" : "#163456"
+        opacity: root.lightMode ? 0.36 : 0.42
+    }
 
     AppTheme { id: theme }
 
@@ -297,31 +306,58 @@ Rectangle {
         spacing: 10
 
         Rectangle {
+            id: videoStage
+            objectName: "videoStage"
+
             Layout.fillWidth: true
             Layout.fillHeight: true
             Layout.minimumHeight: 360
-            radius: 12
+            radius: 16
             color: root.videoColor
-            border.color: root.lightMode ? "#DCE4EF" : "#111827"
+            border.color: root.hasVideo
+                ? (root.lightMode ? "#93C5FD" : "#2F7BFF")
+                : (root.lightMode ? "#DCE4EF" : "#142033")
+            border.width: 1
             clip: true
+
+            Rectangle {
+                anchors.fill: parent
+                anchors.margins: 1
+                radius: 15
+                color: "transparent"
+                border.color: root.hasVideo ? root.accentColor : "#0E1A2C"
+                border.width: 1
+                opacity: root.hasVideo ? 0.22 : 0.24
+            }
+
+            Rectangle {
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.top: parent.top
+                height: 1
+                color: root.accentColor
+                opacity: root.hasVideo ? 0.28 : 0.08
+            }
 
             VideoOutput {
                 id: videoOutput
 
                 anchors.fill: parent
-                fillMode: VideoOutput.PreserveAspectFit
+                fillMode: VideoOutput.PreserveAspectCrop
             }
 
             Column {
-                anchors.centerIn: parent
+                anchors.horizontalCenter: parent.horizontalCenter
+                anchors.verticalCenter: parent.verticalCenter
                 spacing: 10
                 visible: !root.hasVideo
 
-                Text {
+                VectorIcon {
                     anchors.horizontalCenter: parent.horizontalCenter
-                    text: "▶"
-                    color: root.lightMode ? "#94A3B8" : "#475569"
-                    font.pixelSize: 42
+                    width: 44
+                    height: 44
+                    name: "play"
+                    iconColor: root.lightMode ? "#94A3B8" : "#36506E"
                 }
 
                 Text {
@@ -374,8 +410,8 @@ Rectangle {
             Layout.fillWidth: true
             Layout.preferredHeight: 56
             radius: 12
-            color: root.lightMode ? "#FFFFFF" : "#091321"
-            border.color: root.strokeColor
+            color: root.lightMode ? "#FFFFFF" : "#07101D"
+            border.color: root.lightMode ? root.strokeColor : "#1C2E49"
 
             RowLayout {
                 anchors.fill: parent
@@ -383,35 +419,27 @@ Rectangle {
                 anchors.rightMargin: 10
                 spacing: 8
 
-                AppButton {
-                    text: root.isPlaying ? "Pause" : "Play"
-                    variant: "primary"
-                    size: "sm"
+                PlayPauseButton {
+                    playing: root.isPlaying
                     lightMode: root.lightMode
                     enabled: root.hasVideo
-                    Layout.preferredWidth: 78
-                    Layout.preferredHeight: 36
+                    Layout.preferredWidth: 96
+                    Layout.preferredHeight: 40
                     onClicked: root.togglePlayback()
                 }
 
-                AppButton {
-                    text: "-5s"
-                    variant: "control"
-                    size: "sm"
+                BackwardFiveSeekButton {
                     lightMode: root.lightMode
                     enabled: root.hasVideo
-                    Layout.preferredWidth: 54
+                    Layout.preferredWidth: 84
                     Layout.preferredHeight: 36
                     onClicked: root.seekBy(-5)
                 }
 
-                AppButton {
-                    text: "+5s"
-                    variant: "control"
-                    size: "sm"
+                ForwardFiveSeekButton {
                     lightMode: root.lightMode
                     enabled: root.hasVideo
-                    Layout.preferredWidth: 54
+                    Layout.preferredWidth: 84
                     Layout.preferredHeight: 36
                     onClicked: root.seekBy(5)
                 }
@@ -439,35 +467,38 @@ Rectangle {
                         x: seekSlider.leftPadding
                         y: seekSlider.topPadding + seekSlider.availableHeight / 2 - height / 2
                         width: seekSlider.availableWidth
-                        height: 5
+                        height: 4
                         radius: 3
-                        color: root.lightMode ? "#CBD5E1" : "#334155"
+                        color: root.lightMode ? "#CBD5E1" : "#17263B"
 
                         Rectangle {
                             width: seekSlider.visualPosition * parent.width
                             height: parent.height
                             radius: parent.radius
-                            color: root.accentColor
+                            gradient: Gradient {
+                                GradientStop { position: 0.0; color: "#2F7BFF" }
+                                GradientStop { position: 1.0; color: "#7CCBFF" }
+                            }
                         }
                     }
 
                     handle: Rectangle {
                         x: seekSlider.leftPadding + seekSlider.visualPosition * (seekSlider.availableWidth - width)
                         y: seekSlider.topPadding + seekSlider.availableHeight / 2 - height / 2
-                        width: 14
-                        height: 14
-                        radius: 7
+                        width: 12
+                        height: 12
+                        radius: 6
                         color: root.lightMode ? "#FFFFFF" : "#E0F2FE"
                         border.color: root.accentColor
                         border.width: 2
                     }
                 }
 
-                Text {
-                    text: "Vol"
-                    color: root.mutedTextColor
-                    font.pixelSize: 11
-                    verticalAlignment: Text.AlignVCenter
+                VectorIcon {
+                    Layout.preferredWidth: 18
+                    Layout.preferredHeight: 18
+                    name: root.volumeLevel <= 0.01 ? "mute" : "volume"
+                    iconColor: root.mutedTextColor
                 }
 
                 Slider {
@@ -484,15 +515,15 @@ Rectangle {
                         x: volumeSlider.leftPadding
                         y: volumeSlider.topPadding + volumeSlider.availableHeight / 2 - height / 2
                         width: volumeSlider.availableWidth
-                        height: 5
+                        height: 4
                         radius: 3
-                        color: root.lightMode ? "#CBD5E1" : "#334155"
+                        color: root.lightMode ? "#CBD5E1" : "#17263B"
 
                         Rectangle {
                             width: volumeSlider.visualPosition * parent.width
                             height: parent.height
                             radius: parent.radius
-                            color: root.accentColor
+                            color: "#5AA4FF"
                         }
                     }
 
@@ -508,12 +539,13 @@ Rectangle {
                 }
 
                 AppButton {
-                    text: "Full"
+                    text: ""
+                    iconName: "fullscreen"
                     variant: "ghost"
                     size: "sm"
                     lightMode: root.lightMode
                     enabled: false
-                    Layout.preferredWidth: 58
+                    Layout.preferredWidth: 42
                     Layout.preferredHeight: 36
                     ToolTip.visible: hovered
                     ToolTip.text: "Fullscreen is not connected in this phase"
@@ -525,8 +557,8 @@ Rectangle {
             Layout.fillWidth: true
             Layout.preferredHeight: 56
             radius: 12
-            color: root.lightMode ? "#FFFFFF" : "#091321"
-            border.color: root.strokeColor
+            color: root.lightMode ? "#FFFFFF" : "#07101D"
+            border.color: root.lightMode ? root.strokeColor : "#1C2E49"
 
             RowLayout {
                 anchors.fill: parent
@@ -535,7 +567,8 @@ Rectangle {
                 spacing: 8
 
                 AppButton {
-                    text: "Set Start  I"
+                    text: "Set Start"
+                    iconName: "markerStart"
                     variant: "ghost"
                     size: "sm"
                     lightMode: root.lightMode
@@ -546,7 +579,8 @@ Rectangle {
                 }
 
                 AppButton {
-                    text: "Set End  O"
+                    text: "Set End"
+                    iconName: "markerEnd"
                     variant: "ghost"
                     size: "sm"
                     lightMode: root.lightMode
@@ -558,35 +592,62 @@ Rectangle {
 
                 AppButton {
                     text: "Add Cut"
+                    iconName: "scissors"
                     variant: "primary"
                     size: "sm"
                     lightMode: root.lightMode
                     enabled: root.canAddSafeCut()
-                    Layout.preferredWidth: 104
+                    Layout.preferredWidth: 112
                     Layout.preferredHeight: 36
                     onClicked: root.addCurrentCut()
                 }
 
                 AppButton {
                     text: "Preview Cut"
+                    iconName: "eye"
                     variant: "ghost"
                     size: "sm"
                     lightMode: root.lightMode
                     enabled: root.canAddCut()
-                    Layout.preferredWidth: 118
+                    Layout.preferredWidth: 132
                     Layout.preferredHeight: 36
                     onClicked: root.previewCut()
                 }
 
                 Item { Layout.fillWidth: true }
 
-                Text {
-                    text: "Start " + root.requestedStart + "    End " + root.requestedEnd
-                    color: root.mutedTextColor
-                    font.pixelSize: 12
-                    elide: Text.ElideRight
-                    verticalAlignment: Text.AlignVCenter
-                    Layout.maximumWidth: 280
+                Rectangle {
+                    Layout.preferredWidth: 286
+                    Layout.maximumWidth: 286
+                    Layout.preferredHeight: 36
+                    radius: 10
+                    color: root.lightMode ? "#F8FAFC" : "#0B1728"
+                    border.color: root.lightMode ? "#DCE4EF" : "#233754"
+
+                    RowLayout {
+                        anchors.fill: parent
+                        anchors.leftMargin: 10
+                        anchors.rightMargin: 10
+                        spacing: 10
+
+                        Text {
+                            text: "Selection"
+                            color: root.mutedTextColor
+                            font.pixelSize: 10
+                            font.weight: Font.DemiBold
+                            verticalAlignment: Text.AlignVCenter
+                        }
+
+                        Text {
+                            Layout.fillWidth: true
+                            text: "Start " + root.requestedStart + "    End " + root.requestedEnd
+                            color: root.textColor
+                            font.pixelSize: 12
+                            font.weight: Font.Medium
+                            elide: Text.ElideRight
+                            verticalAlignment: Text.AlignVCenter
+                        }
+                    }
                 }
             }
         }

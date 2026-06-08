@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Layouts
 
 Button {
     id: root
@@ -11,7 +12,18 @@ Button {
     // sm, md, lg, icon
 
     property bool lightMode: false
+    property string iconName: ""
+    property url iconSource: ""
+    property int iconSize: size === "sm" ? 16 : 18
+    property int imageIconSize: iconSize
+    property int imageSourceSize: 512
     property int radiusValue: size === "icon" ? 14 : 10
+    property string accessibilityLabel: ""
+    readonly property bool hasImageIcon: String(root.iconSource).length > 0
+    readonly property bool hasVectorIcon: root.iconName.length > 0 && !root.hasImageIcon
+    readonly property bool hasIcon: root.hasImageIcon || root.hasVectorIcon
+
+    Accessible.name: root.accessibilityLabel.length > 0 ? root.accessibilityLabel : root.text
 
     implicitHeight: {
         if (size === "sm") return 36
@@ -53,12 +65,13 @@ Button {
             if (variant === "ghost") return "#FFFFFF"
             return "#FFFFFF"
         }
-        if (variant === "primary") return "#2563EB"
-        if (variant === "success") return "#15803D"
-        if (variant === "danger") return "#991B1B"
-        if (variant === "control") return "#1E293B"
-        if (variant === "ghost") return "#101826"
-        return "#0371ff"
+        if (!root.enabled) return "#0B1423"
+        if (variant === "primary") return "#0C3B88"
+        if (variant === "success") return "#12613A"
+        if (variant === "danger") return "#3A1620"
+        if (variant === "control") return "#0D1B2E"
+        if (variant === "ghost") return "#0A1423"
+        return "#0D1B2E"
     }
 
     function hoverColor() {
@@ -69,12 +82,12 @@ Button {
             if (variant === "control") return "#EFF6FF"
             return "#EFF6FF"
         }
-        if (variant === "primary") return "#2A6CF0"
-        if (variant === "success") return "#169247"
-        if (variant === "danger") return "#AB2020"
-        if (variant === "control") return "#243244"
-        if (variant === "ghost") return "#121C2C"
-        return "#2A3A4E"
+        if (variant === "primary") return "#1558C8"
+        if (variant === "success") return "#18864E"
+        if (variant === "danger") return "#4F1F2B"
+        if (variant === "control") return "#162944"
+        if (variant === "ghost") return "#101D31"
+        return "#162944"
     }
 
     function pressedColor() {
@@ -85,12 +98,12 @@ Button {
             if (variant === "control") return "#DBEAFE"
             return "#DBEAFE"
         }
-        if (variant === "primary") return "#1E40AF"
-        if (variant === "success") return "#14532D"
-        if (variant === "danger") return "#651313"
-        if (variant === "control") return "#0F172A"
-        if (variant === "ghost") return "#0B1324"
-        return "#172033"
+        if (variant === "primary") return "#0A2E6C"
+        if (variant === "success") return "#0F4D2F"
+        if (variant === "danger") return "#30111A"
+        if (variant === "control") return "#091220"
+        if (variant === "ghost") return "#081120"
+        return "#091220"
     }
 
     function borderColor() {
@@ -103,12 +116,13 @@ Button {
             if (variant === "control") return root.hovered && root.enabled ? "#93C5FD" : "#CBD5E1"
             return root.hovered && root.enabled ? "#93C5FD" : "#CBD5E1"
         }
-        if (variant === "primary") return "#3B82F6"
-        if (variant === "success") return "#22C55E"
-        if (variant === "danger") return "#EF4444"
-        if (variant === "control") return "#334155"
-        if (variant === "ghost") return "#334155"
-        return "#334155"
+        if (!root.enabled) return "#223049"
+        if (variant === "primary") return "#5AA4FF"
+        if (variant === "success") return "#31D67C"
+        if (variant === "danger") return "#7A3144"
+        if (variant === "control") return "#28405F"
+        if (variant === "ghost") return "#28405F"
+        return "#28405F"
     }
 
     function hoverOverlayOpacity() {
@@ -133,7 +147,7 @@ Button {
     function textColor() {
         if (!root.enabled) {
             if (root.lightMode && root.variant === "danger") return "#991B1B"
-            return root.lightMode ? "#94A3B8" : "#64748B"
+            return root.lightMode ? "#94A3B8" : "#8494AA"
         }
         if (root.lightMode && root.variant === "control") return "#334155"
         if (root.variant === "primary" || root.variant === "success" || root.variant === "danger" || root.variant === "control") return "#F8FAFC"
@@ -145,7 +159,20 @@ Button {
         color: !root.enabled ? root.baseColor() : (root.down ? root.pressedColor() : (root.hovered ? root.hoverColor() : root.baseColor()))
         border.color: root.borderColor()
         border.width: 1
-        opacity: root.lightMode || root.enabled ? 1.0 : 0.45
+        opacity: root.lightMode || root.enabled ? 1.0 : 0.72
+
+        Rectangle {
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.top: parent.top
+            anchors.leftMargin: 1
+            anchors.rightMargin: 1
+            anchors.topMargin: 1
+            height: 1
+            radius: parent.radius
+            color: "#FFFFFF"
+            opacity: root.lightMode ? 0.28 : (root.enabled ? 0.08 : 0.03)
+        }
 
         Rectangle {
             anchors.fill: parent
@@ -170,12 +197,88 @@ Button {
 
     }
 
-    contentItem: Text {
-        text: root.text
-        color: root.textColor()
-        font: root.font
-        horizontalAlignment: Text.AlignHCenter
-        verticalAlignment: Text.AlignVCenter
-        elide: Text.ElideRight
+    contentItem: Item {
+        RowLayout {
+            visible: root.text.length > 0
+            anchors.fill: parent
+            anchors.leftMargin: root.hasIcon ? 10 : 12
+            anchors.rightMargin: 12
+            spacing: root.hasIcon && root.text.length > 0 ? 7 : 0
+
+            Image {
+                visible: root.hasImageIcon
+                Layout.preferredWidth: root.imageIconSize
+                Layout.preferredHeight: root.imageIconSize
+                source: root.iconSource
+                fillMode: Image.PreserveAspectFit
+                smooth: true
+                mipmap: true
+                cache: true
+                opacity: root.enabled ? 1.0 : 0.45
+                scale: root.down && root.enabled ? 0.94 : 1.0
+                sourceSize.width: root.imageSourceSize
+                sourceSize.height: root.imageSourceSize
+
+                Behavior on scale {
+                    NumberAnimation {
+                        duration: 80
+                        easing.type: Easing.OutQuad
+                    }
+                }
+            }
+
+            VectorIcon {
+                visible: root.hasVectorIcon
+                Layout.preferredWidth: root.iconSize
+                Layout.preferredHeight: root.iconSize
+                iconColor: root.textColor()
+                name: root.iconName
+                opacity: root.enabled ? 1.0 : 0.72
+            }
+
+            Text {
+                Layout.fillWidth: true
+                Layout.minimumWidth: 0
+                text: root.text
+                color: root.textColor()
+                font: root.font
+                horizontalAlignment: root.hasIcon ? Text.AlignLeft : Text.AlignHCenter
+                verticalAlignment: Text.AlignVCenter
+                elide: Text.ElideRight
+            }
+        }
+
+        Image {
+            visible: root.text.length === 0 && root.hasImageIcon
+            anchors.centerIn: parent
+            width: root.imageIconSize
+            height: root.imageIconSize
+            source: root.iconSource
+            fillMode: Image.PreserveAspectFit
+            smooth: true
+            mipmap: true
+            cache: true
+            opacity: root.enabled ? 1.0 : 0.45
+            scale: root.down && root.enabled ? 0.92 : 1.0
+            sourceSize.width: root.imageSourceSize
+            sourceSize.height: root.imageSourceSize
+
+            Behavior on scale {
+                NumberAnimation {
+                    duration: 80
+                    easing.type: Easing.OutQuad
+                }
+            }
+        }
+
+        VectorIcon {
+            visible: root.text.length === 0 && root.hasVectorIcon
+            anchors.centerIn: parent
+            width: root.iconSize
+            height: root.iconSize
+            iconColor: root.textColor()
+            name: root.iconName
+            opacity: root.enabled ? 1.0 : 0.72
+        }
     }
 }

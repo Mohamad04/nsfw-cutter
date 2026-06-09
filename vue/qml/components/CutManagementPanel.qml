@@ -232,12 +232,17 @@ Rectangle {
                     color: root.lightMode ? "#EFF6FF" : "#0B1D33"
                     border.color: root.lightMode ? "#BFDBFE" : "#213A5E"
 
-                    VectorIcon {
+                    Image {
                         anchors.centerIn: parent
-                        width: 24
-                        height: 24
-                        name: "scissors"
-                        iconColor: root.lightMode ? "#2563EB" : "#5AA4FF"
+                        width: 34
+                        height: 34
+                        source: Qt.resolvedUrl("../../../assets/icons/cut.png")
+                        fillMode: Image.PreserveAspectFit
+                        smooth: true
+                        mipmap: true
+                        cache: true
+                        sourceSize.width: 512
+                        sourceSize.height: 512
                     }
                 }
 

@@ -241,6 +241,8 @@ Panel {
                     lightMode: root.lightMode
                     playing: player.playbackState === MediaPlayer.PlayingState
                     volume: root.volumeLevel
+                    startSet: root.cutPreview && root.cutPreview.visible === true
+                    endSet: root.cutPreview && root.cutPreview.visible === true
                     addEnabled: root.cutPreview
                         && root.cutPreview.visible === true
                         && root.cutPreview.valid === true

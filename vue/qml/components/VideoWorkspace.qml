@@ -20,6 +20,8 @@ Rectangle {
     property real volumeLevel: 0.85
     property string requestedStart: "00:00:00"
     property string requestedEnd: "00:00:00"
+    property bool startPointSet: false
+    property bool endPointSet: false
     property var keyframeInfo: defaultKeyframeInfo("Set start and end points to create a cut.")
     property var cutPreview: ({ "visible": false })
     readonly property real durationMs: player.duration
@@ -129,12 +131,14 @@ Rectangle {
     function markStart() {
         if (!root.hasVideo) return
         root.requestedStart = root.formatTime(player.position, true)
+        root.startPointSet = true
         root.refreshKeyframeInfo()
     }
 
     function markEnd() {
         if (!root.hasVideo) return
         root.requestedEnd = root.formatTime(player.position, true)
+        root.endPointSet = true
         root.refreshKeyframeInfo()
     }
 
@@ -231,6 +235,8 @@ Rectangle {
 
         root.requestedStart = "00:00:00"
         root.requestedEnd = "00:00:00"
+        root.startPointSet = false
+        root.endPointSet = false
         root.keyframeInfo = root.defaultKeyframeInfo("Set start and end points to create a cut.")
         root.updateCutPreview()
     }
@@ -295,6 +301,8 @@ Rectangle {
         function onSelectedVideoPathChanged() {
             root.requestedStart = "00:00:00"
             root.requestedEnd = "00:00:00"
+            root.startPointSet = false
+            root.endPointSet = false
             root.keyframeInfo = root.defaultKeyframeInfo("Set start and end points to create a cut.")
             root.updateCutPreview()
         }
@@ -567,38 +575,59 @@ Rectangle {
                 spacing: 8
 
                 AppButton {
-                    text: "Set Start"
-                    iconName: "markerStart"
+                    text: ""
+                    accessibilityLabel: "Set start point of selected cut"
+                    iconSource: Qt.resolvedUrl("../../../assets/icons/set_start.png")
+                    imageIconWidth: 60
+                    imageIconHeight: 34
+                    imageSourceWidth: 1024
+                    imageSourceHeight: 548
                     variant: "ghost"
-                    size: "sm"
+                    size: "icon"
+                    active: root.startPointSet
                     lightMode: root.lightMode
                     enabled: root.hasVideo
-                    Layout.preferredWidth: 118
-                    Layout.preferredHeight: 36
+                    Layout.preferredWidth: 68
+                    Layout.preferredHeight: 44
+                    ToolTip.visible: hovered
+                    ToolTip.text: "Set start"
                     onClicked: root.markStart()
                 }
 
                 AppButton {
-                    text: "Set End"
-                    iconName: "markerEnd"
+                    text: ""
+                    accessibilityLabel: "Set end point of selected cut"
+                    iconSource: Qt.resolvedUrl("../../../assets/icons/set_end.png")
+                    imageIconWidth: 60
+                    imageIconHeight: 34
+                    imageSourceWidth: 1136
+                    imageSourceHeight: 554
                     variant: "ghost"
-                    size: "sm"
+                    size: "icon"
+                    active: root.endPointSet
+                    activeAccentColor: root.lightMode ? "#F97316" : "#FB923C"
                     lightMode: root.lightMode
                     enabled: root.hasVideo
-                    Layout.preferredWidth: 108
-                    Layout.preferredHeight: 36
+                    Layout.preferredWidth: 68
+                    Layout.preferredHeight: 44
+                    ToolTip.visible: hovered
+                    ToolTip.text: "Set end"
                     onClicked: root.markEnd()
                 }
 
                 AppButton {
-                    text: "Add Cut"
-                    iconName: "scissors"
+                    text: ""
+                    accessibilityLabel: "Cut video segment"
+                    iconSource: Qt.resolvedUrl("../../../assets/icons/cut.png")
+                    imageIconSize: 32
                     variant: "primary"
-                    size: "sm"
+                    size: "icon"
                     lightMode: root.lightMode
                     enabled: root.canAddSafeCut()
-                    Layout.preferredWidth: 112
-                    Layout.preferredHeight: 36
+                    Layout.preferredWidth: 44
+                    Layout.preferredHeight: 44
+                    ToolTip.visible: hovered
+                    ToolTip.text: "Cut"
                     onClicked: root.addCurrentCut()
                 }
 

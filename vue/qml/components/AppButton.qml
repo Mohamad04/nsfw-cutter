@@ -16,9 +16,15 @@ Button {
     property url iconSource: ""
     property int iconSize: size === "sm" ? 16 : 18
     property int imageIconSize: iconSize
+    property int imageIconWidth: imageIconSize
+    property int imageIconHeight: imageIconSize
     property int imageSourceSize: 512
+    property int imageSourceWidth: imageSourceSize
+    property int imageSourceHeight: imageSourceSize
     property int radiusValue: size === "icon" ? 14 : 10
     property string accessibilityLabel: ""
+    property bool active: false
+    property color activeAccentColor: root.lightMode ? "#22C55E" : "#6EE7B7"
     readonly property bool hasImageIcon: String(root.iconSource).length > 0
     readonly property bool hasVectorIcon: root.iconName.length > 0 && !root.hasImageIcon
     readonly property bool hasIcon: root.hasImageIcon || root.hasVectorIcon
@@ -107,6 +113,7 @@ Button {
     }
 
     function borderColor() {
+        if (root.active && root.enabled) return root.activeAccentColor
         if (root.lightMode) {
             if (!root.enabled && variant === "danger") return "#FCA5A5"
             if (!root.enabled) return "#CBD5E1"
@@ -188,6 +195,20 @@ Button {
             }
         }
 
+        Rectangle {
+            anchors.fill: parent
+            radius: parent.radius
+            color: root.activeAccentColor
+            opacity: root.active && root.enabled ? (root.hovered ? 0.08 : 0.045) : 0.0
+
+            Behavior on opacity {
+                NumberAnimation {
+                    duration: root.down ? 80 : 120
+                    easing.type: Easing.OutQuad
+                }
+            }
+        }
+
         Behavior on color {
             ColorAnimation {
                 duration: root.down ? 80 : 120
@@ -207,17 +228,17 @@ Button {
 
             Image {
                 visible: root.hasImageIcon
-                Layout.preferredWidth: root.imageIconSize
-                Layout.preferredHeight: root.imageIconSize
+                Layout.preferredWidth: root.imageIconWidth
+                Layout.preferredHeight: root.imageIconHeight
                 source: root.iconSource
                 fillMode: Image.PreserveAspectFit
                 smooth: true
                 mipmap: true
                 cache: true
                 opacity: root.enabled ? 1.0 : 0.45
-                scale: root.down && root.enabled ? 0.94 : 1.0
-                sourceSize.width: root.imageSourceSize
-                sourceSize.height: root.imageSourceSize
+                scale: root.down && root.enabled ? 0.96 : 1.0
+                sourceSize.width: root.imageSourceWidth
+                sourceSize.height: root.imageSourceHeight
 
                 Behavior on scale {
                     NumberAnimation {
@@ -251,17 +272,17 @@ Button {
         Image {
             visible: root.text.length === 0 && root.hasImageIcon
             anchors.centerIn: parent
-            width: root.imageIconSize
-            height: root.imageIconSize
+            width: root.imageIconWidth
+            height: root.imageIconHeight
             source: root.iconSource
             fillMode: Image.PreserveAspectFit
             smooth: true
             mipmap: true
             cache: true
             opacity: root.enabled ? 1.0 : 0.45
-            scale: root.down && root.enabled ? 0.92 : 1.0
-            sourceSize.width: root.imageSourceSize
-            sourceSize.height: root.imageSourceSize
+            scale: root.down && root.enabled ? 0.96 : 1.0
+            sourceSize.width: root.imageSourceWidth
+            sourceSize.height: root.imageSourceHeight
 
             Behavior on scale {
                 NumberAnimation {

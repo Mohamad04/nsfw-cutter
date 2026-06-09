@@ -167,6 +167,14 @@ Canvas {
             line(0.28, 0.60, 0.50, 0.38)
             line(0.50, 0.38, 0.72, 0.60)
             break
+        case "sparkle":
+            ctx.lineWidth = Math.max(root.strokeWidth, s * 0.06)
+            poly([[0.50, 0.12], [0.58, 0.38], [0.84, 0.50], [0.58, 0.62], [0.50, 0.88], [0.42, 0.62], [0.16, 0.50], [0.42, 0.38]], false)
+            line(0.76, 0.15, 0.76, 0.28)
+            line(0.70, 0.215, 0.83, 0.215)
+            line(0.24, 0.72, 0.24, 0.84)
+            line(0.18, 0.78, 0.30, 0.78)
+            break
         case "cc":
             rect(0.13, 0.24, 0.74, 0.52, false)
             ctx.font = Math.round(s * 0.27) + "px sans-serif"

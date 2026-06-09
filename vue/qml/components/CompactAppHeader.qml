@@ -285,6 +285,22 @@ Item {
                 onClicked: subtitleSelector.showAt(subtitleButton)
             }
 
+            AppButton {
+                id: aiPicksButton
+                objectName: "aiPicksButton"
+
+                text: "AI Picks ▼"
+                iconName: "sparkle"
+                variant: "ghost"
+                size: "md"
+                lightMode: root.lightMode
+                active: hovered || aiPicksPopup.opened
+                activeAccentColor: root.accentColor
+                Layout.preferredWidth: 138
+                Layout.preferredHeight: 40
+                onClicked: aiPicksPopup.opened ? aiPicksPopup.closeAfterAction() : aiPicksPopup.showAt(aiPicksButton)
+            }
+
             ThemeToggleButton {
                 lightMode: root.lightMode
                 Layout.preferredWidth: 64
@@ -305,6 +321,95 @@ Item {
                 ToolTip.visible: hovered
                 ToolTip.text: "Settings"
                 onClicked: root.settingsRequested()
+            }
+        }
+    }
+
+    Popup {
+        id: aiPicksPopup
+        objectName: "aiPicksPopup"
+
+        readonly property int menuWidth: 246
+
+        function showAt(target) {
+            var position = target.mapToItem(aiPicksPopup.parent, 0, 0)
+            aiPicksPopup.x = position.x
+            aiPicksPopup.y = position.y + target.height + 8
+            aiPicksPopup.open()
+            aiPicksPopup.forceActiveFocus()
+        }
+
+        function closeAfterAction() {
+            aiPicksPopup.close()
+        }
+
+        modal: false
+        focus: true
+        padding: 0
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        width: aiPicksPopup.menuWidth
+        height: 94
+
+        Keys.onEscapePressed: aiPicksPopup.closeAfterAction()
+
+        background: Item {}
+
+        contentItem: Item {
+            implicitWidth: aiPicksPopup.width
+            implicitHeight: aiPicksPopup.height
+
+            Rectangle {
+                x: 0
+                y: 5
+                width: parent.width
+                height: parent.height - 5
+                radius: 14
+                color: "#000000"
+                opacity: root.lightMode ? 0.14 : 0.34
+            }
+
+            Rectangle {
+                anchors.fill: parent
+                anchors.topMargin: 0
+                radius: 14
+                color: root.elevatedPanel
+                border.color: root.elevatedBorder
+                border.width: 1
+            }
+
+            ColumnLayout {
+                anchors.fill: parent
+                anchors.margins: 14
+                spacing: 6
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 8
+
+                    VectorIcon {
+                        Layout.preferredWidth: 17
+                        Layout.preferredHeight: 17
+                        name: "sparkle"
+                        iconColor: root.accentColor
+                    }
+
+                    Text {
+                        Layout.fillWidth: true
+                        text: "AI Picks"
+                        color: root.textColor
+                        font.pixelSize: 14
+                        font.weight: Font.DemiBold
+                        elide: Text.ElideRight
+                    }
+                }
+
+                Text {
+                    Layout.fillWidth: true
+                    text: "Placeholder menu. No actions connected yet."
+                    color: root.lightMode ? "#64748B" : root.mutedTextColor
+                    font.pixelSize: 12
+                    wrapMode: Text.WordWrap
+                }
             }
         }
     }

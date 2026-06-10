@@ -1,7 +1,8 @@
 from pathlib import Path
 
 from services.infrastructure.ffmpeg.probe import run_json_probe
-from services.infrastructure.ffmpeg.runner import FFmpegService, resolve_binary
+from services.infrastructure.ffmpeg.paths import get_ffprobe_path
+from services.infrastructure.ffmpeg.runner import FFmpegService
 
 
 def probe_subtitle_streams(
@@ -9,7 +10,7 @@ def probe_subtitle_streams(
     ffmpeg_service: FFmpegService | None = None,
     probe_runner=None,
 ) -> list[dict]:
-    ffprobe_path = ffmpeg_service.ffprobe_path if ffmpeg_service else resolve_binary("ffprobe")
+    ffprobe_path = ffmpeg_service.ffprobe_path if ffmpeg_service else get_ffprobe_path()
     command = [
         str(ffprobe_path),
         "-v",

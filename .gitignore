@@ -12,11 +12,15 @@ __pycache__/
 *.sqlite
 *.sqlite3
 nuitka-crash-report.xml
+*.spec
+build/
+dist/
 .pytest_cache/
 .qtc*
 .qtcreator/
 sqlalchemy_database/
 tools/ffmpeg/
+vendor/ffmpeg/
 tools/sqlite/
 data
 artifacts/

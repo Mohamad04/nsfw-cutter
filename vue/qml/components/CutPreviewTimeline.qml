@@ -17,21 +17,18 @@ Rectangle {
     property bool hasSafeEnd: false
     property real safeStartSeconds: 0
     property real safeEndSeconds: 0
+    // Kept for compatibility with existing callers; this timeline no longer renders keyframes.
     property var keyframesSeconds: []
 
     readonly property color requestedColor: "#FF7448"
-    readonly property color safeColor: "#2B8CFF"
     readonly property color startColor: "#7CFF6B"
     readonly property color endColor: "#FF7448"
-    readonly property color keyframeColor: "#C8D6EA"
     readonly property color playheadColor: "#FFFFFF"
     readonly property color panelBg: "#07101D"
     readonly property color trackBg: "#0A1626"
     readonly property color strokeColor: "#1B3658"
     readonly property color textColor: "#EAF2FF"
     readonly property color mutedText: "#8FA6C5"
-    readonly property int maxDisplayedKeyframes: 300
-    readonly property var displayedKeyframes: root.sampleKeyframes(root.keyframesSeconds)
     readonly property bool compact: root.width < 760 || root.height <= 110
     readonly property bool narrow: root.width < 620
     readonly property bool showLeftTimeBlock: !root.narrow
@@ -50,15 +47,6 @@ Rectangle {
     readonly property bool hasRequestedRange: root.hasValidRequestedStart
         && root.hasValidRequestedEnd
         && root.requestedEndSeconds > root.requestedStartSeconds
-    readonly property bool hasValidSafeStart: root.hasDuration
-        && root.hasSafeStart
-        && Number.isFinite(root.safeStartSeconds)
-    readonly property bool hasValidSafeEnd: root.hasDuration
-        && root.hasSafeEnd
-        && Number.isFinite(root.safeEndSeconds)
-    readonly property bool hasSafeRange: root.hasValidSafeStart
-        && root.hasValidSafeEnd
-        && root.safeEndSeconds > root.safeStartSeconds
 
     signal seekRequested(real seconds)
 
@@ -109,36 +97,6 @@ Rectangle {
         return Math.max(3, Math.abs(endX - startX))
     }
 
-    function isInOrNearSelectedRange(seconds) {
-        if (!Number.isFinite(seconds) || !root.hasDuration)
-            return false
-
-        var marginSeconds = Math.max(1, root.durationSeconds * 0.002)
-        var nearRequested = root.hasRequestedRange
-            && seconds >= root.requestedStartSeconds - marginSeconds
-            && seconds <= root.requestedEndSeconds + marginSeconds
-        var nearSafe = root.hasSafeRange
-            && seconds >= root.safeStartSeconds - marginSeconds
-            && seconds <= root.safeEndSeconds + marginSeconds
-
-        return nearRequested || nearSafe
-    }
-
-    function sampleKeyframes(source) {
-        if (!source || source.length === undefined)
-            return []
-
-        var count = source.length
-        if (count <= root.maxDisplayedKeyframes)
-            return source
-
-        var sampled = []
-        var step = Math.ceil(count / root.maxDisplayedKeyframes)
-        for (var index = 0; index < count; index += step)
-            sampled.push(source[index])
-        return sampled
-    }
-
     function secondsAtTrackX(trackX) {
         if (!root.hasDuration || timelineTrack.width <= 0)
             return 0
@@ -148,39 +106,15 @@ Rectangle {
 
     function tooltipTextForPoint(trackX, trackY) {
         var seconds = root.secondsAtTrackX(trackX)
-        var nearbyKeyframe = root.nearbyKeyframeSeconds(trackX)
         var overRequested = root.hasRequestedRange
             && seconds >= root.requestedStartSeconds
             && seconds <= root.requestedEndSeconds
             && trackY >= requestedRange.y - 3
             && trackY <= requestedRange.y + requestedRange.height + 3
-        var overSafe = root.hasSafeRange
-            && seconds >= root.safeStartSeconds
-            && seconds <= root.safeEndSeconds
-            && trackY >= safeRange.y - 3
-            && trackY <= safeRange.y + safeRange.height + 3
 
         if (overRequested)
             return "Requested: " + root.formatTime(root.requestedStartSeconds) + " -> " + root.formatTime(root.requestedEndSeconds)
-        if (overSafe)
-            return "Safe: " + root.formatTime(root.safeStartSeconds) + " -> " + root.formatTime(root.safeEndSeconds)
-        if (Number.isFinite(nearbyKeyframe))
-            return "Keyframes: " + root.formatTime(nearbyKeyframe)
         return root.formatTime(seconds)
-    }
-
-    function nearbyKeyframeSeconds(trackX) {
-        if (!root.hasDuration || !root.displayedKeyframes || root.displayedKeyframes.length === undefined)
-            return NaN
-
-        for (var index = 0; index < root.displayedKeyframes.length; index += 1) {
-            var seconds = Number(root.displayedKeyframes[index])
-            if (!Number.isFinite(seconds))
-                continue
-            if (Math.abs(root.xForTime(seconds) - trackX) <= 3)
-                return seconds
-        }
-        return NaN
     }
 
     Rectangle {
@@ -285,27 +219,6 @@ Rectangle {
                         opacity: 0.68
                     }
 
-                    Repeater {
-                        model: root.displayedKeyframes
-
-                        delegate: Rectangle {
-                            required property var modelData
-
-                            readonly property real keyframeSeconds: Number(modelData)
-                            readonly property bool highlighted: root.isInOrNearSelectedRange(keyframeSeconds)
-
-                            visible: root.hasDuration && Number.isFinite(keyframeSeconds)
-                            x: Math.max(0, Math.min(timelineTrack.width - width, root.xForTime(keyframeSeconds) - width / 2))
-                            y: timelineTrack.height / 2 - height / 2
-                            width: 1
-                            height: highlighted ? (root.compact ? 18 : 22) : (root.compact ? 14 : 18)
-                            radius: 0
-                            color: root.keyframeColor
-                            opacity: highlighted ? 0.55 : 0.30
-                            z: 1
-                        }
-                    }
-
                     Rectangle {
                         id: requestedRange
 
@@ -320,22 +233,6 @@ Rectangle {
                         border.color: "#E35B38"
                         border.width: 1
                         z: 6
-                    }
-
-                    Rectangle {
-                        id: safeRange
-
-                        visible: root.hasSafeRange
-                        x: root.rangeX(root.safeStartSeconds)
-                        y: root.compact ? 20 : 24
-                        width: root.rangeWidth(root.safeStartSeconds, root.safeEndSeconds)
-                        height: root.compact ? 10 : 14
-                        radius: 5
-                        color: root.safeColor
-                        opacity: 0.32
-                        border.color: root.safeColor
-                        border.width: 1
-                        z: 5
                     }
 
                     Rectangle {
@@ -361,28 +258,6 @@ Rectangle {
                     }
 
                     Rectangle {
-                        visible: root.hasValidSafeStart
-                        x: Math.max(0, Math.min(timelineTrack.width - width, root.xForTime(root.safeStartSeconds) - width / 2))
-                        y: root.compact ? 5 : 3
-                        width: 4
-                        height: timelineTrack.height - (root.compact ? 10 : 6)
-                        radius: 2
-                        color: root.safeColor
-                        z: 8
-                    }
-
-                    Rectangle {
-                        visible: root.hasValidSafeEnd
-                        x: Math.max(0, Math.min(timelineTrack.width - width, root.xForTime(root.safeEndSeconds) - width / 2))
-                        y: root.compact ? 5 : 3
-                        width: 4
-                        height: timelineTrack.height - (root.compact ? 10 : 6)
-                        radius: 2
-                        color: root.safeColor
-                        z: 8
-                    }
-
-                    Rectangle {
                         visible: root.hasDuration
                         x: Math.max(0, Math.min(timelineTrack.width - width, root.xForTime(root.currentSeconds) - width / 2))
                         y: -4
@@ -401,17 +276,6 @@ Rectangle {
                     visible: root.showDecorativeLabels && root.hasRequestedRange
                     text: "REQUESTED CUT"
                     color: root.requestedColor
-                    font.pixelSize: 11
-                    font.weight: Font.DemiBold
-                }
-
-                Text {
-                    anchors.horizontalCenter: timelineTrack.horizontalCenter
-                    anchors.top: timelineTrack.bottom
-                    anchors.topMargin: 4
-                    visible: root.showDecorativeLabels && root.hasSafeRange
-                    text: "SAFE CUT (KEYFRAMES)"
-                    color: root.safeColor
                     font.pixelSize: 11
                     font.weight: Font.DemiBold
                 }
@@ -537,28 +401,6 @@ Rectangle {
                         height: 16
                         radius: 4
                         color: "transparent"
-                        border.color: root.safeColor
-                        border.width: 2
-                        anchors.verticalCenter: parent.verticalCenter
-                    }
-
-                    Text {
-                        text: "Start Safe"
-                        color: root.mutedText
-                        font.pixelSize: 11
-                        anchors.verticalCenter: parent.verticalCenter
-                    }
-                }
-
-                Row {
-                    spacing: 7
-                    height: 24
-
-                    Rectangle {
-                        width: 10
-                        height: 16
-                        radius: 4
-                        color: "transparent"
                         border.color: root.endColor
                         border.width: 2
                         anchors.verticalCenter: parent.verticalCenter
@@ -572,48 +414,6 @@ Rectangle {
                     }
                 }
 
-                Row {
-                    spacing: 7
-                    height: 24
-
-                    Rectangle {
-                        width: 10
-                        height: 16
-                        radius: 4
-                        color: "transparent"
-                        border.color: root.safeColor
-                        border.width: 2
-                        anchors.verticalCenter: parent.verticalCenter
-                    }
-
-                    Text {
-                        text: "End Safe"
-                        color: root.mutedText
-                        font.pixelSize: 11
-                        anchors.verticalCenter: parent.verticalCenter
-                    }
-                }
-
-                Row {
-                    spacing: 7
-                    height: 24
-
-                    Rectangle {
-                        width: 2
-                        height: 18
-                        radius: 1
-                        color: root.keyframeColor
-                        opacity: 0.30
-                        anchors.verticalCenter: parent.verticalCenter
-                    }
-
-                    Text {
-                        text: "Keyframes"
-                        color: root.mutedText
-                        font.pixelSize: 11
-                        anchors.verticalCenter: parent.verticalCenter
-                    }
-                }
             }
         }
     }

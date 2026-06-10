@@ -282,6 +282,14 @@ class AppControllerTests(unittest.TestCase):
         self.assertEqual(self.controller.selectedVideoPath, "/tmp/a.mp4")
         self.assertEqual(self.settings_service.saved_videos, ["/tmp/a.mp4"])
 
+    def test_load_video_file_converts_raw_windows_path_to_file_url(self):
+        self.controller.loadVideoFile(r"C:\Users\me\Videos\sample video.mp4")
+
+        self.assertEqual(
+            self.controller.videoUrl,
+            "file:///C:/Users/me/Videos/sample video.mp4",
+        )
+
     def test_load_video_file_starts_background_keyframe_indexing(self):
         self.controller.loadVideoFile("/tmp/a.mp4")
 

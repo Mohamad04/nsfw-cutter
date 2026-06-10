@@ -113,6 +113,34 @@ Panel {
         return (Number(parts[0]) * 3600 + Number(parts[1]) * 60 + Number(parts[2])) * 1000
     }
 
+    function playbackValueText(value) {
+        return value === undefined || value === null ? "" : String(value)
+    }
+
+    function logPlayerState(eventName) {
+        var sourceText = root.playbackValueText(player.source)
+        var mediaStatusText = root.playbackValueText(player.mediaStatus)
+        var errorText = root.playbackValueText(player.error)
+        var errorStringText = root.playbackValueText(player.errorString)
+        var message = "[Playback][VideoPreviewPanel] " + eventName
+            + " source=" + sourceText
+            + " mediaStatus=" + mediaStatusText
+            + " error=" + errorText
+            + " errorString=" + errorStringText
+
+        appController.logPlaybackState(
+            "VideoPreviewPanel",
+            eventName,
+            sourceText,
+            mediaStatusText,
+            errorText,
+            errorStringText
+        )
+
+        if (errorStringText.length > 0) console.warn(message)
+        else console.info(message)
+    }
+
     MediaPlayer {
         id: player
         source: appController.videoUrl
@@ -123,10 +151,20 @@ Panel {
         onSubtitleTracksChanged: root.scheduleSubtitleTrackSync()
         onSourceChanged: {
             player.activeSubtitleTrack = -1
+            root.logPlayerState("sourceChanged")
             root.scheduleSubtitleTrackSync()
         }
-        onMediaStatusChanged: root.scheduleSubtitleTrackSync()
-        Component.onCompleted: root.scheduleSubtitleTrackSync()
+        onMediaStatusChanged: {
+            root.logPlayerState("mediaStatusChanged")
+            root.scheduleSubtitleTrackSync()
+        }
+        onErrorOccurred: function(error, errorString) {
+            root.logPlayerState("errorOccurred")
+        }
+        Component.onCompleted: {
+            root.logPlayerState("completed")
+            root.scheduleSubtitleTrackSync()
+        }
     }
 
     Timer {

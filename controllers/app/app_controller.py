@@ -3,7 +3,7 @@ import math
 import uuid
 from pathlib import Path
 
-from PySide6.QtCore import QObject, Property, QThreadPool, Signal, Slot
+from PySide6.QtCore import QObject, Property, QThreadPool, QUrl, Signal, Slot
 from PySide6.QtWidgets import QFileDialog
 
 from controllers.app.app_state import AppState
@@ -39,6 +39,23 @@ from workers.video_export_worker import VideoExportWorker
 
 
 logger = logging.getLogger(__name__)
+
+
+def _path_exists(path_text: str) -> bool:
+    if not path_text:
+        return False
+
+    try:
+        return Path(path_text).expanduser().is_file()
+    except OSError:
+        return False
+
+
+def _local_file_url(path_text: str) -> str:
+    if not path_text:
+        return ""
+
+    return QUrl.fromLocalFile(str(Path(path_text).expanduser())).toString()
 
 
 class AppController(QObject):
@@ -305,6 +322,28 @@ class AppController(QObject):
     @Slot(str)
     def loadVideoFile(self, file_path: str):
         self._load_video_file(file_path)
+
+    @Slot(str, str, str, str, str, str)
+    def logPlaybackState(
+        self,
+        player_name: str,
+        event_name: str,
+        source: str,
+        media_status: str,
+        error: str,
+        error_string: str,
+    ):
+        error_string = error_string or ""
+        log_method = logger.warning if error_string else logger.info
+        log_method(
+            "[Playback][%s] %s source=%s mediaStatus=%s error=%s errorString=%s",
+            player_name,
+            event_name,
+            source,
+            media_status,
+            error,
+            error_string,
+        )
 
     @Slot("QVariantList")
     def loadVideoFiles(self, file_paths):
@@ -610,9 +649,24 @@ class AppController(QObject):
         self._export_preparation_runner.handle_error(job_key, error_message)
 
     def _apply_loaded_video(self, result: dict):
-        self._state.video_url = result.get("video_url", "")
+        selected_video_path = result.get("video_path", "")
+        converted_video_url = (
+            _local_file_url(selected_video_path)
+            if selected_video_path
+            else result.get("video_url", "")
+        )
+        file_exists = _path_exists(selected_video_path)
+
+        logger.info(
+            "[Playback] Selected raw path=%s converted_url=%s exists=%s",
+            selected_video_path,
+            converted_video_url,
+            file_exists,
+        )
+
+        self._state.video_url = converted_video_url
         self._state.video_name = result.get("video_name", "No video selected")
-        self._state.selected_video_path = result.get("video_path", "")
+        self._state.selected_video_path = selected_video_path
         self._state.project_status = result.get("status", "Video loaded")
         self._clear_ai_suggestions()
 

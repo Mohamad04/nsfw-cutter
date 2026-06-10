@@ -1,7 +1,8 @@
 [CmdletBinding()]
 param(
     [string]$ProjectRoot = "",
-    [string]$AppName = "VideoCutter"
+    [string]$AppName = "VideoCutter",
+    [switch]$Console
 )
 
 $ErrorActionPreference = "Stop"
@@ -59,8 +60,25 @@ $pyinstallerArgs = @(
     "--noconfirm",
     "--clean",
     "--onedir",
-    "--windowed",
+    $(if ($Console) { "--console" } else { "--windowed" }),
     "--name", $AppName
+)
+
+$pySide6RuntimeModules = @(
+    "PySide6.QtMultimedia",
+    "PySide6.QtMultimediaWidgets",
+    "PySide6.QtQml",
+    "PySide6.QtQuick",
+    "PySide6.QtQuickControls2"
+)
+
+foreach ($moduleName in $pySide6RuntimeModules) {
+    $pyinstallerArgs += @("--hidden-import", $moduleName)
+}
+
+$pyinstallerArgs += @(
+    "--collect-data", "PySide6",
+    "--collect-binaries", "PySide6"
 )
 
 $iconPath = Join-Path $ProjectRoot "assets\icons\app.ico"
@@ -121,6 +139,69 @@ $bundledFfprobe = $bundledFfprobeCandidates | Where-Object { Test-Path -LiteralP
 if ($null -eq $bundledFfmpeg -or $null -eq $bundledFfprobe) {
     throw "Bundled FFmpeg binaries were not found in the PyInstaller output."
 }
+
+function Find-FirstExistingRuntimePath {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string[]]$CandidatePaths
+    )
+
+    foreach ($candidatePath in $CandidatePaths) {
+        if (Test-Path -LiteralPath $candidatePath -PathType Container) {
+            return $candidatePath
+        }
+    }
+
+    return $null
+}
+
+function Assert-RuntimeDirectory {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Name,
+        [Parameter(Mandatory = $true)]
+        [string[]]$CandidatePaths
+    )
+
+    $existingPath = Find-FirstExistingRuntimePath -CandidatePaths $CandidatePaths
+    if ($null -eq $existingPath) {
+        $candidateList = $CandidatePaths -join "`n - "
+        throw "$Name was not found in the PyInstaller output. Checked:`n - $candidateList"
+    }
+
+    Write-Host "$Name found: $existingPath"
+    return $existingPath
+}
+
+$multimediaPluginDir = Assert-RuntimeDirectory -Name "Qt multimedia plugins" -CandidatePaths @(
+    (Join-Path $appDistDir "_internal\PySide6\Qt\plugins\multimedia"),
+    (Join-Path $appDistDir "_internal\PySide6\plugins\multimedia"),
+    (Join-Path $appDistDir "PySide6\Qt\plugins\multimedia"),
+    (Join-Path $appDistDir "PySide6\plugins\multimedia")
+)
+
+$platformPluginDir = Assert-RuntimeDirectory -Name "Qt platform plugins" -CandidatePaths @(
+    (Join-Path $appDistDir "_internal\PySide6\Qt\plugins\platforms"),
+    (Join-Path $appDistDir "_internal\PySide6\plugins\platforms"),
+    (Join-Path $appDistDir "PySide6\Qt\plugins\platforms"),
+    (Join-Path $appDistDir "PySide6\plugins\platforms")
+)
+
+$qmlRuntimeDir = Assert-RuntimeDirectory -Name "PySide6 QML runtime" -CandidatePaths @(
+    (Join-Path $appDistDir "_internal\PySide6\Qt\qml"),
+    (Join-Path $appDistDir "_internal\PySide6\qml"),
+    (Join-Path $appDistDir "PySide6\Qt\qml"),
+    (Join-Path $appDistDir "PySide6\qml")
+)
+
+$multimediaPluginFiles = Get-ChildItem -LiteralPath $multimediaPluginDir -File -ErrorAction Stop
+if (-not $multimediaPluginFiles) {
+    throw "Qt multimedia plugin directory exists but contains no plugin files: $multimediaPluginDir"
+}
+
+Write-Host "Qt multimedia plugin files:"
+$multimediaPluginFiles | ForEach-Object { Write-Host " - $($_.Name)" }
+Write-Host "Playback smoke check: bundled ffmpeg.exe/ffprobe.exe are for processing only; Qt video playback requires the PySide6 Qt Multimedia plugins verified above."
 
 if (Test-Path -LiteralPath $zipPath) {
     Remove-Item -LiteralPath $zipPath -Force

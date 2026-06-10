@@ -40,7 +40,7 @@ class FFmpegServiceTests(unittest.TestCase):
                     with patch.object(ffmpeg_paths.sys, "_MEIPASS", str(app_dir / "_internal"), create=True):
                         with patch("services.infrastructure.ffmpeg.paths.PROJECT_ROOT", Path("missing")):
                             with patch("services.infrastructure.ffmpeg.paths.shutil.which", fake_which):
-                                self.assertEqual(ffmpeg_paths.get_ffprobe_path(), bundled_ffprobe)
+                                self.assertTrue(ffmpeg_paths.get_ffprobe_path().samefile(bundled_ffprobe))
 
     def test_path_fallback_uses_system_binary(self):
         system_ffmpeg = r"C:\ffmpeg\bin\ffmpeg.exe"

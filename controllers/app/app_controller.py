@@ -1,4 +1,5 @@
 import logging
+import math
 import uuid
 from pathlib import Path
 
@@ -70,6 +71,8 @@ class AppController(QObject):
     keyframeErrorChanged = Signal()
     keyframeCountChanged = Signal()
     keyframeMediaPathChanged = Signal()
+    aiAnalysisStateChanged = Signal()
+    aiSuggestionsChanged = Signal()
 
     def __init__(
         self,
@@ -233,9 +236,21 @@ class AppController(QObject):
     def keyframeCount(self):
         return len(self.keyframe_service.keyframe_timestamps)
 
+    @Property("QVariantList", notify=keyframeCountChanged)
+    def keyframeTimestamps(self):
+        return self.keyframe_service.keyframe_timestamps
+
     @Property(str, notify=keyframeMediaPathChanged)
     def keyframeMediaPath(self):
         return self.keyframe_service.active_media_path
+
+    @Property(str, notify=aiAnalysisStateChanged)
+    def aiAnalysisState(self):
+        return self._state.ai_analysis_state
+
+    @Property("QVariantList", notify=aiSuggestionsChanged)
+    def aiSuggestions(self):
+        return list(self._state.ai_suggestions)
 
     @Slot()
     def browseFolder(self):
@@ -388,6 +403,7 @@ class AppController(QObject):
         self._state.video_url = ""
         self._state.video_name = "No video selected"
         self._clear_subtitle_discovery()
+        self._clear_ai_suggestions()
         self._state.project_status = "Ready"
         self._state.selected_video_path = ""
         self.keyframe_service.clear_active_media()
@@ -598,6 +614,7 @@ class AppController(QObject):
         self._state.video_name = result.get("video_name", "No video selected")
         self._state.selected_video_path = result.get("video_path", "")
         self._state.project_status = result.get("status", "Video loaded")
+        self._clear_ai_suggestions()
 
         self.videoUrlChanged.emit()
         self.videoNameChanged.emit()
@@ -887,6 +904,29 @@ class AppController(QObject):
         self._state.selected_analysis_subtitle = None
         self._state.analysis_subtitle_auto_selected = False
 
+    @Slot("QVariantList")
+    def setAiSuggestions(self, suggestions) -> None:
+        normalized_suggestions = []
+        for suggestion in suggestions or []:
+            normalized = _normalize_ai_suggestion(suggestion)
+            if normalized is not None:
+                normalized_suggestions.append(normalized)
+
+        self._state.ai_suggestions = normalized_suggestions
+        self._state.ai_analysis_state = "ready"
+        self.aiSuggestionsChanged.emit()
+        self.aiAnalysisStateChanged.emit()
+
+    def _clear_ai_suggestions(self) -> None:
+        changed_suggestions = bool(self._state.ai_suggestions)
+        changed_state = self._state.ai_analysis_state != "idle"
+        self._state.ai_suggestions = []
+        self._state.ai_analysis_state = "idle"
+        if changed_suggestions:
+            self.aiSuggestionsChanged.emit()
+        if changed_state:
+            self.aiAnalysisStateChanged.emit()
+
     @Slot(str, object)
     def _on_keyframe_indexing_finished(self, job_token: str, result) -> None:
         worker = self._keyframe_workers.pop(job_token, None)
@@ -1037,3 +1077,118 @@ class AppController(QObject):
 
 def _resolved_media_path(media_path: str | Path) -> str:
     return str(Path(media_path).expanduser().resolve())
+
+
+def _normalize_ai_suggestion(suggestion) -> dict | None:
+    if not isinstance(suggestion, dict):
+        return None
+
+    start = _ai_suggestion_time_value(
+        suggestion,
+        "start",
+        "start_time",
+        "startTime",
+        "start_seconds",
+        "startSeconds",
+    )
+    end = _ai_suggestion_time_value(
+        suggestion,
+        "end",
+        "end_time",
+        "endTime",
+        "end_seconds",
+        "endSeconds",
+    )
+    if not start or not end:
+        return None
+
+    return {
+        "start": start,
+        "end": end,
+        "confidence": _normalize_ai_confidence(suggestion.get("confidence")),
+        "reason": str(suggestion.get("reason") or "").strip(),
+    }
+
+
+def _ai_suggestion_time_value(suggestion: dict, *keys: str) -> str:
+    for key in keys:
+        if key not in suggestion:
+            continue
+        value = suggestion.get(key)
+        formatted = _format_ai_time(value)
+        if formatted:
+            return formatted
+    return ""
+
+
+def _format_ai_time(value) -> str:
+    if value is None:
+        return ""
+
+    if isinstance(value, (int, float)):
+        return _format_seconds_to_hhmmss_millis(float(value))
+
+    text = str(value).strip()
+    if not text:
+        return ""
+
+    if ":" in text:
+        return _normalize_hhmmss_millis(text)
+
+    try:
+        return _format_seconds_to_hhmmss_millis(float(text))
+    except ValueError:
+        return ""
+
+
+def _normalize_hhmmss_millis(value: str) -> str:
+    parts = value.strip().split(":")
+    if len(parts) != 3:
+        return ""
+
+    try:
+        hours = int(parts[0])
+        minutes = int(parts[1])
+        seconds = float(parts[2])
+    except ValueError:
+        return ""
+
+    if hours < 0 or minutes < 0 or minutes > 59 or seconds < 0 or seconds >= 60:
+        return ""
+
+    total_seconds = hours * 3600 + minutes * 60 + seconds
+    return _format_seconds_to_hhmmss_millis(total_seconds)
+
+
+def _format_seconds_to_hhmmss_millis(seconds: float) -> str:
+    if not math.isfinite(seconds) or seconds < 0:
+        return ""
+
+    total_milliseconds = int(round(seconds * 1000))
+    total_seconds = total_milliseconds // 1000
+    milliseconds = total_milliseconds % 1000
+    hours = total_seconds // 3600
+    minutes = (total_seconds % 3600) // 60
+    whole_seconds = total_seconds % 60
+    return f"{hours:02d}:{minutes:02d}:{whole_seconds:02d}.{milliseconds:03d}"
+
+
+def _normalize_ai_confidence(value) -> str:
+    if isinstance(value, (int, float)):
+        numeric_value = float(value)
+        if not math.isfinite(numeric_value):
+            return "Medium"
+        if numeric_value >= 0.8:
+            return "High"
+        if numeric_value >= 0.5:
+            return "Medium"
+        return "Low"
+
+    text = str(value or "").strip().lower()
+    if text == "high":
+        return "High"
+    if text == "medium":
+        return "Medium"
+    if text == "low":
+        return "Low"
+    return "Medium"

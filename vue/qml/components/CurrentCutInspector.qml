@@ -572,11 +572,16 @@ Rectangle {
 
                     AppButton {
                         text: "+ Add Cut"
+                        accessibilityLabel: "Cut video segment"
+                        iconSource: Qt.resolvedUrl("../../../assets/icons/cut.png")
+                        imageIconSize: 32
                         variant: "primary"
                         size: "lg"
                         lightMode: root.lightMode
                         Layout.fillWidth: true
                         enabled: root.canAddSafeCut()
+                        ToolTip.visible: hovered
+                        ToolTip.text: "Cut"
                         onClicked: root.addCut("Manual", "--")
                     }
 

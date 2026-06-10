@@ -10,6 +10,8 @@ Rectangle {
     property bool playing: false
     property bool previewEnabled: false
     property bool addEnabled: false
+    property bool startSet: false
+    property bool endSet: false
     property bool subtitlesAvailable: false
     property real volume: 0.85
     implicitHeight: root.compactMode ? 78 : 86
@@ -111,32 +113,56 @@ Rectangle {
 
             AppButton {
                 text: "Set Start  I"
+                accessibilityLabel: "Set start point of selected cut"
+                iconSource: Qt.resolvedUrl("../../../assets/icons/set_start.png")
+                imageIconWidth: 42
+                imageIconHeight: 24
+                imageSourceWidth: 1024
+                imageSourceHeight: 548
                 variant: "ghost"
                 size: "sm"
+                active: root.startSet
                 lightMode: root.lightMode
-                Layout.preferredWidth: root.compactMode ? 108 : 124
-                Layout.preferredHeight: 34
+                Layout.preferredWidth: root.compactMode ? 140 : 156
+                Layout.preferredHeight: 44
+                ToolTip.visible: hovered
+                ToolTip.text: "Set start"
                 onClicked: root.startRequested()
             }
 
             AppButton {
                 text: "Set End  O"
+                accessibilityLabel: "Set end point of selected cut"
+                iconSource: Qt.resolvedUrl("../../../assets/icons/set_end.png")
+                imageIconWidth: 42
+                imageIconHeight: 24
+                imageSourceWidth: 1136
+                imageSourceHeight: 554
                 variant: "ghost"
                 size: "sm"
+                active: root.endSet
+                activeAccentColor: root.lightMode ? "#F97316" : "#FB923C"
                 lightMode: root.lightMode
-                Layout.preferredWidth: root.compactMode ? 100 : 116
-                Layout.preferredHeight: 34
+                Layout.preferredWidth: root.compactMode ? 136 : 150
+                Layout.preferredHeight: 44
+                ToolTip.visible: hovered
+                ToolTip.text: "Set end"
                 onClicked: root.endRequested()
             }
 
             AppButton {
                 text: "+ Add Cut"
+                accessibilityLabel: "Cut video segment"
+                iconSource: Qt.resolvedUrl("../../../assets/icons/cut.png")
+                imageIconSize: 28
                 variant: "success"
                 size: "sm"
                 lightMode: root.lightMode
-                Layout.preferredWidth: root.compactMode ? 106 : 124
-                Layout.preferredHeight: 34
+                Layout.preferredWidth: root.compactMode ? 118 : 136
+                Layout.preferredHeight: 40
                 enabled: root.addEnabled
+                ToolTip.visible: hovered
+                ToolTip.text: "Cut"
                 onClicked: root.addCutRequested()
             }
 

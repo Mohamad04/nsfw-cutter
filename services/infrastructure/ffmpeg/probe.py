@@ -2,7 +2,8 @@ import json
 import subprocess
 from pathlib import Path
 
-from services.infrastructure.ffmpeg.runner import FFmpegService, resolve_binary
+from services.infrastructure.ffmpeg.paths import get_ffprobe_path
+from services.infrastructure.ffmpeg.runner import FFmpegService
 
 
 def probe_media(
@@ -10,7 +11,7 @@ def probe_media(
     ffmpeg_service: FFmpegService | None = None,
     probe_runner=None,
 ) -> dict:
-    ffprobe_path = ffmpeg_service.ffprobe_path if ffmpeg_service else resolve_binary("ffprobe")
+    ffprobe_path = ffmpeg_service.ffprobe_path if ffmpeg_service else get_ffprobe_path()
     command = [
         str(ffprobe_path),
         "-v",
@@ -29,7 +30,7 @@ def extract_keyframes(
     ffmpeg_service: FFmpegService | None = None,
     probe_runner=None,
 ) -> list[float]:
-    ffprobe_path = ffmpeg_service.ffprobe_path if ffmpeg_service else resolve_binary("ffprobe")
+    ffprobe_path = ffmpeg_service.ffprobe_path if ffmpeg_service else get_ffprobe_path()
     command = [
         str(ffprobe_path),
         "-v",

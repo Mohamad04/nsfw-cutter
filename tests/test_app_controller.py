@@ -197,6 +197,54 @@ class AppControllerTests(unittest.TestCase):
 
         self.assertEqual(thread_pool.max_thread_count, 4)
 
+    def test_ai_suggestions_normalize_formatted_times(self):
+        self.controller.setAiSuggestions(
+            [
+                {
+                    "start": "00:12:14",
+                    "end": "00:12:36.250",
+                    "confidence": "high",
+                    "reason": "scene candidate",
+                }
+            ]
+        )
+
+        self.assertEqual(self.controller.aiAnalysisState, "ready")
+        self.assertEqual(
+            self.controller.aiSuggestions,
+            [
+                {
+                    "start": "00:12:14.000",
+                    "end": "00:12:36.250",
+                    "confidence": "High",
+                    "reason": "scene candidate",
+                }
+            ],
+        )
+
+    def test_ai_suggestions_normalize_second_values(self):
+        self.controller.setAiSuggestions(
+            [
+                {
+                    "start_seconds": 735.5,
+                    "end_seconds": 762,
+                    "confidence": 0.45,
+                }
+            ]
+        )
+
+        self.assertEqual(
+            self.controller.aiSuggestions,
+            [
+                {
+                    "start": "00:12:15.500",
+                    "end": "00:12:42.000",
+                    "confidence": "Low",
+                    "reason": "",
+                }
+            ],
+        )
+
     def test_load_folder_populates_available_videos(self):
         self.controller.loadFolder("folder")
 
@@ -682,6 +730,7 @@ class AppControllerTests(unittest.TestCase):
 
             self.assertEqual(controller.keyframeState, "ready")
             self.assertEqual(controller.keyframeCount, 3)
+            self.assertEqual(controller.keyframeTimestamps, [0.0, 5.0, 10.0])
             self.assertEqual(service.keyframe_timestamps, [0.0, 5.0, 10.0])
         finally:
             release_probe.set()

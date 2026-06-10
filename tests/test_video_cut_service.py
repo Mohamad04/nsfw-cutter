@@ -176,9 +176,9 @@ class CutExecutionServiceTests(unittest.TestCase):
             self.assertEqual(make_unique_path(path).name, "clip_1.mp4")
 
     def test_ffmpeg_not_found_has_clear_error(self):
-        with patch("services.infrastructure.ffmpeg.runner.get_resource_path", return_value=Path("missing")):
-            with patch("services.infrastructure.ffmpeg.runner.shutil.which", return_value=None):
-                with self.assertRaisesRegex(FFmpegNotFoundError, "FFmpeg was not found"):
+        with patch("services.infrastructure.ffmpeg.paths._runtime_roots", return_value=(Path("missing"),)):
+            with patch("services.infrastructure.ffmpeg.paths.shutil.which", return_value=None):
+                with self.assertRaisesRegex(FFmpegNotFoundError, "FFmpeg executable was not found"):
                     FFmpegService()
 
 

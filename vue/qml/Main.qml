@@ -31,7 +31,7 @@ ApplicationWindow {
         id: settingsDialog
     }
 
-    HomePage {
+    CleanShellPage {
         anchors.fill: parent
         onSettingsRequested: settingsDialog.openWithCurrentSettings()
     }

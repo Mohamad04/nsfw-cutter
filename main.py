@@ -1,7 +1,7 @@
 import ctypes
 import sys
 
-from PySide6.QtGui import QIcon
+from PySide6.QtGui import QFont, QFontDatabase, QIcon
 from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtQuickControls2 import QQuickStyle
 from PySide6.QtWidgets import QApplication
@@ -37,6 +37,13 @@ def main():
     app.setApplicationName(APP_NAME)
     app.setApplicationDisplayName(APP_NAME)
     app.setOrganizationName(APP_AUTHOR)
+    ui_font_family = "Segoe UI"
+    if sys.platform == "win32":
+        ui_font_id = QFontDatabase.addApplicationFont("C:/Windows/Fonts/segoeui.ttf")
+        ui_font_families = QFontDatabase.applicationFontFamilies(ui_font_id)
+        if ui_font_families:
+            ui_font_family = ui_font_families[0]
+    app.setFont(QFont(ui_font_family, 9))
     app_icon = QIcon(str(get_resource_path("assets/icons/app.ico")))
     app.setWindowIcon(app_icon)
 

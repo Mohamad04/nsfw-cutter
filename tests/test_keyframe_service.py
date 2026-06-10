@@ -111,7 +111,7 @@ class KeyframeServiceTests(unittest.TestCase):
             return subprocess.CompletedProcess(command, 0, json.dumps(payload), "")
 
         with patch(
-            "services.infrastructure.ffmpeg.probe.resolve_binary",
+            "services.infrastructure.ffmpeg.probe.get_ffprobe_path",
             return_value=Path("ffprobe"),
         ):
             keyframes = extract_keyframes("movie.mp4", probe_runner=fake_runner)

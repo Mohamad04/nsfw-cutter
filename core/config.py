@@ -9,4 +9,4 @@ METADATA_JSON_DIR = JSON_DATA_DIR / "metadata"
 SUBTITLES_JSON_DIR = JSON_DATA_DIR / "subtitles"
 EXPORT_JOBS_JSON_DIR = JSON_DATA_DIR / "export_jobs"
 
-LOCAL_FFPROBE_PATH = get_resource_path("tools/ffmpeg/bin/ffprobe.exe")
+LOCAL_FFPROBE_PATH = get_resource_path("vendor/ffmpeg/bin/ffprobe.exe")

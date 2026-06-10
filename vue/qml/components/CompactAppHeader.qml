@@ -19,6 +19,7 @@ Item {
     readonly property color elevatedBorder: root.lightMode ? "#CBD5E1" : "#2B4260"
 
     signal settingsRequested()
+    signal aiPickAddRequested(int index, string startTime, string endTime, string confidence, string reason)
 
     implicitHeight: 76
 
@@ -104,6 +105,109 @@ Item {
         if (recentVideo["path"] && String(recentVideo["path"]).length > 0) return String(recentVideo["path"])
         return typeof recentVideo === "string" ? recentVideo : ""
     }
+
+    function requestAiPick(index) {
+        if (index < 0 || index >= aiPicksModel.count) return
+        var pick = aiPicksModel.get(index)
+        if (pick.added) return
+        root.aiPickAddRequested(index, pick.start, pick.end, pick.confidence, pick.reason)
+    }
+
+    function requestSelectedAiPicks() {
+        for (var index = 0; index < aiPicksModel.count; index += 1) {
+            var pick = aiPicksModel.get(index)
+            if (pick.selected && !pick.added)
+                root.aiPickAddRequested(index, pick.start, pick.end, pick.confidence, pick.reason)
+        }
+    }
+
+    function requestAllAiPicks() {
+        for (var index = 0; index < aiPicksModel.count; index += 1) {
+            var pick = aiPicksModel.get(index)
+            if (!pick.added)
+                root.aiPickAddRequested(index, pick.start, pick.end, pick.confidence, pick.reason)
+        }
+    }
+
+    function markAiPickAdded(index) {
+        if (index < 0 || index >= aiPicksModel.count) return
+        aiPicksModel.setProperty(index, "added", true)
+        aiPicksModel.setProperty(index, "selected", false)
+    }
+
+    function normalizedAiTime(value) {
+        return String(value || "").trim().split(".")[0]
+    }
+
+    function syncAiPickAddedState(cutsModel) {
+        for (var pickIndex = 0; pickIndex < aiPicksModel.count; pickIndex += 1) {
+            var pick = aiPicksModel.get(pickIndex)
+            var added = false
+
+            for (var cutIndex = 0; cutIndex < cutsModel.count; cutIndex += 1) {
+                var cut = cutsModel.get(cutIndex)
+                if (String(cut.source || "") !== "AI") continue
+
+                if (root.normalizedAiTime(cut.start) === root.normalizedAiTime(pick.start)
+                        && root.normalizedAiTime(cut.end) === root.normalizedAiTime(pick.end)) {
+                    added = true
+                    break
+                }
+            }
+
+            if (pick.added !== added)
+                aiPicksModel.setProperty(pickIndex, "added", added)
+            if (added && pick.selected)
+                aiPicksModel.setProperty(pickIndex, "selected", false)
+        }
+    }
+
+    function aiSuggestionValue(suggestion, key, fallback) {
+        if (!suggestion) return fallback || ""
+        var value = suggestion[key]
+        return value === undefined || value === null ? (fallback || "") : String(value)
+    }
+
+    function rebuildAiPicksModel() {
+        aiPicksModel.clear()
+
+        var suggestions = appController.aiSuggestions
+        for (var index = 0; index < suggestions.length; index += 1) {
+            var suggestion = suggestions[index]
+            var startTime = root.aiSuggestionValue(suggestion, "start", "")
+            var endTime = root.aiSuggestionValue(suggestion, "end", "")
+            if (startTime.length === 0 || endTime.length === 0) continue
+
+            aiPicksModel.append({
+                "start": startTime,
+                "end": endTime,
+                "confidence": root.aiSuggestionValue(suggestion, "confidence", "Medium"),
+                "reason": root.aiSuggestionValue(suggestion, "reason", ""),
+                "selected": false,
+                "added": false
+            })
+        }
+    }
+
+    function displayAiTime(value) {
+        return String(value || "").split(".")[0]
+    }
+
+    function aiPicksTitle() {
+        if (appController.selectedVideoPath.length === 0) return "AI Picks unavailable"
+        if (appController.aiAnalysisState === "running") return "Analyzing video..."
+        if (aiPicksModel.count === 0) return "No AI picks yet"
+        return "AI Picks"
+    }
+
+    function aiPicksSubtitle() {
+        if (appController.selectedVideoPath.length === 0) return "Open a video first."
+        if (appController.aiAnalysisState === "running") return "Please wait while analysis runs."
+        if (aiPicksModel.count === 0) return "Run analysis to generate suggestions."
+        return "Suggested cuts detected"
+    }
+
+    Component.onCompleted: root.rebuildAiPicksModel()
 
     Rectangle {
         anchors.fill: parent
@@ -325,15 +429,38 @@ Item {
         }
     }
 
+    ListModel {
+        id: aiPicksModel
+    }
+
     Popup {
         id: aiPicksPopup
         objectName: "aiPicksPopup"
 
-        readonly property int menuWidth: 246
+        readonly property int menuWidth: 360
+
+        function confidenceBackground(confidence) {
+            if (confidence === "High") return "#102719"
+            if (confidence === "Medium") return "#2A2112"
+            return "#2A1712"
+        }
+
+        function confidenceBorder(confidence) {
+            if (confidence === "High") return "#56C95A"
+            if (confidence === "Medium") return "#D89B2B"
+            return "#E35B38"
+        }
+
+        function confidenceText(confidence) {
+            if (confidence === "High") return "#7CFF6B"
+            if (confidence === "Medium") return "#FFD36B"
+            return "#FF7448"
+        }
 
         function showAt(target) {
             var position = target.mapToItem(aiPicksPopup.parent, 0, 0)
-            aiPicksPopup.x = position.x
+            var maxX = Math.max(0, aiPicksPopup.parent.width - aiPicksPopup.width - 16)
+            aiPicksPopup.x = Math.min(position.x, maxX)
             aiPicksPopup.y = position.y + target.height + 8
             aiPicksPopup.open()
             aiPicksPopup.forceActiveFocus()
@@ -348,7 +475,7 @@ Item {
         padding: 0
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
         width: aiPicksPopup.menuWidth
-        height: 94
+        height: aiPicksModel.count > 0 ? 284 : 150
 
         Keys.onEscapePressed: aiPicksPopup.closeAfterAction()
 
@@ -365,50 +492,245 @@ Item {
                 height: parent.height - 5
                 radius: 14
                 color: "#000000"
-                opacity: root.lightMode ? 0.14 : 0.34
+                opacity: 0.34
             }
 
             Rectangle {
                 anchors.fill: parent
                 anchors.topMargin: 0
                 radius: 14
-                color: root.elevatedPanel
-                border.color: root.elevatedBorder
+                color: "#07101D"
+                border.color: "#1B3658"
                 border.width: 1
             }
 
             ColumnLayout {
                 anchors.fill: parent
                 anchors.margins: 14
-                spacing: 6
+                spacing: 10
 
-                RowLayout {
+                ColumnLayout {
                     Layout.fillWidth: true
-                    spacing: 8
+                    spacing: 2
 
-                    VectorIcon {
-                        Layout.preferredWidth: 17
-                        Layout.preferredHeight: 17
-                        name: "sparkle"
-                        iconColor: root.accentColor
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 8
+
+                        VectorIcon {
+                            Layout.preferredWidth: 17
+                            Layout.preferredHeight: 17
+                            name: "sparkle"
+                            iconColor: "#3B82F6"
+                        }
+
+                        Text {
+                            Layout.fillWidth: true
+                            text: root.aiPicksTitle()
+                            color: "#EAF2FF"
+                            font.pixelSize: 15
+                            font.weight: Font.DemiBold
+                            elide: Text.ElideRight
+                        }
+
+                        BusyIndicator {
+                            visible: appController.aiAnalysisState === "running"
+                            running: visible
+                            Layout.preferredWidth: 18
+                            Layout.preferredHeight: 18
+                        }
                     }
 
                     Text {
                         Layout.fillWidth: true
-                        text: "AI Picks"
-                        color: root.textColor
-                        font.pixelSize: 14
-                        font.weight: Font.DemiBold
+                        text: root.aiPicksSubtitle()
+                        color: "#8FA6C5"
+                        font.pixelSize: 12
                         elide: Text.ElideRight
                     }
                 }
 
-                Text {
+                Rectangle {
+                    visible: aiPicksModel.count === 0
                     Layout.fillWidth: true
-                    text: "Placeholder menu. No actions connected yet."
-                    color: root.lightMode ? "#64748B" : root.mutedTextColor
-                    font.pixelSize: 12
-                    wrapMode: Text.WordWrap
+                    Layout.fillHeight: true
+                    radius: 10
+                    color: "#0A1626"
+                    border.color: "#203B5D"
+                    border.width: 1
+
+                    Text {
+                        anchors.centerIn: parent
+                        width: parent.width - 28
+                        text: root.aiPicksSubtitle()
+                        color: "#8FA6C5"
+                        font.pixelSize: 12
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                        wrapMode: Text.WordWrap
+                    }
+                }
+
+                Repeater {
+                    model: aiPicksModel
+
+                    delegate: Rectangle {
+                        id: aiPickRow
+
+                        required property int index
+                        required property string start
+                        required property string end
+                        required property string confidence
+                        required property string reason
+                        required property bool selected
+                        required property bool added
+
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: 46
+                        radius: 10
+                        color: "#0A1626"
+                        border.color: "#203B5D"
+                        border.width: 1
+                        opacity: aiPickRow.added ? 0.58 : 1.0
+
+                        RowLayout {
+                            anchors.fill: parent
+                            anchors.leftMargin: 10
+                            anchors.rightMargin: 8
+                            spacing: 8
+
+                            CheckBox {
+                                id: pickCheckbox
+
+                                checked: aiPickRow.selected
+                                enabled: !aiPickRow.added
+                                Layout.preferredWidth: 24
+                                Layout.preferredHeight: 24
+                                padding: 0
+                                spacing: 0
+                                onToggled: aiPicksModel.setProperty(aiPickRow.index, "selected", checked)
+
+                                indicator: Rectangle {
+                                    implicitWidth: 18
+                                    implicitHeight: 18
+                                    x: 3
+                                    y: 3
+                                    radius: 4
+                                    color: pickCheckbox.checked ? "#0C3B88" : "#07101D"
+                                    border.color: pickCheckbox.checked ? "#3B82F6" : "#25476F"
+                                    border.width: 1
+
+                                    Text {
+                                        anchors.centerIn: parent
+                                        text: "✓"
+                                        color: "#EAF2FF"
+                                        font.pixelSize: 13
+                                        font.weight: Font.DemiBold
+                                        visible: pickCheckbox.checked
+                                    }
+                                }
+
+                                contentItem: Item {}
+                            }
+
+                            Text {
+                                Layout.fillWidth: true
+                                Layout.minimumWidth: 0
+                                text: root.displayAiTime(aiPickRow.start) + " → " + root.displayAiTime(aiPickRow.end)
+                                color: "#EAF2FF"
+                                font.pixelSize: 13
+                                font.weight: Font.Medium
+                                elide: Text.ElideRight
+                                verticalAlignment: Text.AlignVCenter
+                            }
+
+                            Rectangle {
+                                Layout.preferredWidth: 68
+                                Layout.preferredHeight: 24
+                                radius: 8
+                                color: aiPicksPopup.confidenceBackground(aiPickRow.confidence)
+                                border.color: aiPicksPopup.confidenceBorder(aiPickRow.confidence)
+                                border.width: 1
+
+                                Text {
+                                    anchors.fill: parent
+                                    text: aiPickRow.confidence
+                                    color: aiPicksPopup.confidenceText(aiPickRow.confidence)
+                                    font.pixelSize: 11
+                                    font.weight: Font.DemiBold
+                                    horizontalAlignment: Text.AlignHCenter
+                                    verticalAlignment: Text.AlignVCenter
+                                    elide: Text.ElideRight
+                                }
+                            }
+
+                            Button {
+                                id: addPickButton
+
+                                text: aiPickRow.added ? "✓" : "+"
+                                enabled: !aiPickRow.added
+                                font.pixelSize: 16
+                                font.weight: Font.DemiBold
+                                padding: 0
+                                leftPadding: 0
+                                rightPadding: 0
+                                topPadding: 0
+                                bottomPadding: 0
+                                Layout.preferredWidth: 38
+                                Layout.minimumWidth: 38
+                                Layout.maximumWidth: 38
+                                Layout.preferredHeight: 30
+                                Layout.minimumHeight: 30
+                                Layout.maximumHeight: 30
+                                onClicked: root.requestAiPick(aiPickRow.index)
+
+                                background: Rectangle {
+                                    radius: 10
+                                    color: !addPickButton.enabled
+                                        ? "#0B2A1C"
+                                        : (addPickButton.down
+                                        ? "#0A2E6C"
+                                        : (addPickButton.hovered ? "#1558C8" : "#0C3B88"))
+                                    border.color: addPickButton.enabled ? "#3B82F6" : "#56C95A"
+                                    border.width: 1
+                                }
+
+                                contentItem: Text {
+                                    text: addPickButton.text
+                                    color: "#EAF2FF"
+                                    font: addPickButton.font
+                                    horizontalAlignment: Text.AlignHCenter
+                                    verticalAlignment: Text.AlignVCenter
+                                }
+                            }
+                        }
+                    }
+                }
+
+                RowLayout {
+                    visible: aiPicksModel.count > 0
+                    Layout.fillWidth: true
+                    spacing: 8
+
+                    AppButton {
+                        text: "Add selected"
+                        variant: "secondary"
+                        size: "sm"
+                        lightMode: false
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: 36
+                        onClicked: root.requestSelectedAiPicks()
+                    }
+
+                    AppButton {
+                        text: "Add all"
+                        variant: "primary"
+                        size: "sm"
+                        lightMode: false
+                        Layout.preferredWidth: 118
+                        Layout.preferredHeight: 36
+                        onClicked: root.requestAllAiPicks()
+                    }
                 }
             }
         }
@@ -671,6 +993,12 @@ Item {
         function onSelectedVideoPathChanged() {
             subtitleSelector.closeAfterAction()
             openMenu.closeAfterAction()
+            root.rebuildAiPicksModel()
+            aiPicksPopup.closeAfterAction()
+        }
+
+        function onAiSuggestionsChanged() {
+            root.rebuildAiPicksModel()
         }
 
         function onSubtitleCandidatesChanged() {

@@ -23,9 +23,18 @@ Item {
     property string outputDir: ""
 
     AppTheme { id: theme }
-    ListModel { id: cutsModel; objectName: "cutsModel" }
+    ListModel {
+        id: cutsModel
+        objectName: "cutsModel"
+
+        onCountChanged: root.syncAiPickAddedState()
+    }
 
     Component.onCompleted: root.outputDir = settingsController.getExportDir()
+
+    function syncAiPickAddedState() {
+        appHeader.syncAiPickAddedState(cutsModel)
+    }
 
     function appendCut(cut) {
         cutsModel.append({
@@ -114,6 +123,8 @@ Item {
             spacing: 12
 
             CompactAppHeader {
+                id: appHeader
+
                 Layout.fillWidth: true
                 Layout.preferredHeight: 76
                 lightMode: root.lightMode
@@ -123,6 +134,10 @@ Item {
                 mutedTextColor: root.textMuted
                 accentColor: root.darkMode ? theme.darkAccent : theme.lightAccent
                 onSettingsRequested: root.settingsRequested()
+                onAiPickAddRequested: function(index, startTime, endTime, confidence, reason) {
+                    if (videoWorkspace.addCutFromSuggestion(startTime, endTime, confidence, reason))
+                        appHeader.markAiPickAdded(index)
+                }
             }
 
             RowLayout {
@@ -179,6 +194,14 @@ Item {
                 onChooseFolderRequested: root.chooseOutputFolder()
                 onExportCleanVideoRequested: root.exportCleanVideo()
             }
+        }
+    }
+
+    Connections {
+        target: appController
+
+        function onAiSuggestionsChanged() {
+            Qt.callLater(root.syncAiPickAddedState)
         }
     }
 }

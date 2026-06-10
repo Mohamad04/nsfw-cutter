@@ -31,3 +31,5 @@ class AppState:
     backend_preparation_status: str = "No backend preparation running"
     current_export_job_id: str = ""
     current_export_job_json_path: str = ""
+    ai_analysis_state: str = "idle"
+    ai_suggestions: list = field(default_factory=list)

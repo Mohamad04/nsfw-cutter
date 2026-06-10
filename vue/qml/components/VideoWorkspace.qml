@@ -24,6 +24,12 @@ Rectangle {
     property bool endPointSet: false
     property var keyframeInfo: defaultKeyframeInfo("Set start and end points to create a cut.")
     property var cutPreview: ({ "visible": false })
+    property int draggingCutIndex: -1
+    property string draggingCutMode: ""
+    property real dragAnchorSeconds: 0
+    property real dragOriginalStartSeconds: 0
+    property real dragOriginalEndSeconds: 0
+    readonly property real minimumCutDurationSeconds: 0.1
     readonly property real durationMs: player.duration
     readonly property real positionMs: player.position
     readonly property bool hasVideo: appController.videoUrl.length > 0
@@ -114,6 +120,223 @@ Rectangle {
         return ((hours * 3600) + (minutes * 60) + seconds) * 1000
     }
 
+    function numericCutSeconds(cut, secondsKey, timeKey) {
+        if (!cut) return NaN
+
+        var seconds = cut[secondsKey]
+        if (seconds !== undefined && seconds !== null && seconds !== "") {
+            var numeric = Number(seconds)
+            if (Number.isFinite(numeric)) return numeric
+        }
+
+        var timeMs = root.parseTimeMs(cut[timeKey])
+        return timeMs >= 0 ? timeMs / 1000 : NaN
+    }
+
+    function cutRange(cut) {
+        if (!cut) return { "valid": false, "start": 0, "end": 0 }
+
+        var safeStart = root.numericCutSeconds(cut, "safeStartSeconds", "safeStart")
+        var safeEnd = root.numericCutSeconds(cut, "safeEndSeconds", "safeEnd")
+        if (Number.isFinite(safeStart) && Number.isFinite(safeEnd) && safeEnd > safeStart)
+            return { "valid": true, "start": safeStart, "end": safeEnd }
+
+        var requestedStart = root.numericCutSeconds(cut, "requestedStartSeconds", "start")
+        var requestedEnd = root.numericCutSeconds(cut, "requestedEndSeconds", "end")
+        if (Number.isFinite(requestedStart) && Number.isFinite(requestedEnd) && requestedEnd > requestedStart)
+            return { "valid": true, "start": requestedStart, "end": requestedEnd }
+
+        return { "valid": false, "start": 0, "end": 0 }
+    }
+
+    function requestedCutRange(cut) {
+        if (!cut) return { "valid": false, "start": 0, "end": 0 }
+
+        var requestedStart = root.numericCutSeconds(cut, "requestedStartSeconds", "start")
+        var requestedEnd = root.numericCutSeconds(cut, "requestedEndSeconds", "end")
+        if (Number.isFinite(requestedStart) && Number.isFinite(requestedEnd) && requestedEnd > requestedStart)
+            return { "valid": true, "start": requestedStart, "end": requestedEnd }
+
+        return root.cutRange(cut)
+    }
+
+    function clampedTimelineSeconds(value) {
+        if (!Number.isFinite(value) || !Number.isFinite(root.durationMs) || root.durationMs <= 0) return 0
+        var durationSeconds = root.durationMs / 1000
+        return Math.max(0, Math.min(value, durationSeconds))
+    }
+
+    function timelineX(seconds, trackWidth) {
+        if (!Number.isFinite(root.durationMs) || root.durationMs <= 0 || trackWidth <= 0) return 0
+        return root.clampedTimelineSeconds(seconds) / (root.durationMs / 1000) * trackWidth
+    }
+
+    function timelineSecondsAtX(trackX, trackWidth) {
+        if (!Number.isFinite(root.durationMs) || root.durationMs <= 0 || trackWidth <= 0) return 0
+        var clampedX = Math.max(0, Math.min(trackX, trackWidth))
+        return clampedX / trackWidth * (root.durationMs / 1000)
+    }
+
+    function markerSeconds(timeText, isSet) {
+        if (!isSet) return NaN
+        var timeMs = root.parseTimeMs(timeText)
+        return timeMs >= 0 ? timeMs / 1000 : NaN
+    }
+
+    function formatSignedDelta(seconds) {
+        if (!Number.isFinite(seconds)) return "--"
+
+        var roundedSeconds = Math.round(seconds)
+        var sign = roundedSeconds >= 0 ? "+" : "-"
+        var absoluteSeconds = Math.abs(roundedSeconds)
+        var hours = Math.floor(absoluteSeconds / 3600)
+        var minutes = Math.floor((absoluteSeconds % 3600) / 60)
+        var wholeSeconds = absoluteSeconds % 60
+        if (hours > 0)
+            return sign + root.pad(hours) + ":" + root.pad(minutes) + ":" + root.pad(wholeSeconds)
+        return sign + root.pad(minutes) + ":" + root.pad(wholeSeconds)
+    }
+
+    function requestedSelectionText() {
+        if (!root.startPointSet && !root.endPointSet) return "Set start and end markers"
+        if (root.startPointSet && !root.endPointSet) return root.requestedStart + " -> Set end"
+        if (!root.startPointSet && root.endPointSet) return "Set start -> " + root.requestedEnd
+        return root.requestedStart + " -> " + root.requestedEnd
+    }
+
+    function safeSelectionText() {
+        if (root.hasSafeKeyframeInfo())
+            return root.formatSeconds(root.keyframeInfo.safe_start) + " -> " + root.formatSeconds(root.keyframeInfo.safe_end)
+        if (root.keyframeInfo && root.keyframeInfo.error)
+            return root.keyframeInfo.error
+        return root.canAddCut() ? "Waiting for valid keyframe range" : "Set start and end markers"
+    }
+
+    function deltaSelectionText() {
+        if (!root.hasSafeKeyframeInfo()) return "Start -- | End -- | Duration --"
+
+        var requestedStartSeconds = root.parseTimeMs(root.requestedStart) / 1000
+        var requestedEndSeconds = root.parseTimeMs(root.requestedEnd) / 1000
+        var safeStartSeconds = Number(root.keyframeInfo.safe_start)
+        var safeEndSeconds = Number(root.keyframeInfo.safe_end)
+        var requestedDuration = requestedEndSeconds - requestedStartSeconds
+        var safeDuration = safeEndSeconds - safeStartSeconds
+
+        return "Start " + root.formatSignedDelta(safeStartSeconds - requestedStartSeconds)
+            + " | End " + root.formatSignedDelta(safeEndSeconds - requestedEndSeconds)
+            + " | Duration " + root.formatSignedDelta(safeDuration - requestedDuration)
+    }
+
+    function setCutTimingFields(index, startSeconds, endSeconds) {
+        if (index < 0 || index >= root.cutsModel.count) return false
+        var durationSeconds = Number.isFinite(root.durationMs) && root.durationMs > 0 ? root.durationMs / 1000 : 0
+        if (durationSeconds <= 0) return false
+
+        var clampedStart = Math.max(0, Math.min(startSeconds, durationSeconds))
+        var clampedEnd = Math.max(0, Math.min(endSeconds, durationSeconds))
+        if (clampedEnd <= clampedStart)
+            clampedEnd = Math.min(durationSeconds, clampedStart + root.minimumCutDurationSeconds)
+        if (clampedEnd <= clampedStart)
+            clampedStart = Math.max(0, clampedEnd - root.minimumCutDurationSeconds)
+        if (clampedEnd <= clampedStart) return false
+
+        root.cutsModel.setProperty(index, "start", root.formatSeconds(clampedStart))
+        root.cutsModel.setProperty(index, "end", root.formatSeconds(clampedEnd))
+        root.cutsModel.setProperty(index, "requestedStartSeconds", clampedStart)
+        root.cutsModel.setProperty(index, "requestedEndSeconds", clampedEnd)
+        return true
+    }
+
+    function clearCutSafeFields(index) {
+        root.cutsModel.setProperty(index, "safeStart", "")
+        root.cutsModel.setProperty(index, "safeEnd", "")
+        root.cutsModel.setProperty(index, "safeStartSeconds", "")
+        root.cutsModel.setProperty(index, "safeEndSeconds", "")
+        root.cutsModel.setProperty(index, "safeAvailable", false)
+        root.cutsModel.setProperty(index, "previousKeyframeStart", "")
+        root.cutsModel.setProperty(index, "nextKeyframeStart", "")
+        root.cutsModel.setProperty(index, "previousKeyframeEnd", "")
+        root.cutsModel.setProperty(index, "nextKeyframeEnd", "")
+        root.cutsModel.setProperty(index, "extraBefore", "0.0s")
+        root.cutsModel.setProperty(index, "extraAfter", "0.0s")
+        root.cutsModel.setProperty(index, "status", "Safe unavailable")
+    }
+
+    function recomputeCutSafeTiming(index) {
+        if (index < 0 || index >= root.cutsModel.count) return false
+
+        var cut = root.cutsModel.get(index)
+        var range = root.requestedCutRange(cut)
+        if (!range.valid) return false
+
+        var startTime = root.formatSeconds(range.start)
+        var endTime = root.formatSeconds(range.end)
+        var info = root.safeKeyframeInfoFor(startTime, endTime)
+        if (!root.isUsableKeyframeInfo(info)) {
+            root.clearCutSafeFields(index)
+            return false
+        }
+
+        root.cutsModel.setProperty(index, "safeStart", root.formatSeconds(info.safe_start))
+        root.cutsModel.setProperty(index, "safeEnd", root.formatSeconds(info.safe_end))
+        root.cutsModel.setProperty(index, "safeStartSeconds", info.safe_start)
+        root.cutsModel.setProperty(index, "safeEndSeconds", info.safe_end)
+        root.cutsModel.setProperty(index, "safeAvailable", true)
+        root.cutsModel.setProperty(index, "previousKeyframeStart", root.formatSeconds(info.previous_keyframe_start))
+        root.cutsModel.setProperty(index, "nextKeyframeStart", root.formatSeconds(info.next_keyframe_start))
+        root.cutsModel.setProperty(index, "previousKeyframeEnd", root.formatSeconds(info.previous_keyframe_end))
+        root.cutsModel.setProperty(index, "nextKeyframeEnd", root.formatSeconds(info.next_keyframe_end))
+        root.cutsModel.setProperty(index, "extraBefore", Number(info.extra_before || 0).toFixed(1) + "s")
+        root.cutsModel.setProperty(index, "extraAfter", Number(info.extra_after || 0).toFixed(1) + "s")
+        root.cutsModel.setProperty(index, "status", "Pending")
+        return true
+    }
+
+    function beginCutTimelineDrag(index, mode, trackX, trackWidth) {
+        if (index < 0 || index >= root.cutsModel.count) return
+        var range = root.requestedCutRange(root.cutsModel.get(index))
+        if (!range.valid) return
+
+        root.draggingCutIndex = index
+        root.draggingCutMode = mode
+        root.dragAnchorSeconds = root.timelineSecondsAtX(trackX, trackWidth)
+        root.dragOriginalStartSeconds = range.start
+        root.dragOriginalEndSeconds = range.end
+    }
+
+    function updateCutTimelineDrag(trackX, trackWidth) {
+        if (root.draggingCutIndex < 0 || root.draggingCutMode.length === 0) return
+
+        var pointerSeconds = root.timelineSecondsAtX(trackX, trackWidth)
+        var durationSeconds = root.durationMs / 1000
+        var startSeconds = root.dragOriginalStartSeconds
+        var endSeconds = root.dragOriginalEndSeconds
+        var originalDuration = Math.max(root.minimumCutDurationSeconds, root.dragOriginalEndSeconds - root.dragOriginalStartSeconds)
+
+        if (root.draggingCutMode === "move") {
+            var deltaSeconds = pointerSeconds - root.dragAnchorSeconds
+            startSeconds = Math.max(0, Math.min(durationSeconds - originalDuration, root.dragOriginalStartSeconds + deltaSeconds))
+            endSeconds = startSeconds + originalDuration
+        } else if (root.draggingCutMode === "start") {
+            startSeconds = Math.max(0, Math.min(pointerSeconds, root.dragOriginalEndSeconds - root.minimumCutDurationSeconds))
+        } else if (root.draggingCutMode === "end") {
+            endSeconds = Math.min(durationSeconds, Math.max(pointerSeconds, root.dragOriginalStartSeconds + root.minimumCutDurationSeconds))
+        }
+
+        root.setCutTimingFields(root.draggingCutIndex, startSeconds, endSeconds)
+    }
+
+    function finishCutTimelineDrag() {
+        if (root.draggingCutIndex >= 0)
+            root.recomputeCutSafeTiming(root.draggingCutIndex)
+
+        root.draggingCutIndex = -1
+        root.draggingCutMode = ""
+        root.dragAnchorSeconds = 0
+        root.dragOriginalStartSeconds = 0
+        root.dragOriginalEndSeconds = 0
+    }
+
     function seekBy(seconds) {
         if (!root.hasVideo) return
         var nextPosition = player.position + seconds * 1000
@@ -142,10 +365,20 @@ Rectangle {
         root.refreshKeyframeInfo()
     }
 
+    function canAddCutFromTimes(startTime, endTime) {
+        if (!root.hasVideo || !Number.isFinite(root.durationMs) || root.durationMs <= 0) return false
+
+        var startMs = root.parseTimeMs(startTime)
+        var endMs = root.parseTimeMs(endTime)
+        return startMs >= 0
+            && endMs >= 0
+            && startMs < endMs
+            && startMs <= root.durationMs
+            && endMs <= root.durationMs
+    }
+
     function canAddCut() {
-        var startMs = root.parseTimeMs(root.requestedStart)
-        var endMs = root.parseTimeMs(root.requestedEnd)
-        return root.hasVideo && startMs >= 0 && endMs >= 0 && startMs < endMs
+        return root.canAddCutFromTimes(root.requestedStart, root.requestedEnd)
     }
 
     function hasSafeKeyframeInfo() {
@@ -156,10 +389,6 @@ Rectangle {
             && Number.isFinite(Number(info.safe_start))
             && Number.isFinite(Number(info.safe_end))
             && Number(info.safe_start) < Number(info.safe_end)
-    }
-
-    function canAddSafeCut() {
-        return root.canAddCut() && root.hasSafeKeyframeInfo()
     }
 
     function updateCutPreview() {
@@ -203,15 +432,40 @@ Rectangle {
         root.updateCutPreview()
     }
 
-    function addCurrentCut() {
-        if (!root.canAddCut()) return
-        root.refreshKeyframeInfo()
-        if (!root.hasSafeKeyframeInfo()) return
+    function safeKeyframeInfoFor(startTime, endTime) {
+        if (!root.canAddCutFromTimes(startTime, endTime))
+            return root.defaultKeyframeInfo("Invalid cut range.")
 
-        var info = root.keyframeInfo
+        return videoCutController.keyframeCutInfo(
+            appController.selectedVideoPath,
+            startTime,
+            endTime,
+            root.durationMs > 0 ? root.durationMs / 1000 : 0
+        )
+    }
+
+    function isUsableKeyframeInfo(info) {
+        return info.valid
+            && info.safe_start !== null
+            && info.safe_end !== null
+            && Number.isFinite(Number(info.safe_start))
+            && Number.isFinite(Number(info.safe_end))
+            && Number(info.safe_start) < Number(info.safe_end)
+    }
+
+    function addCutFromTimes(startTime, endTime, source, reason, tags, score, updateSelectionInfo) {
+        if (!root.canAddCutFromTimes(startTime, endTime)) return false
+
+        var info = root.safeKeyframeInfoFor(startTime, endTime)
+        if (updateSelectionInfo === true) {
+            root.keyframeInfo = info
+            root.updateCutPreview()
+        }
+        if (!root.isUsableKeyframeInfo(info)) return false
+
         root.cutAdded({
-            "start": root.requestedStart,
-            "end": root.requestedEnd,
+            "start": root.formatTime(root.parseTimeMs(startTime), true),
+            "end": root.formatTime(root.parseTimeMs(endTime), true),
             "safeStart": root.formatSeconds(info.safe_start),
             "safeEnd": root.formatSeconds(info.safe_end),
             "requestedStartSeconds": info.requested_start,
@@ -225,13 +479,32 @@ Rectangle {
             "nextKeyframeEnd": root.formatSeconds(info.next_keyframe_end),
             "extraBefore": Number(info.extra_before || 0).toFixed(1) + "s",
             "extraAfter": Number(info.extra_after || 0).toFixed(1) + "s",
-            "reason": "Manual removal",
-            "tags": "manual",
-            "source": "Manual",
-            "score": "--",
+            "reason": reason || "Manual removal",
+            "tags": tags || "manual",
+            "source": source || "Manual",
+            "score": score || "--",
             "cutType": "Remove",
             "status": "Pending"
         })
+
+        return true
+    }
+
+    function addCutFromSuggestion(startTime, endTime, confidence, reason) {
+        return root.addCutFromTimes(
+            startTime,
+            endTime,
+            "AI",
+            reason || "AI suggestion",
+            "ai,suggestion",
+            confidence || "--",
+            false
+        )
+    }
+
+    function addCurrentCut() {
+        if (!root.addCutFromTimes(root.requestedStart, root.requestedEnd, "Manual", "Manual removal", "manual", "--", true))
+            return
 
         root.requestedStart = "00:00:00"
         root.requestedEnd = "00:00:00"
@@ -305,6 +578,11 @@ Rectangle {
             root.endPointSet = false
             root.keyframeInfo = root.defaultKeyframeInfo("Set start and end points to create a cut.")
             root.updateCutPreview()
+        }
+
+        function onKeyframeStateChanged() {
+            if (root.startPointSet || root.endPointSet)
+                root.refreshKeyframeInfo()
         }
     }
 
@@ -460,45 +738,417 @@ Rectangle {
                     verticalAlignment: Text.AlignVCenter
                 }
 
-                Slider {
-                    id: seekSlider
-
+                Item {
+                    id: seekArea
                     Layout.fillWidth: true
                     Layout.preferredHeight: 32
-                    enabled: root.hasVideo && root.durationMs > 0
-                    from: 0
-                    to: Math.max(1, root.durationMs)
-                    value: root.positionMs
-                    onMoved: player.position = value
 
-                    background: Rectangle {
-                        x: seekSlider.leftPadding
-                        y: seekSlider.topPadding + seekSlider.availableHeight / 2 - height / 2
-                        width: seekSlider.availableWidth
-                        height: 4
-                        radius: 3
-                        color: root.lightMode ? "#CBD5E1" : "#17263B"
+                    readonly property real selectionStartSeconds: root.markerSeconds(root.requestedStart, root.startPointSet)
+                    readonly property real selectionEndSeconds: root.markerSeconds(root.requestedEnd, root.endPointSet)
+                    readonly property bool hasStartMarker: Number.isFinite(selectionStartSeconds) && root.durationMs > 0
+                    readonly property bool hasEndMarker: Number.isFinite(selectionEndSeconds) && root.durationMs > 0
+                    readonly property bool hasPendingRange: hasStartMarker && hasEndMarker && selectionEndSeconds > selectionStartSeconds
 
-                        Rectangle {
-                            width: seekSlider.visualPosition * parent.width
-                            height: parent.height
-                            radius: parent.radius
-                            gradient: Gradient {
-                                GradientStop { position: 0.0; color: "#2F7BFF" }
-                                GradientStop { position: 1.0; color: "#7CCBFF" }
+                    Slider {
+                        id: seekSlider
+
+                        anchors.fill: parent
+                        enabled: root.hasVideo && root.durationMs > 0 && root.draggingCutIndex < 0
+                        from: 0
+                        to: Math.max(1, root.durationMs)
+                        value: root.positionMs
+                        onMoved: player.position = value
+
+                        background: Item {
+                            id: timelineTrack
+
+                            x: seekSlider.leftPadding
+                            y: seekSlider.topPadding
+                            width: seekSlider.availableWidth
+                            height: seekSlider.availableHeight
+
+                            Rectangle {
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: parent.width
+                                height: 4
+                                radius: 3
+                                color: root.lightMode ? "#CBD5E1" : "#111B2B"
+
+                                Rectangle {
+                                    width: seekSlider.visualPosition * parent.width
+                                    height: parent.height
+                                    radius: parent.radius
+                                    gradient: Gradient {
+                                        GradientStop { position: 0.0; color: "#2F7BFF" }
+                                        GradientStop { position: 1.0; color: "#7CCBFF" }
+                                    }
+                                }
                             }
+
+                            Repeater {
+                                model: root.cutsModel
+
+                                delegate: Item {
+                                    id: cutTimelineItem
+
+                                    required property int index
+                                    readonly property var requestedRange: root.requestedCutRange(root.cutsModel.get(index))
+                                    readonly property real requestedStartSeconds: root.clampedTimelineSeconds(requestedRange.start)
+                                    readonly property real requestedEndSeconds: root.clampedTimelineSeconds(requestedRange.end)
+                                    readonly property real requestedX: root.timelineX(requestedStartSeconds, width)
+                                    readonly property real requestedWidth: root.timelineX(requestedEndSeconds, width) - requestedX
+                                    readonly property bool dragActive: root.draggingCutIndex === index
+
+                                    width: parent ? parent.width : 0
+                                    height: parent ? parent.height : 0
+                                    visible: root.durationMs > 0 && requestedRange.valid && requestedEndSeconds > requestedStartSeconds
+                                    z: dragActive ? 30 : 12
+
+                                    Rectangle {
+                                        id: requestedCutRange
+
+                                        visible: cutTimelineItem.visible
+                                        x: Math.max(0, Math.min(cutTimelineItem.width - width, cutTimelineItem.requestedX))
+                                        y: parent.height / 2 - 8
+                                        width: visible ? Math.max(3, cutTimelineItem.requestedWidth) : 0
+                                        height: 10
+                                        radius: 5
+                                        color: "#FF7448"
+                                        opacity: 0.35
+                                        border.color: "#E35B38"
+                                        border.width: 1
+                                        z: 2
+                                    }
+
+                                    MouseArea {
+                                        id: moveCutMouse
+
+                                        x: requestedCutRange.x + 5
+                                        y: requestedCutRange.y - 5
+                                        width: Math.max(0, requestedCutRange.width - 10)
+                                        height: requestedCutRange.height + 10
+                                        enabled: cutTimelineItem.visible && width > 0
+                                        hoverEnabled: true
+                                        cursorShape: Qt.OpenHandCursor
+                                        preventStealing: true
+
+                                        function trackX(mouseX, mouseY) {
+                                            return mapToItem(timelineTrack, mouseX, mouseY).x
+                                        }
+
+                                        onPressed: function(mouse) {
+                                            cursorShape = Qt.ClosedHandCursor
+                                            root.beginCutTimelineDrag(
+                                                cutTimelineItem.index,
+                                                "move",
+                                                trackX(mouse.x, mouse.y),
+                                                timelineTrack.width
+                                            )
+                                        }
+                                        onPositionChanged: function(mouse) {
+                                            if (pressed)
+                                                root.updateCutTimelineDrag(trackX(mouse.x, mouse.y), timelineTrack.width)
+                                        }
+                                        onReleased: {
+                                            cursorShape = Qt.OpenHandCursor
+                                            root.finishCutTimelineDrag()
+                                        }
+                                        onCanceled: {
+                                            cursorShape = Qt.OpenHandCursor
+                                            root.finishCutTimelineDrag()
+                                        }
+                                    }
+
+                                    Rectangle {
+                                        id: requestedStartHandle
+
+                                        visible: cutTimelineItem.visible
+                                        x: Math.max(0, Math.min(parent.width - width, requestedCutRange.x - width / 2))
+                                        y: 3
+                                        width: 7
+                                        height: parent.height - 6
+                                        radius: 3
+                                        color: "#7CFF6B"
+                                        border.color: "#102719"
+                                        border.width: 1
+
+                                        MouseArea {
+                                            anchors.fill: parent
+                                            hoverEnabled: true
+                                            cursorShape: Qt.SplitHCursor
+                                            preventStealing: true
+
+                                            function trackX(mouseX, mouseY) {
+                                                return mapToItem(timelineTrack, mouseX, mouseY).x
+                                            }
+
+                                            onPressed: function(mouse) {
+                                                root.beginCutTimelineDrag(
+                                                    cutTimelineItem.index,
+                                                    "start",
+                                                    trackX(mouse.x, mouse.y),
+                                                    timelineTrack.width
+                                                )
+                                            }
+                                            onPositionChanged: function(mouse) {
+                                                if (pressed)
+                                                    root.updateCutTimelineDrag(trackX(mouse.x, mouse.y), timelineTrack.width)
+                                            }
+                                            onReleased: root.finishCutTimelineDrag()
+                                            onCanceled: root.finishCutTimelineDrag()
+                                        }
+                                    }
+
+                                    Rectangle {
+                                        id: requestedEndHandle
+
+                                        visible: cutTimelineItem.visible
+                                        x: Math.max(0, Math.min(parent.width - width, requestedCutRange.x + requestedCutRange.width - width / 2))
+                                        y: 3
+                                        width: 7
+                                        height: parent.height - 6
+                                        radius: 3
+                                        color: "#FF7448"
+                                        border.color: "#2A1712"
+                                        border.width: 1
+
+                                        MouseArea {
+                                            anchors.fill: parent
+                                            hoverEnabled: true
+                                            cursorShape: Qt.SplitHCursor
+                                            preventStealing: true
+
+                                            function trackX(mouseX, mouseY) {
+                                                return mapToItem(timelineTrack, mouseX, mouseY).x
+                                            }
+
+                                            onPressed: function(mouse) {
+                                                root.beginCutTimelineDrag(
+                                                    cutTimelineItem.index,
+                                                    "end",
+                                                    trackX(mouse.x, mouse.y),
+                                                    timelineTrack.width
+                                                )
+                                            }
+                                            onPositionChanged: function(mouse) {
+                                                if (pressed)
+                                                    root.updateCutTimelineDrag(trackX(mouse.x, mouse.y), timelineTrack.width)
+                                            }
+                                            onReleased: root.finishCutTimelineDrag()
+                                            onCanceled: root.finishCutTimelineDrag()
+                                        }
+                                    }
+                                }
+                            }
+
+                            Rectangle {
+                                id: pendingSelectionRange
+
+                                readonly property real startSeconds: root.clampedTimelineSeconds(seekArea.selectionStartSeconds)
+                                readonly property real endSeconds: root.clampedTimelineSeconds(seekArea.selectionEndSeconds)
+                                readonly property real calculatedX: root.timelineX(startSeconds, parent.width)
+                                readonly property real calculatedWidth: root.timelineX(endSeconds, parent.width) - calculatedX
+
+                                enabled: false
+                                visible: seekArea.hasPendingRange && endSeconds > startSeconds
+                                x: Math.max(0, Math.min(parent.width - width, calculatedX))
+                                y: parent.height / 2 - height / 2
+                                width: visible ? Math.max(3, calculatedWidth) : 0
+                                height: 10
+                                radius: 5
+                                color: "#FF7448"
+                                opacity: 0.35
+                                border.color: "#E35B38"
+                                border.width: 1
+                                z: 15
+                            }
+
+                            Rectangle {
+                                id: startMarker
+
+                                enabled: false
+                                visible: seekArea.hasStartMarker
+                                x: Math.max(0, Math.min(parent.width - width, root.timelineX(seekArea.selectionStartSeconds, parent.width) - width / 2))
+                                y: 4
+                                width: 3
+                                height: parent.height - 8
+                                radius: 2
+                                color: "#7CFF6B"
+                                z: 18
+                            }
+
+                            Rectangle {
+                                id: endMarker
+
+                                enabled: false
+                                visible: seekArea.hasEndMarker
+                                x: Math.max(0, Math.min(parent.width - width, root.timelineX(seekArea.selectionEndSeconds, parent.width) - width / 2))
+                                y: 4
+                                width: 3
+                                height: parent.height - 8
+                                radius: 2
+                                color: "#FF7448"
+                                z: 18
+                            }
+                        }
+
+                        handle: Rectangle {
+                            x: seekSlider.leftPadding + seekSlider.visualPosition * (seekSlider.availableWidth - width)
+                            y: seekSlider.topPadding + seekSlider.availableHeight / 2 - height / 2
+                            width: 12
+                            height: 12
+                            radius: 6
+                            color: root.lightMode ? "#FFFFFF" : "#E0F2FE"
+                            border.color: root.accentColor
+                            border.width: 2
                         }
                     }
 
-                    handle: Rectangle {
-                        x: seekSlider.leftPadding + seekSlider.visualPosition * (seekSlider.availableWidth - width)
-                        y: seekSlider.topPadding + seekSlider.availableHeight / 2 - height / 2
-                        width: 12
-                        height: 12
-                        radius: 6
-                        color: root.lightMode ? "#FFFFFF" : "#E0F2FE"
-                        border.color: root.accentColor
-                        border.width: 2
+                    Item {
+                        id: cutDragLayer
+
+                        x: seekSlider.leftPadding
+                        y: seekSlider.topPadding
+                        width: seekSlider.availableWidth
+                        height: seekSlider.availableHeight
+                        visible: root.hasVideo && root.durationMs > 0
+                        z: 50
+
+                        Repeater {
+                            model: root.cutsModel
+
+                            delegate: Item {
+                                id: cutDragDelegate
+
+                                required property int index
+                                readonly property var requestedRange: root.requestedCutRange(root.cutsModel.get(index))
+                                readonly property real requestedStartSeconds: root.clampedTimelineSeconds(requestedRange.start)
+                                readonly property real requestedEndSeconds: root.clampedTimelineSeconds(requestedRange.end)
+                                readonly property real requestedX: root.timelineX(requestedStartSeconds, width)
+                                readonly property real requestedWidth: root.timelineX(requestedEndSeconds, width) - requestedX
+                                readonly property real edgeHitWidth: 18
+                                readonly property bool dragActive: root.draggingCutIndex === index
+
+                                width: parent ? parent.width : 0
+                                height: parent ? parent.height : 0
+                                visible: root.durationMs > 0 && requestedRange.valid && requestedEndSeconds > requestedStartSeconds
+                                z: dragActive ? 100 : 10
+
+                                function trackXFrom(mouseArea, mouseX, mouseY) {
+                                    return mouseArea.mapToItem(cutDragLayer, mouseX, mouseY).x
+                                }
+
+                                MouseArea {
+                                    id: moveCutDragArea
+
+                                    x: Math.max(0, Math.min(parent.width - width, cutDragDelegate.requestedX + cutDragDelegate.edgeHitWidth / 2))
+                                    y: 0
+                                    width: Math.max(0, cutDragDelegate.requestedWidth - cutDragDelegate.edgeHitWidth)
+                                    height: parent.height
+                                    enabled: cutDragDelegate.visible && width > 0
+                                    acceptedButtons: Qt.LeftButton
+                                    hoverEnabled: true
+                                    preventStealing: true
+                                    cursorShape: pressed ? Qt.ClosedHandCursor : Qt.OpenHandCursor
+
+                                    onPressed: function(mouse) {
+                                        mouse.accepted = true
+                                        root.beginCutTimelineDrag(
+                                            cutDragDelegate.index,
+                                            "move",
+                                            cutDragDelegate.trackXFrom(moveCutDragArea, mouse.x, mouse.y),
+                                            cutDragLayer.width
+                                        )
+                                    }
+                                    onPositionChanged: function(mouse) {
+                                        if (pressed)
+                                            root.updateCutTimelineDrag(
+                                                cutDragDelegate.trackXFrom(moveCutDragArea, mouse.x, mouse.y),
+                                                cutDragLayer.width
+                                            )
+                                    }
+                                    onReleased: function(mouse) {
+                                        mouse.accepted = true
+                                        root.finishCutTimelineDrag()
+                                    }
+                                    onCanceled: root.finishCutTimelineDrag()
+                                }
+
+                                MouseArea {
+                                    id: startCutDragArea
+
+                                    x: Math.max(0, Math.min(parent.width - width, cutDragDelegate.requestedX - width / 2))
+                                    y: 0
+                                    width: cutDragDelegate.edgeHitWidth
+                                    height: parent.height
+                                    enabled: cutDragDelegate.visible
+                                    acceptedButtons: Qt.LeftButton
+                                    hoverEnabled: true
+                                    preventStealing: true
+                                    cursorShape: Qt.SplitHCursor
+                                    z: 2
+
+                                    onPressed: function(mouse) {
+                                        mouse.accepted = true
+                                        root.beginCutTimelineDrag(
+                                            cutDragDelegate.index,
+                                            "start",
+                                            cutDragDelegate.trackXFrom(startCutDragArea, mouse.x, mouse.y),
+                                            cutDragLayer.width
+                                        )
+                                    }
+                                    onPositionChanged: function(mouse) {
+                                        if (pressed)
+                                            root.updateCutTimelineDrag(
+                                                cutDragDelegate.trackXFrom(startCutDragArea, mouse.x, mouse.y),
+                                                cutDragLayer.width
+                                            )
+                                    }
+                                    onReleased: function(mouse) {
+                                        mouse.accepted = true
+                                        root.finishCutTimelineDrag()
+                                    }
+                                    onCanceled: root.finishCutTimelineDrag()
+                                }
+
+                                MouseArea {
+                                    id: endCutDragArea
+
+                                    x: Math.max(0, Math.min(parent.width - width, cutDragDelegate.requestedX + cutDragDelegate.requestedWidth - width / 2))
+                                    y: 0
+                                    width: cutDragDelegate.edgeHitWidth
+                                    height: parent.height
+                                    enabled: cutDragDelegate.visible
+                                    acceptedButtons: Qt.LeftButton
+                                    hoverEnabled: true
+                                    preventStealing: true
+                                    cursorShape: Qt.SplitHCursor
+                                    z: 3
+
+                                    onPressed: function(mouse) {
+                                        mouse.accepted = true
+                                        root.beginCutTimelineDrag(
+                                            cutDragDelegate.index,
+                                            "end",
+                                            cutDragDelegate.trackXFrom(endCutDragArea, mouse.x, mouse.y),
+                                            cutDragLayer.width
+                                        )
+                                    }
+                                    onPositionChanged: function(mouse) {
+                                        if (pressed)
+                                            root.updateCutTimelineDrag(
+                                                cutDragDelegate.trackXFrom(endCutDragArea, mouse.x, mouse.y),
+                                                cutDragLayer.width
+                                            )
+                                    }
+                                    onReleased: function(mouse) {
+                                        mouse.accepted = true
+                                        root.finishCutTimelineDrag()
+                                    }
+                                    onCanceled: root.finishCutTimelineDrag()
+                                }
+                            }
+                        }
                     }
                 }
 
@@ -563,7 +1213,7 @@ Rectangle {
 
         Rectangle {
             Layout.fillWidth: true
-            Layout.preferredHeight: 56
+            Layout.preferredHeight: 76
             radius: 12
             color: root.lightMode ? "#FFFFFF" : "#07101D"
             border.color: root.lightMode ? root.strokeColor : "#1C2E49"
@@ -623,11 +1273,11 @@ Rectangle {
                     variant: "primary"
                     size: "icon"
                     lightMode: root.lightMode
-                    enabled: root.canAddSafeCut()
+                    enabled: root.canAddCut()
                     Layout.preferredWidth: 44
                     Layout.preferredHeight: 44
                     ToolTip.visible: hovered
-                    ToolTip.text: "Cut"
+                    ToolTip.text: root.canAddCut() ? (root.hasSafeKeyframeInfo() ? "Cut" : root.safeSelectionText()) : "Set start and end"
                     onClicked: root.addCurrentCut()
                 }
 
@@ -646,35 +1296,56 @@ Rectangle {
                 Item { Layout.fillWidth: true }
 
                 Rectangle {
-                    Layout.preferredWidth: 286
-                    Layout.maximumWidth: 286
-                    Layout.preferredHeight: 36
-                    radius: 10
-                    color: root.lightMode ? "#F8FAFC" : "#0B1728"
-                    border.color: root.lightMode ? "#DCE4EF" : "#233754"
+                    Layout.preferredWidth: 430
+                    Layout.maximumWidth: 520
+                    Layout.preferredHeight: 58
+                    radius: 12
+                    color: root.lightMode ? "#F8FAFC" : "#071525"
+                    border.color: root.lightMode ? "#DCE4EF" : "#1E3A5F"
 
-                    RowLayout {
+                    ColumnLayout {
                         anchors.fill: parent
-                        anchors.leftMargin: 10
-                        anchors.rightMargin: 10
-                        spacing: 10
+                        anchors.margins: 10
+                        spacing: 3
 
-                        Text {
-                            text: "Selection"
-                            color: root.mutedTextColor
-                            font.pixelSize: 10
-                            font.weight: Font.DemiBold
-                            verticalAlignment: Text.AlignVCenter
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 12
+
+                            Text {
+                                Layout.fillWidth: true
+                                text: "Requested: " + root.requestedSelectionText()
+                                color: root.startPointSet && root.endPointSet ? "#FF7448" : root.mutedTextColor
+                                font.pixelSize: 11
+                                font.weight: Font.DemiBold
+                                elide: Text.ElideRight
+                            }
+
+                            Text {
+                                Layout.fillWidth: true
+                                text: "Safe cut: " + root.safeSelectionText()
+                                color: root.hasSafeKeyframeInfo() ? "#2B8CFF" : root.mutedTextColor
+                                font.pixelSize: 11
+                                font.weight: Font.DemiBold
+                                elide: Text.ElideRight
+                            }
                         }
 
                         Text {
                             Layout.fillWidth: true
-                            text: "Start " + root.requestedStart + "    End " + root.requestedEnd
+                            text: "Delta: " + root.deltaSelectionText()
                             color: root.textColor
-                            font.pixelSize: 12
+                            font.pixelSize: 10
                             font.weight: Font.Medium
                             elide: Text.ElideRight
-                            verticalAlignment: Text.AlignVCenter
+                        }
+
+                        Text {
+                            Layout.fillWidth: true
+                            text: "Safe cut is adjusted to nearby keyframes for stream-copy export."
+                            color: root.mutedTextColor
+                            font.pixelSize: 9
+                            elide: Text.ElideRight
                         }
                     }
                 }

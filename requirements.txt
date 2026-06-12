@@ -5,3 +5,4 @@ pydantic == 2.12.5
 platformdirs == 4.5.1
 pycountry == 26.2.16
 pyinstaller == 6.20.0
+pysubs2 == 1.8.0

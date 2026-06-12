@@ -9,8 +9,12 @@ from services.subtitles.language_resolver import resolve_external_language_token
 logger = logging.getLogger(__name__)
 
 TEXT_SUBTITLE_EXTENSIONS = {".srt", ".ass", ".ssa", ".vtt"}
-VOBSUB_EXTENSIONS = {".idx", ".sub"}
-SUPPORTED_SUBTITLE_EXTENSIONS = TEXT_SUBTITLE_EXTENSIONS | VOBSUB_EXTENSIONS
+VOBSUB_INDEX_EXTENSION = ".idx"
+MICRODVD_OR_VOBSUB_DATA_EXTENSION = ".sub"
+SUPPORTED_SUBTITLE_EXTENSIONS = TEXT_SUBTITLE_EXTENSIONS | {
+    VOBSUB_INDEX_EXTENSION,
+    MICRODVD_OR_VOBSUB_DATA_EXTENSION,
+}
 SAFE_SUFFIX_SEPARATORS = {".", "-", "_", " "}
 
 
@@ -43,7 +47,10 @@ def find_matching_external_subtitles(video_path: str | Path) -> list[dict]:
             continue
 
         vobsub_key = _normalized_text(subtitle_path.stem)
-        if extension in VOBSUB_EXTENSIONS and vobsub_key in consumed_vobsub_stems:
+        if (
+            extension in {VOBSUB_INDEX_EXTENSION, MICRODVD_OR_VOBSUB_DATA_EXTENSION}
+            and vobsub_key in consumed_vobsub_stems
+        ):
             continue
 
         if extension in TEXT_SUBTITLE_EXTENSIONS:
@@ -55,25 +62,35 @@ def find_matching_external_subtitles(video_path: str | Path) -> list[dict]:
                 match_type=match["match_type"],
                 filename_suffix=match["filename_suffix"],
             )
-        else:
-            pair_path = subtitle_path.with_suffix(".sub" if extension == ".idx" else ".idx")
-            if not pair_path.is_file():
-                pair_path = subtitle_path.with_suffix(".SUB" if extension == ".idx" else ".IDX")
-
-            if pair_path.is_file():
+        elif extension == MICRODVD_OR_VOBSUB_DATA_EXTENSION:
+            pair_path = _find_companion_path(subtitle_path, VOBSUB_INDEX_EXTENSION)
+            if pair_path is not None:
                 consumed_vobsub_stems.add(vobsub_key)
-                primary_path = subtitle_path.with_suffix(".idx")
-                if not primary_path.is_file():
-                    primary_path = subtitle_path.with_suffix(".IDX")
-                candidate = _external_candidate(
-                    primary_path if primary_path.is_file() else subtitle_path,
-                    source_format="vobsub",
-                    kind="image",
-                    is_text_readable=False,
+                candidate = _vobsub_external_candidate(
+                    primary_path=pair_path,
+                    companion_path=subtitle_path,
                     match_type=match["match_type"],
                     filename_suffix=match["filename_suffix"],
-                    companion_path=str(pair_path.resolve()),
-                    note="VobSub subtitle pair; text processing not supported yet",
+                )
+            else:
+                candidate = _external_candidate(
+                    subtitle_path,
+                    source_format="microdvd",
+                    kind="text",
+                    is_text_readable=True,
+                    match_type=match["match_type"],
+                    filename_suffix=match["filename_suffix"],
+                    note="MicroDVD subtitle; requires video fps if frame rate is not embedded",
+                )
+        else:
+            pair_path = _find_companion_path(subtitle_path, MICRODVD_OR_VOBSUB_DATA_EXTENSION)
+            if pair_path is not None:
+                consumed_vobsub_stems.add(vobsub_key)
+                candidate = _vobsub_external_candidate(
+                    primary_path=subtitle_path,
+                    companion_path=pair_path,
+                    match_type=match["match_type"],
+                    filename_suffix=match["filename_suffix"],
                 )
             else:
                 candidate = _external_candidate(
@@ -94,6 +111,48 @@ def find_matching_external_subtitles(video_path: str | Path) -> list[dict]:
         matches.append(candidate)
 
     return matches
+
+
+def _vobsub_external_candidate(
+    *,
+    primary_path: Path,
+    companion_path: Path,
+    match_type: str,
+    filename_suffix: str | None,
+) -> dict:
+    return _external_candidate(
+        primary_path,
+        source_format="vobsub",
+        kind="image",
+        is_text_readable=False,
+        match_type=match_type,
+        filename_suffix=filename_suffix,
+        companion_path=str(companion_path.resolve()),
+        note="VobSub subtitle pair; text processing not supported yet",
+    )
+
+
+def _find_companion_path(subtitle_path: Path, companion_extension: str) -> Path | None:
+    companion_path = subtitle_path.with_suffix(companion_extension)
+    if companion_path.is_file():
+        return companion_path
+
+    companion_path = subtitle_path.with_suffix(companion_extension.upper())
+    if companion_path.is_file():
+        return companion_path
+
+    try:
+        for path in subtitle_path.parent.iterdir():
+            if not path.is_file():
+                continue
+            if path.suffix.lower() != companion_extension:
+                continue
+            if _normalized_text(path.stem) == _normalized_text(subtitle_path.stem):
+                return path
+    except OSError:
+        return None
+
+    return None
 
 
 def _match_external_subtitle(video_stem: str, subtitle_stem: str) -> dict | None:

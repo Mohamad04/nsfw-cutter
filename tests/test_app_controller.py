@@ -610,6 +610,51 @@ class AppControllerTests(unittest.TestCase):
         self.assertEqual(self.controller.activePreviewSubtitleTrackIndex, -1)
         self.assertEqual(self.controller.previewSubtitleText, "External subtitle text")
 
+    def test_selecting_external_ass_subtitle_uses_text_overlay(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            subtitle = Path(temp_dir) / "a.eng.ass"
+            subtitle.write_text(
+                "[Script Info]\n"
+                "ScriptType: v4.00+\n"
+                "\n"
+                "[V4+ Styles]\n"
+                "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, "
+                "OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, "
+                "ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, "
+                "MarginR, MarginV, Encoding\n"
+                "Style: Default,Arial,20,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,"
+                "0,0,0,0,100,100,0,0,1,2,2,2,10,10,10,1\n"
+                "\n"
+                "[Events]\n"
+                "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"
+                "Dialogue: 0,0:00:01.00,0:00:03.00,Default,,0,0,0,,{\\i1}ASS subtitle text\n",
+                encoding="utf-8",
+            )
+
+            self.controller.loadVideoFile("/tmp/a.mp4")
+            worker = self._workers_of_type(FakeSubtitleWorker)[0]
+            self.controller._on_subtitle_discovery_finished(
+                worker.job_token,
+                {
+                    "input_path": worker.input_path,
+                    "candidates": [
+                        {
+                            "source": "external",
+                            "file_path": str(subtitle),
+                            "kind": "text",
+                            "format": "ass",
+                            "language_name": "English",
+                            "is_text_readable": True,
+                        }
+                    ],
+                },
+            )
+
+            self.controller.updatePreviewSubtitlePosition(1500)
+
+        self.assertEqual(self.controller.previewSubtitleText, "ASS subtitle text")
+        self.assertEqual(self.controller.activePreviewSubtitleTrackIndex, -1)
+
     def test_off_selection_clears_external_subtitle_overlay(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             subtitle = Path(temp_dir) / "a.eng.srt"

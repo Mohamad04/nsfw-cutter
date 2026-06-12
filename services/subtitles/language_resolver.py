@@ -12,6 +12,10 @@ def resolve_language_name(raw_code: str | None) -> str | None:
     if not code:
         return None
 
+    language = _exact_language(code)
+    if language is not None:
+        return language.name
+
     try:
         return pycountry.languages.lookup(code).name
     except LookupError:
@@ -39,3 +43,11 @@ def _clean_code(raw_code: str | None) -> str | None:
 
     code = raw_code.strip().casefold()
     return code or None
+
+
+def _exact_language(code: str):
+    if len(code) == 2:
+        return pycountry.languages.get(alpha_2=code)
+    if len(code) == 3:
+        return pycountry.languages.get(alpha_3=code)
+    return None

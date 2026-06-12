@@ -104,6 +104,51 @@ class SubtitleDetectionTests(unittest.TestCase):
         self.assertEqual(candidates[0]["match_type"], "exact")
         self.assertIsNone(candidates[0]["filename_suffix"])
 
+    def test_external_iso_639_1_language_suffix_is_detected(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            folder = Path(temp_dir)
+            video = folder / "movie.mkv"
+            subtitle = folder / "movie.en.srt"
+            video.touch()
+            subtitle.touch()
+
+            candidates = find_matching_external_subtitles(video)
+
+        self.assertEqual(len(candidates), 1)
+        self.assertEqual(candidates[0]["filename"], "movie.en.srt")
+        self.assertEqual(candidates[0]["language_code"], "en")
+        self.assertEqual(candidates[0]["language_name"], "English")
+
+    def test_external_ass_subtitle_is_text_readable(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            folder = Path(temp_dir)
+            video = folder / "movie.mkv"
+            subtitle = folder / "movie.ass"
+            video.touch()
+            subtitle.touch()
+
+            candidates = find_matching_external_subtitles(video)
+
+        self.assertEqual(len(candidates), 1)
+        self.assertEqual(candidates[0]["format"], "ass")
+        self.assertEqual(candidates[0]["kind"], "text")
+        self.assertTrue(candidates[0]["is_text_readable"])
+
+    def test_external_vtt_subtitle_is_text_readable(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            folder = Path(temp_dir)
+            video = folder / "movie.mkv"
+            subtitle = folder / "movie.vtt"
+            video.touch()
+            subtitle.touch()
+
+            candidates = find_matching_external_subtitles(video)
+
+        self.assertEqual(len(candidates), 1)
+        self.assertEqual(candidates[0]["format"], "vtt")
+        self.assertEqual(candidates[0]["kind"], "text")
+        self.assertTrue(candidates[0]["is_text_readable"])
+
     def test_external_complete_base_with_language_suffix_is_detected(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             folder = Path(temp_dir)
@@ -207,7 +252,24 @@ class SubtitleDetectionTests(unittest.TestCase):
         self.assertEqual(candidates[0]["format"], "vobsub")
         self.assertEqual(candidates[0]["kind"], "image")
         self.assertFalse(candidates[0]["is_text_readable"])
+        self.assertEqual(Path(candidates[0]["file_path"]).name, "Movie.Name.2005.fra.idx")
         self.assertEqual(Path(candidates[0]["companion_path"]).name, "Movie.Name.2005.fra.sub")
+
+    def test_sub_without_idx_pair_is_microdvd_text_candidate(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            folder = Path(temp_dir)
+            video = folder / "Movie.Name.2005.mkv"
+            subtitle = folder / "Movie.Name.2005.sub"
+            video.touch()
+            subtitle.touch()
+
+            candidates = find_matching_external_subtitles(video)
+
+        self.assertEqual(len(candidates), 1)
+        self.assertEqual(candidates[0]["format"], "microdvd")
+        self.assertEqual(candidates[0]["kind"], "text")
+        self.assertTrue(candidates[0]["is_text_readable"])
+        self.assertIn("requires video fps", candidates[0]["note"])
 
     def test_embedded_and_external_candidates_are_both_retained(self):
         with tempfile.TemporaryDirectory() as temp_dir:

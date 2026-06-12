@@ -9,6 +9,7 @@ from services.subtitles.language_resolver import (
 class SubtitleLanguageResolverTests(unittest.TestCase):
     def test_standard_iso_codes_resolve_through_pycountry(self):
         self.assertEqual(resolve_language_name("ara"), "Arabic")
+        self.assertEqual(resolve_language_name("en"), "English")
         self.assertEqual(resolve_language_name("fra"), "French")
         self.assertEqual(resolve_language_name("fre"), "French")
         self.assertEqual(resolve_language_name("eng"), "English")

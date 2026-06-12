@@ -31,7 +31,7 @@ from services.subtitles.selection_service import (
     find_selectable_candidate,
     preview_subtitle_track_index_for_selection,
 )
-from services.subtitles.srt_preview_service import parse_srt_file, subtitle_text_at_position
+from services.subtitles.subtitle_loader_service import load_subtitle_events, subtitle_text_at_position
 from workers.keyframe_index_worker import KeyframeIndexWorker
 from workers.prepare_export_job_worker import PrepareExportJobWorker
 from workers.subtitle_discovery_worker import SubtitleDiscoveryWorker
@@ -866,9 +866,9 @@ class AppController(QObject):
             self._clear_preview_subtitle_overlay()
             return
 
-        if Path(subtitle_path).suffix.lower() != ".srt":
+        if not candidate.get("is_text_readable"):
             logger.info(
-                "[Subtitles] External subtitle preview supports SRT only for now: id=%s, path=%s",
+                "[Subtitles] External subtitle preview requires a text-readable subtitle: id=%s, path=%s",
                 candidate.get("candidate_id"),
                 subtitle_path,
             )
@@ -876,8 +876,8 @@ class AppController(QObject):
             return
 
         try:
-            cues = parse_srt_file(subtitle_path)
-        except (OSError, UnicodeDecodeError, ValueError):
+            cues = load_subtitle_events(subtitle_path)
+        except Exception:
             logger.exception("[Subtitles] Unable to load external subtitle preview: %s", subtitle_path)
             self._clear_preview_subtitle_overlay()
             return

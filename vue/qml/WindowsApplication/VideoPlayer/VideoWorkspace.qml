@@ -1,7 +1,6 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
-import QtQuick.Controls
 import QtQuick.Layouts
 import QtMultimedia
 import "../Shared"
@@ -649,522 +648,54 @@ Rectangle {
             previewSubtitleText: appController.previewSubtitleText
         }
 
-        Rectangle {
+        PlaybackControlsBar {
             Layout.fillWidth: true
             Layout.preferredHeight: 56
-            radius: 12
-            color: root.lightMode ? "#FFFFFF" : "#07101D"
-            border.color: root.lightMode ? root.strokeColor : "#1C2E49"
 
-            RowLayout {
-                anchors.fill: parent
-                anchors.leftMargin: 10
-                anchors.rightMargin: 10
-                spacing: 8
-
-                PlayPauseButton {
-                    playing: root.isPlaying
-                    lightMode: root.lightMode
-                    enabled: root.hasVideo
-                    Layout.preferredWidth: 96
-                    Layout.preferredHeight: 40
-                    onClicked: root.togglePlayback()
-                }
-
-                BackwardFiveSeekButton {
-                    lightMode: root.lightMode
-                    enabled: root.hasVideo
-                    Layout.preferredWidth: 84
-                    Layout.preferredHeight: 36
-                    onClicked: root.seekBy(-5)
-                }
-
-                ForwardFiveSeekButton {
-                    lightMode: root.lightMode
-                    enabled: root.hasVideo
-                    Layout.preferredWidth: 84
-                    Layout.preferredHeight: 36
-                    onClicked: root.seekBy(5)
-                }
-
-                Text {
-                    text: root.formatTime(root.positionMs) + " / " + root.formatTime(root.durationMs)
-                    color: root.textColor
-                    font.pixelSize: 12
-                    Layout.preferredWidth: 142
-                    verticalAlignment: Text.AlignVCenter
-                }
-
-                Item {
-                    id: seekArea
-                    Layout.fillWidth: true
-                    Layout.preferredHeight: 32
-
-                    readonly property real selectionStartSeconds: root.markerSeconds(root.requestedStart, root.startPointSet)
-                    readonly property real selectionEndSeconds: root.markerSeconds(root.requestedEnd, root.endPointSet)
-                    readonly property bool hasStartMarker: Number.isFinite(selectionStartSeconds) && root.durationMs > 0
-                    readonly property bool hasEndMarker: Number.isFinite(selectionEndSeconds) && root.durationMs > 0
-                    readonly property bool hasPendingRange: hasStartMarker && hasEndMarker && selectionEndSeconds > selectionStartSeconds
-
-                    Slider {
-                        id: seekSlider
-
-                        anchors.fill: parent
-                        enabled: root.hasVideo && root.durationMs > 0 && root.draggingCutIndex < 0
-                        from: 0
-                        to: Math.max(1, root.durationMs)
-                        value: root.positionMs
-                        onMoved: player.position = value
-
-                        background: Item {
-                            id: timelineTrack
-
-                            x: seekSlider.leftPadding
-                            y: seekSlider.topPadding
-                            width: seekSlider.availableWidth
-                            height: seekSlider.availableHeight
-
-                            Rectangle {
-                                anchors.verticalCenter: parent.verticalCenter
-                                width: parent.width
-                                height: 4
-                                radius: 3
-                                color: root.lightMode ? "#CBD5E1" : "#111B2B"
-
-                                Rectangle {
-                                    width: seekSlider.visualPosition * parent.width
-                                    height: parent.height
-                                    radius: parent.radius
-                                    gradient: Gradient {
-                                        GradientStop { position: 0.0; color: "#2F7BFF" }
-                                        GradientStop { position: 1.0; color: "#7CCBFF" }
-                                    }
-                                }
-                            }
-
-                            Repeater {
-                                model: root.cutsModel
-
-                                delegate: Item {
-                                    id: cutTimelineItem
-
-                                    required property int index
-                                    readonly property var requestedRange: root.requestedCutRange(root.cutsModel.get(index))
-                                    readonly property real requestedStartSeconds: root.clampedTimelineSeconds(requestedRange.start)
-                                    readonly property real requestedEndSeconds: root.clampedTimelineSeconds(requestedRange.end)
-                                    readonly property real requestedX: root.timelineX(requestedStartSeconds, width)
-                                    readonly property real requestedWidth: root.timelineX(requestedEndSeconds, width) - requestedX
-                                    readonly property bool dragActive: root.draggingCutIndex === index
-
-                                    width: parent ? parent.width : 0
-                                    height: parent ? parent.height : 0
-                                    visible: root.durationMs > 0 && requestedRange.valid && requestedEndSeconds > requestedStartSeconds
-                                    z: dragActive ? 30 : 12
-
-                                    Rectangle {
-                                        id: requestedCutRange
-
-                                        visible: cutTimelineItem.visible
-                                        x: Math.max(0, Math.min(cutTimelineItem.width - width, cutTimelineItem.requestedX))
-                                        y: parent.height / 2 - 8
-                                        width: visible ? Math.max(3, cutTimelineItem.requestedWidth) : 0
-                                        height: 10
-                                        radius: 5
-                                        color: "#FF7448"
-                                        opacity: 0.35
-                                        border.color: "#E35B38"
-                                        border.width: 1
-                                        z: 2
-                                    }
-
-                                    MouseArea {
-                                        id: moveCutMouse
-
-                                        x: requestedCutRange.x + 5
-                                        y: requestedCutRange.y - 5
-                                        width: Math.max(0, requestedCutRange.width - 10)
-                                        height: requestedCutRange.height + 10
-                                        enabled: cutTimelineItem.visible && width > 0
-                                        hoverEnabled: true
-                                        cursorShape: Qt.OpenHandCursor
-                                        preventStealing: true
-
-                                        function trackX(mouseX, mouseY) {
-                                            return mapToItem(timelineTrack, mouseX, mouseY).x
-                                        }
-
-                                        onPressed: function(mouse) {
-                                            cursorShape = Qt.ClosedHandCursor
-                                            root.beginCutTimelineDrag(
-                                                cutTimelineItem.index,
-                                                "move",
-                                                trackX(mouse.x, mouse.y),
-                                                timelineTrack.width
-                                            )
-                                        }
-                                        onPositionChanged: function(mouse) {
-                                            if (pressed)
-                                                root.updateCutTimelineDrag(trackX(mouse.x, mouse.y), timelineTrack.width)
-                                        }
-                                        onReleased: {
-                                            cursorShape = Qt.OpenHandCursor
-                                            root.finishCutTimelineDrag()
-                                        }
-                                        onCanceled: {
-                                            cursorShape = Qt.OpenHandCursor
-                                            root.finishCutTimelineDrag()
-                                        }
-                                    }
-
-                                    Rectangle {
-                                        id: requestedStartHandle
-
-                                        visible: cutTimelineItem.visible
-                                        x: Math.max(0, Math.min(parent.width - width, requestedCutRange.x - width / 2))
-                                        y: 3
-                                        width: 7
-                                        height: parent.height - 6
-                                        radius: 3
-                                        color: "#7CFF6B"
-                                        border.color: "#102719"
-                                        border.width: 1
-
-                                        MouseArea {
-                                            anchors.fill: parent
-                                            hoverEnabled: true
-                                            cursorShape: Qt.SplitHCursor
-                                            preventStealing: true
-
-                                            function trackX(mouseX, mouseY) {
-                                                return mapToItem(timelineTrack, mouseX, mouseY).x
-                                            }
-
-                                            onPressed: function(mouse) {
-                                                root.beginCutTimelineDrag(
-                                                    cutTimelineItem.index,
-                                                    "start",
-                                                    trackX(mouse.x, mouse.y),
-                                                    timelineTrack.width
-                                                )
-                                            }
-                                            onPositionChanged: function(mouse) {
-                                                if (pressed)
-                                                    root.updateCutTimelineDrag(trackX(mouse.x, mouse.y), timelineTrack.width)
-                                            }
-                                            onReleased: root.finishCutTimelineDrag()
-                                            onCanceled: root.finishCutTimelineDrag()
-                                        }
-                                    }
-
-                                    Rectangle {
-                                        id: requestedEndHandle
-
-                                        visible: cutTimelineItem.visible
-                                        x: Math.max(0, Math.min(parent.width - width, requestedCutRange.x + requestedCutRange.width - width / 2))
-                                        y: 3
-                                        width: 7
-                                        height: parent.height - 6
-                                        radius: 3
-                                        color: "#FF7448"
-                                        border.color: "#2A1712"
-                                        border.width: 1
-
-                                        MouseArea {
-                                            anchors.fill: parent
-                                            hoverEnabled: true
-                                            cursorShape: Qt.SplitHCursor
-                                            preventStealing: true
-
-                                            function trackX(mouseX, mouseY) {
-                                                return mapToItem(timelineTrack, mouseX, mouseY).x
-                                            }
-
-                                            onPressed: function(mouse) {
-                                                root.beginCutTimelineDrag(
-                                                    cutTimelineItem.index,
-                                                    "end",
-                                                    trackX(mouse.x, mouse.y),
-                                                    timelineTrack.width
-                                                )
-                                            }
-                                            onPositionChanged: function(mouse) {
-                                                if (pressed)
-                                                    root.updateCutTimelineDrag(trackX(mouse.x, mouse.y), timelineTrack.width)
-                                            }
-                                            onReleased: root.finishCutTimelineDrag()
-                                            onCanceled: root.finishCutTimelineDrag()
-                                        }
-                                    }
-                                }
-                            }
-
-                            Rectangle {
-                                id: pendingSelectionRange
-
-                                readonly property real startSeconds: root.clampedTimelineSeconds(seekArea.selectionStartSeconds)
-                                readonly property real endSeconds: root.clampedTimelineSeconds(seekArea.selectionEndSeconds)
-                                readonly property real calculatedX: root.timelineX(startSeconds, parent.width)
-                                readonly property real calculatedWidth: root.timelineX(endSeconds, parent.width) - calculatedX
-
-                                enabled: false
-                                visible: seekArea.hasPendingRange && endSeconds > startSeconds
-                                x: Math.max(0, Math.min(parent.width - width, calculatedX))
-                                y: parent.height / 2 - height / 2
-                                width: visible ? Math.max(3, calculatedWidth) : 0
-                                height: 10
-                                radius: 5
-                                color: "#FF7448"
-                                opacity: 0.35
-                                border.color: "#E35B38"
-                                border.width: 1
-                                z: 15
-                            }
-
-                            Rectangle {
-                                id: startMarker
-
-                                enabled: false
-                                visible: seekArea.hasStartMarker
-                                x: Math.max(0, Math.min(parent.width - width, root.timelineX(seekArea.selectionStartSeconds, parent.width) - width / 2))
-                                y: 4
-                                width: 3
-                                height: parent.height - 8
-                                radius: 2
-                                color: "#7CFF6B"
-                                z: 18
-                            }
-
-                            Rectangle {
-                                id: endMarker
-
-                                enabled: false
-                                visible: seekArea.hasEndMarker
-                                x: Math.max(0, Math.min(parent.width - width, root.timelineX(seekArea.selectionEndSeconds, parent.width) - width / 2))
-                                y: 4
-                                width: 3
-                                height: parent.height - 8
-                                radius: 2
-                                color: "#FF7448"
-                                z: 18
-                            }
-                        }
-
-                        handle: Rectangle {
-                            x: seekSlider.leftPadding + seekSlider.visualPosition * (seekSlider.availableWidth - width)
-                            y: seekSlider.topPadding + seekSlider.availableHeight / 2 - height / 2
-                            width: 12
-                            height: 12
-                            radius: 6
-                            color: root.lightMode ? "#FFFFFF" : "#E0F2FE"
-                            border.color: root.accentColor
-                            border.width: 2
-                        }
-                    }
-
-                    Item {
-                        id: cutDragLayer
-
-                        x: seekSlider.leftPadding
-                        y: seekSlider.topPadding
-                        width: seekSlider.availableWidth
-                        height: seekSlider.availableHeight
-                        visible: root.hasVideo && root.durationMs > 0
-                        z: 50
-
-                        Repeater {
-                            model: root.cutsModel
-
-                            delegate: Item {
-                                id: cutDragDelegate
-
-                                required property int index
-                                readonly property var requestedRange: root.requestedCutRange(root.cutsModel.get(index))
-                                readonly property real requestedStartSeconds: root.clampedTimelineSeconds(requestedRange.start)
-                                readonly property real requestedEndSeconds: root.clampedTimelineSeconds(requestedRange.end)
-                                readonly property real requestedX: root.timelineX(requestedStartSeconds, width)
-                                readonly property real requestedWidth: root.timelineX(requestedEndSeconds, width) - requestedX
-                                readonly property real edgeHitWidth: 18
-                                readonly property bool dragActive: root.draggingCutIndex === index
-
-                                width: parent ? parent.width : 0
-                                height: parent ? parent.height : 0
-                                visible: root.durationMs > 0 && requestedRange.valid && requestedEndSeconds > requestedStartSeconds
-                                z: dragActive ? 100 : 10
-
-                                function trackXFrom(mouseArea, mouseX, mouseY) {
-                                    return mouseArea.mapToItem(cutDragLayer, mouseX, mouseY).x
-                                }
-
-                                MouseArea {
-                                    id: moveCutDragArea
-
-                                    x: Math.max(0, Math.min(parent.width - width, cutDragDelegate.requestedX + cutDragDelegate.edgeHitWidth / 2))
-                                    y: 0
-                                    width: Math.max(0, cutDragDelegate.requestedWidth - cutDragDelegate.edgeHitWidth)
-                                    height: parent.height
-                                    enabled: cutDragDelegate.visible && width > 0
-                                    acceptedButtons: Qt.LeftButton
-                                    hoverEnabled: true
-                                    preventStealing: true
-                                    cursorShape: pressed ? Qt.ClosedHandCursor : Qt.OpenHandCursor
-
-                                    onPressed: function(mouse) {
-                                        mouse.accepted = true
-                                        root.beginCutTimelineDrag(
-                                            cutDragDelegate.index,
-                                            "move",
-                                            cutDragDelegate.trackXFrom(moveCutDragArea, mouse.x, mouse.y),
-                                            cutDragLayer.width
-                                        )
-                                    }
-                                    onPositionChanged: function(mouse) {
-                                        if (pressed)
-                                            root.updateCutTimelineDrag(
-                                                cutDragDelegate.trackXFrom(moveCutDragArea, mouse.x, mouse.y),
-                                                cutDragLayer.width
-                                            )
-                                    }
-                                    onReleased: function(mouse) {
-                                        mouse.accepted = true
-                                        root.finishCutTimelineDrag()
-                                    }
-                                    onCanceled: root.finishCutTimelineDrag()
-                                }
-
-                                MouseArea {
-                                    id: startCutDragArea
-
-                                    x: Math.max(0, Math.min(parent.width - width, cutDragDelegate.requestedX - width / 2))
-                                    y: 0
-                                    width: cutDragDelegate.edgeHitWidth
-                                    height: parent.height
-                                    enabled: cutDragDelegate.visible
-                                    acceptedButtons: Qt.LeftButton
-                                    hoverEnabled: true
-                                    preventStealing: true
-                                    cursorShape: Qt.SplitHCursor
-                                    z: 2
-
-                                    onPressed: function(mouse) {
-                                        mouse.accepted = true
-                                        root.beginCutTimelineDrag(
-                                            cutDragDelegate.index,
-                                            "start",
-                                            cutDragDelegate.trackXFrom(startCutDragArea, mouse.x, mouse.y),
-                                            cutDragLayer.width
-                                        )
-                                    }
-                                    onPositionChanged: function(mouse) {
-                                        if (pressed)
-                                            root.updateCutTimelineDrag(
-                                                cutDragDelegate.trackXFrom(startCutDragArea, mouse.x, mouse.y),
-                                                cutDragLayer.width
-                                            )
-                                    }
-                                    onReleased: function(mouse) {
-                                        mouse.accepted = true
-                                        root.finishCutTimelineDrag()
-                                    }
-                                    onCanceled: root.finishCutTimelineDrag()
-                                }
-
-                                MouseArea {
-                                    id: endCutDragArea
-
-                                    x: Math.max(0, Math.min(parent.width - width, cutDragDelegate.requestedX + cutDragDelegate.requestedWidth - width / 2))
-                                    y: 0
-                                    width: cutDragDelegate.edgeHitWidth
-                                    height: parent.height
-                                    enabled: cutDragDelegate.visible
-                                    acceptedButtons: Qt.LeftButton
-                                    hoverEnabled: true
-                                    preventStealing: true
-                                    cursorShape: Qt.SplitHCursor
-                                    z: 3
-
-                                    onPressed: function(mouse) {
-                                        mouse.accepted = true
-                                        root.beginCutTimelineDrag(
-                                            cutDragDelegate.index,
-                                            "end",
-                                            cutDragDelegate.trackXFrom(endCutDragArea, mouse.x, mouse.y),
-                                            cutDragLayer.width
-                                        )
-                                    }
-                                    onPositionChanged: function(mouse) {
-                                        if (pressed)
-                                            root.updateCutTimelineDrag(
-                                                cutDragDelegate.trackXFrom(endCutDragArea, mouse.x, mouse.y),
-                                                cutDragLayer.width
-                                            )
-                                    }
-                                    onReleased: function(mouse) {
-                                        mouse.accepted = true
-                                        root.finishCutTimelineDrag()
-                                    }
-                                    onCanceled: root.finishCutTimelineDrag()
-                                }
-                            }
-                        }
-                    }
-                }
-
-                VectorIcon {
-                    Layout.preferredWidth: 18
-                    Layout.preferredHeight: 18
-                    name: root.volumeLevel <= 0.01 ? "mute" : "volume"
-                    iconColor: root.mutedTextColor
-                }
-
-                Slider {
-                    id: volumeSlider
-
-                    Layout.preferredWidth: 92
-                    Layout.preferredHeight: 32
-                    from: 0
-                    to: 1
-                    value: root.volumeLevel
-                    onMoved: root.volumeLevel = value
-
-                    background: Rectangle {
-                        x: volumeSlider.leftPadding
-                        y: volumeSlider.topPadding + volumeSlider.availableHeight / 2 - height / 2
-                        width: volumeSlider.availableWidth
-                        height: 4
-                        radius: 3
-                        color: root.lightMode ? "#CBD5E1" : "#17263B"
-
-                        Rectangle {
-                            width: volumeSlider.visualPosition * parent.width
-                            height: parent.height
-                            radius: parent.radius
-                            color: "#5AA4FF"
-                        }
-                    }
-
-                    handle: Rectangle {
-                        x: volumeSlider.leftPadding + volumeSlider.visualPosition * (volumeSlider.availableWidth - width)
-                        y: volumeSlider.topPadding + volumeSlider.availableHeight / 2 - height / 2
-                        width: 12
-                        height: 12
-                        radius: 6
-                        color: root.lightMode ? "#FFFFFF" : "#E0F2FE"
-                        border.color: root.accentColor
-                    }
-                }
-
-                AppButton {
-                    text: ""
-                    iconName: "fullscreen"
-                    variant: "ghost"
-                    size: "sm"
-                    lightMode: root.lightMode
-                    enabled: false
-                    Layout.preferredWidth: 42
-                    Layout.preferredHeight: 36
-                    ToolTip.visible: hovered
-                    ToolTip.text: "Fullscreen is not connected in this phase"
-                }
+            cutsModel: root.cutsModel
+
+            lightMode: root.lightMode
+            strokeColor: root.strokeColor
+            textColor: root.textColor
+            mutedTextColor: root.mutedTextColor
+            accentColor: root.accentColor
+
+            hasVideo: root.hasVideo
+            isPlaying: root.isPlaying
+            positionMs: root.positionMs
+            durationMs: root.durationMs
+            volumeLevel: root.volumeLevel
+
+            requestedStart: root.requestedStart
+            requestedEnd: root.requestedEnd
+            startPointSet: root.startPointSet
+            endPointSet: root.endPointSet
+            draggingCutIndex: root.draggingCutIndex
+
+            onTogglePlaybackRequested: root.togglePlayback()
+
+            onSeekByRequested: function(seconds) {
+                root.seekBy(seconds)
+            }
+
+            onSeekRequested: function(positionMs) {
+                player.position = positionMs
+            }
+
+            onVolumeLevelChangeRequested: function(value) {
+                root.volumeLevel = value
+            }
+
+            onBeginCutTimelineDragRequested: function(index, mode, trackX, trackWidth) {
+                root.beginCutTimelineDrag(index, mode, trackX, trackWidth)
+            }
+
+            onUpdateCutTimelineDragRequested: function(trackX, trackWidth) {
+                root.updateCutTimelineDrag(trackX, trackWidth)
+            }
+
+            onFinishCutTimelineDragRequested: {
+                root.finishCutTimelineDrag()
             }
         }
 

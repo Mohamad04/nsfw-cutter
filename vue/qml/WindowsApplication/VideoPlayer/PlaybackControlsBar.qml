@@ -5,6 +5,8 @@ import QtQuick.Controls
 import QtQuick.Layouts
 
 import "../Shared"
+import "time_utils.js" as TimeUtils
+import "timeline_utils.js" as TimelineUtils
 
 Rectangle {
     id: root
@@ -40,102 +42,6 @@ Rectangle {
 
     implicitHeight: 56
 
-    function pad(value) {
-        return value < 10 ? "0" + value : "" + value
-    }
-
-    function padMillis(value) {
-        if (value < 10) return "00" + value
-        if (value < 100) return "0" + value
-        return "" + value
-    }
-
-    function formatTime(ms, includeMilliseconds) {
-        if (!Number.isFinite(ms) || ms <= 0) return "00:00:00"
-        var totalMilliseconds = Math.max(0, Math.round(ms))
-        var totalSeconds = Math.floor(totalMilliseconds / 1000)
-        var milliseconds = totalMilliseconds % 1000
-        var hours = Math.floor(totalSeconds / 3600)
-        var minutes = Math.floor((totalSeconds % 3600) / 60)
-        var seconds = totalSeconds % 60
-        var text = pad(hours) + ":" + pad(minutes) + ":" + pad(seconds)
-        if (includeMilliseconds === true && milliseconds > 0) text += "." + padMillis(milliseconds)
-        return text
-    }
-
-    function parseTimeMs(timeText) {
-        var parts = String(timeText).trim().split(":")
-        if (parts.length !== 3) return -1
-        var hours = Number(parts[0])
-        var minutes = Number(parts[1])
-        var seconds = Number(parts[2])
-        if (!Number.isFinite(hours) || !Number.isFinite(minutes) || !Number.isFinite(seconds)) return -1
-        if (hours < 0 || minutes < 0 || minutes > 59 || seconds < 0 || seconds >= 60) return -1
-        return ((hours * 3600) + (minutes * 60) + seconds) * 1000
-    }
-
-    function numericCutSeconds(cut, secondsKey, timeKey) {
-        if (!cut) return NaN
-
-        var seconds = cut[secondsKey]
-        if (seconds !== undefined && seconds !== null && seconds !== "") {
-            var numeric = Number(seconds)
-            if (Number.isFinite(numeric)) return numeric
-        }
-
-        var timeMs = root.parseTimeMs(cut[timeKey])
-        return timeMs >= 0 ? timeMs / 1000 : NaN
-    }
-
-    function cutRange(cut) {
-        if (!cut) return { "valid": false, "start": 0, "end": 0 }
-
-        var safeStart = root.numericCutSeconds(cut, "safeStartSeconds", "safeStart")
-        var safeEnd = root.numericCutSeconds(cut, "safeEndSeconds", "safeEnd")
-        if (Number.isFinite(safeStart) && Number.isFinite(safeEnd) && safeEnd > safeStart)
-            return { "valid": true, "start": safeStart, "end": safeEnd }
-
-        var requestedStart = root.numericCutSeconds(cut, "requestedStartSeconds", "start")
-        var requestedEnd = root.numericCutSeconds(cut, "requestedEndSeconds", "end")
-        if (Number.isFinite(requestedStart) && Number.isFinite(requestedEnd) && requestedEnd > requestedStart)
-            return { "valid": true, "start": requestedStart, "end": requestedEnd }
-
-        return { "valid": false, "start": 0, "end": 0 }
-    }
-
-    function requestedCutRange(cut) {
-        if (!cut) return { "valid": false, "start": 0, "end": 0 }
-
-        var requestedStart = root.numericCutSeconds(cut, "requestedStartSeconds", "start")
-        var requestedEnd = root.numericCutSeconds(cut, "requestedEndSeconds", "end")
-        if (Number.isFinite(requestedStart) && Number.isFinite(requestedEnd) && requestedEnd > requestedStart)
-            return { "valid": true, "start": requestedStart, "end": requestedEnd }
-
-        return root.cutRange(cut)
-    }
-
-    function clampedTimelineSeconds(value) {
-        if (!Number.isFinite(value) || !Number.isFinite(root.durationMs) || root.durationMs <= 0) return 0
-        var durationSeconds = root.durationMs / 1000
-        return Math.max(0, Math.min(value, durationSeconds))
-    }
-
-    function timelineX(seconds, trackWidth) {
-        if (!Number.isFinite(root.durationMs) || root.durationMs <= 0 || trackWidth <= 0) return 0
-        return root.clampedTimelineSeconds(seconds) / (root.durationMs / 1000) * trackWidth
-    }
-
-    function timelineSecondsAtX(trackX, trackWidth) {
-        if (!Number.isFinite(root.durationMs) || root.durationMs <= 0 || trackWidth <= 0) return 0
-        var clampedX = Math.max(0, Math.min(trackX, trackWidth))
-        return clampedX / trackWidth * (root.durationMs / 1000)
-    }
-
-    function markerSeconds(timeText, isSet) {
-        if (!isSet) return NaN
-        var timeMs = root.parseTimeMs(timeText)
-        return timeMs >= 0 ? timeMs / 1000 : NaN
-    }
     radius: 12
     color: root.lightMode ? "#FFFFFF" : "#07101D"
     border.color: root.lightMode ? root.strokeColor : "#1C2E49"
@@ -172,7 +78,7 @@ Rectangle {
         }
 
         Text {
-            text: root.formatTime(root.positionMs) + " / " + root.formatTime(root.durationMs)
+            text: TimeUtils.formatTime(root.positionMs) + " / " + TimeUtils.formatTime(root.durationMs)
             color: root.textColor
             font.pixelSize: 12
             Layout.preferredWidth: 142
@@ -184,8 +90,8 @@ Rectangle {
             Layout.fillWidth: true
             Layout.preferredHeight: 32
 
-            readonly property real selectionStartSeconds: root.markerSeconds(root.requestedStart, root.startPointSet)
-            readonly property real selectionEndSeconds: root.markerSeconds(root.requestedEnd, root.endPointSet)
+            readonly property real selectionStartSeconds: TimelineUtils.markerSeconds(root.requestedStart, root.startPointSet)
+            readonly property real selectionEndSeconds: TimelineUtils.markerSeconds(root.requestedEnd, root.endPointSet)
             readonly property bool hasStartMarker: Number.isFinite(selectionStartSeconds) && root.durationMs > 0
             readonly property bool hasEndMarker: Number.isFinite(selectionEndSeconds) && root.durationMs > 0
             readonly property bool hasPendingRange: hasStartMarker && hasEndMarker && selectionEndSeconds > selectionStartSeconds
@@ -233,11 +139,11 @@ Rectangle {
                             id: cutTimelineItem
 
                             required property int index
-                            readonly property var requestedRange: root.requestedCutRange(root.cutsModel.get(index))
-                            readonly property real requestedStartSeconds: root.clampedTimelineSeconds(requestedRange.start)
-                            readonly property real requestedEndSeconds: root.clampedTimelineSeconds(requestedRange.end)
-                            readonly property real requestedX: root.timelineX(requestedStartSeconds, width)
-                            readonly property real requestedWidth: root.timelineX(requestedEndSeconds, width) - requestedX
+                            readonly property var requestedRange: TimelineUtils.requestedCutRange(root.cutsModel.get(index))
+                            readonly property real requestedStartSeconds: TimelineUtils.clampedTimelineSeconds(requestedRange.start, root.durationMs)
+                            readonly property real requestedEndSeconds: TimelineUtils.clampedTimelineSeconds(requestedRange.end, root.durationMs)
+                            readonly property real requestedX: TimelineUtils.timelineX(requestedStartSeconds, width, root.durationMs)
+                            readonly property real requestedWidth: TimelineUtils.timelineX(requestedEndSeconds, width, root.durationMs) - requestedX
                             readonly property bool dragActive: root.draggingCutIndex === index
 
                             width: parent ? parent.width : 0
@@ -385,10 +291,10 @@ Rectangle {
                     Rectangle {
                         id: pendingSelectionRange
 
-                        readonly property real startSeconds: root.clampedTimelineSeconds(seekArea.selectionStartSeconds)
-                        readonly property real endSeconds: root.clampedTimelineSeconds(seekArea.selectionEndSeconds)
-                        readonly property real calculatedX: root.timelineX(startSeconds, parent.width)
-                        readonly property real calculatedWidth: root.timelineX(endSeconds, parent.width) - calculatedX
+                        readonly property real startSeconds: TimelineUtils.clampedTimelineSeconds(seekArea.selectionStartSeconds, root.durationMs)
+                        readonly property real endSeconds: TimelineUtils.clampedTimelineSeconds(seekArea.selectionEndSeconds, root.durationMs)
+                        readonly property real calculatedX: TimelineUtils.timelineX(startSeconds, parent.width, root.durationMs)
+                        readonly property real calculatedWidth: TimelineUtils.timelineX(endSeconds, parent.width, root.durationMs) - calculatedX
 
                         enabled: false
                         visible: seekArea.hasPendingRange && endSeconds > startSeconds
@@ -409,7 +315,7 @@ Rectangle {
 
                         enabled: false
                         visible: seekArea.hasStartMarker
-                        x: Math.max(0, Math.min(parent.width - width, root.timelineX(seekArea.selectionStartSeconds, parent.width) - width / 2))
+                        x: Math.max(0, Math.min(parent.width - width, TimelineUtils.timelineX(seekArea.selectionStartSeconds, parent.width, root.durationMs) - width / 2))
                         y: 4
                         width: 3
                         height: parent.height - 8
@@ -423,7 +329,7 @@ Rectangle {
 
                         enabled: false
                         visible: seekArea.hasEndMarker
-                        x: Math.max(0, Math.min(parent.width - width, root.timelineX(seekArea.selectionEndSeconds, parent.width) - width / 2))
+                        x: Math.max(0, Math.min(parent.width - width, TimelineUtils.timelineX(seekArea.selectionEndSeconds, parent.width, root.durationMs) - width / 2))
                         y: 4
                         width: 3
                         height: parent.height - 8
@@ -462,11 +368,11 @@ Rectangle {
                         id: cutDragDelegate
 
                         required property int index
-                        readonly property var requestedRange: root.requestedCutRange(root.cutsModel.get(index))
-                        readonly property real requestedStartSeconds: root.clampedTimelineSeconds(requestedRange.start)
-                        readonly property real requestedEndSeconds: root.clampedTimelineSeconds(requestedRange.end)
-                        readonly property real requestedX: root.timelineX(requestedStartSeconds, width)
-                        readonly property real requestedWidth: root.timelineX(requestedEndSeconds, width) - requestedX
+                        readonly property var requestedRange: TimelineUtils.requestedCutRange(root.cutsModel.get(index))
+                        readonly property real requestedStartSeconds: TimelineUtils.clampedTimelineSeconds(requestedRange.start, root.durationMs)
+                        readonly property real requestedEndSeconds: TimelineUtils.clampedTimelineSeconds(requestedRange.end, root.durationMs)
+                        readonly property real requestedX: TimelineUtils.timelineX(requestedStartSeconds, width, root.durationMs)
+                        readonly property real requestedWidth: TimelineUtils.timelineX(requestedEndSeconds, width, root.durationMs) - requestedX
                         readonly property real edgeHitWidth: 18
                         readonly property bool dragActive: root.draggingCutIndex === index
 

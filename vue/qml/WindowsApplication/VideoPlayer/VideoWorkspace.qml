@@ -4,6 +4,8 @@ import QtQuick
 import QtQuick.Layouts
 import QtMultimedia
 import "../Shared"
+import "time_utils.js" as TimeUtils
+import "timeline_utils.js" as TimelineUtils
 
 Rectangle {
     id: root
@@ -72,133 +74,6 @@ Rectangle {
         }
     }
 
-    function pad(value) {
-        return value < 10 ? "0" + value : "" + value
-    }
-
-    function padMillis(value) {
-        if (value < 10) return "00" + value
-        if (value < 100) return "0" + value
-        return "" + value
-    }
-
-    function formatTime(ms, includeMilliseconds) {
-        if (!Number.isFinite(ms) || ms <= 0) return "00:00:00"
-        var totalMilliseconds = Math.max(0, Math.round(ms))
-        var totalSeconds = Math.floor(totalMilliseconds / 1000)
-        var milliseconds = totalMilliseconds % 1000
-        var hours = Math.floor(totalSeconds / 3600)
-        var minutes = Math.floor((totalSeconds % 3600) / 60)
-        var seconds = totalSeconds % 60
-        var text = pad(hours) + ":" + pad(minutes) + ":" + pad(seconds)
-        if (includeMilliseconds === true && milliseconds > 0) text += "." + padMillis(milliseconds)
-        return text
-    }
-
-    function formatSeconds(seconds) {
-        if (seconds === null || seconds === undefined || seconds === "") return ""
-        var value = Number(seconds)
-        if (!Number.isFinite(value)) return ""
-        value = Math.max(0, value)
-        var totalMilliseconds = Math.round(value * 1000)
-        var totalSeconds = Math.floor(totalMilliseconds / 1000)
-        var milliseconds = totalMilliseconds % 1000
-        var hours = Math.floor(totalSeconds / 3600)
-        var minutes = Math.floor((totalSeconds % 3600) / 60)
-        var wholeSeconds = totalSeconds % 60
-        var text = pad(hours) + ":" + pad(minutes) + ":" + pad(wholeSeconds)
-        if (milliseconds > 0) text += "." + padMillis(milliseconds)
-        return text
-    }
-
-    function parseTimeMs(timeText) {
-        var parts = String(timeText).trim().split(":")
-        if (parts.length !== 3) return -1
-        var hours = Number(parts[0])
-        var minutes = Number(parts[1])
-        var seconds = Number(parts[2])
-        if (!Number.isFinite(hours) || !Number.isFinite(minutes) || !Number.isFinite(seconds)) return -1
-        if (hours < 0 || minutes < 0 || minutes > 59 || seconds < 0 || seconds >= 60) return -1
-        return ((hours * 3600) + (minutes * 60) + seconds) * 1000
-    }
-
-    function numericCutSeconds(cut, secondsKey, timeKey) {
-        if (!cut) return NaN
-
-        var seconds = cut[secondsKey]
-        if (seconds !== undefined && seconds !== null && seconds !== "") {
-            var numeric = Number(seconds)
-            if (Number.isFinite(numeric)) return numeric
-        }
-
-        var timeMs = root.parseTimeMs(cut[timeKey])
-        return timeMs >= 0 ? timeMs / 1000 : NaN
-    }
-
-    function cutRange(cut) {
-        if (!cut) return { "valid": false, "start": 0, "end": 0 }
-
-        var safeStart = root.numericCutSeconds(cut, "safeStartSeconds", "safeStart")
-        var safeEnd = root.numericCutSeconds(cut, "safeEndSeconds", "safeEnd")
-        if (Number.isFinite(safeStart) && Number.isFinite(safeEnd) && safeEnd > safeStart)
-            return { "valid": true, "start": safeStart, "end": safeEnd }
-
-        var requestedStart = root.numericCutSeconds(cut, "requestedStartSeconds", "start")
-        var requestedEnd = root.numericCutSeconds(cut, "requestedEndSeconds", "end")
-        if (Number.isFinite(requestedStart) && Number.isFinite(requestedEnd) && requestedEnd > requestedStart)
-            return { "valid": true, "start": requestedStart, "end": requestedEnd }
-
-        return { "valid": false, "start": 0, "end": 0 }
-    }
-
-    function requestedCutRange(cut) {
-        if (!cut) return { "valid": false, "start": 0, "end": 0 }
-
-        var requestedStart = root.numericCutSeconds(cut, "requestedStartSeconds", "start")
-        var requestedEnd = root.numericCutSeconds(cut, "requestedEndSeconds", "end")
-        if (Number.isFinite(requestedStart) && Number.isFinite(requestedEnd) && requestedEnd > requestedStart)
-            return { "valid": true, "start": requestedStart, "end": requestedEnd }
-
-        return root.cutRange(cut)
-    }
-
-    function clampedTimelineSeconds(value) {
-        if (!Number.isFinite(value) || !Number.isFinite(root.durationMs) || root.durationMs <= 0) return 0
-        var durationSeconds = root.durationMs / 1000
-        return Math.max(0, Math.min(value, durationSeconds))
-    }
-
-    function timelineX(seconds, trackWidth) {
-        if (!Number.isFinite(root.durationMs) || root.durationMs <= 0 || trackWidth <= 0) return 0
-        return root.clampedTimelineSeconds(seconds) / (root.durationMs / 1000) * trackWidth
-    }
-
-    function timelineSecondsAtX(trackX, trackWidth) {
-        if (!Number.isFinite(root.durationMs) || root.durationMs <= 0 || trackWidth <= 0) return 0
-        var clampedX = Math.max(0, Math.min(trackX, trackWidth))
-        return clampedX / trackWidth * (root.durationMs / 1000)
-    }
-
-    function markerSeconds(timeText, isSet) {
-        if (!isSet) return NaN
-        var timeMs = root.parseTimeMs(timeText)
-        return timeMs >= 0 ? timeMs / 1000 : NaN
-    }
-
-    function formatSignedDelta(seconds) {
-        if (!Number.isFinite(seconds)) return "--"
-
-        var roundedSeconds = Math.round(seconds)
-        var sign = roundedSeconds >= 0 ? "+" : "-"
-        var absoluteSeconds = Math.abs(roundedSeconds)
-        var hours = Math.floor(absoluteSeconds / 3600)
-        var minutes = Math.floor((absoluteSeconds % 3600) / 60)
-        var wholeSeconds = absoluteSeconds % 60
-        if (hours > 0)
-            return sign + root.pad(hours) + ":" + root.pad(minutes) + ":" + root.pad(wholeSeconds)
-        return sign + root.pad(minutes) + ":" + root.pad(wholeSeconds)
-    }
-
     function requestedSelectionText() {
         if (!root.startPointSet && !root.endPointSet) return "Set start and end markers"
         if (root.startPointSet && !root.endPointSet) return root.requestedStart + " -> Set end"
@@ -208,7 +83,7 @@ Rectangle {
 
     function safeSelectionText() {
         if (root.hasSafeKeyframeInfo())
-            return root.formatSeconds(root.keyframeInfo.safe_start) + " -> " + root.formatSeconds(root.keyframeInfo.safe_end)
+            return TimeUtils.formatSeconds(root.keyframeInfo.safe_start) + " -> " + TimeUtils.formatSeconds(root.keyframeInfo.safe_end)
         if (root.keyframeInfo && root.keyframeInfo.error)
             return root.keyframeInfo.error
         return root.canAddCut() ? "Waiting for valid keyframe range" : "Set start and end markers"
@@ -217,16 +92,16 @@ Rectangle {
     function deltaSelectionText() {
         if (!root.hasSafeKeyframeInfo()) return "Start -- | End -- | Duration --"
 
-        var requestedStartSeconds = root.parseTimeMs(root.requestedStart) / 1000
-        var requestedEndSeconds = root.parseTimeMs(root.requestedEnd) / 1000
+        var requestedStartSeconds = TimeUtils.parseTimeMs(root.requestedStart) / 1000
+        var requestedEndSeconds = TimeUtils.parseTimeMs(root.requestedEnd) / 1000
         var safeStartSeconds = Number(root.keyframeInfo.safe_start)
         var safeEndSeconds = Number(root.keyframeInfo.safe_end)
         var requestedDuration = requestedEndSeconds - requestedStartSeconds
         var safeDuration = safeEndSeconds - safeStartSeconds
 
-        return "Start " + root.formatSignedDelta(safeStartSeconds - requestedStartSeconds)
-            + " | End " + root.formatSignedDelta(safeEndSeconds - requestedEndSeconds)
-            + " | Duration " + root.formatSignedDelta(safeDuration - requestedDuration)
+        return "Start " + TimeUtils.formatSignedDelta(safeStartSeconds - requestedStartSeconds)
+            + " | End " + TimeUtils.formatSignedDelta(safeEndSeconds - requestedEndSeconds)
+            + " | Duration " + TimeUtils.formatSignedDelta(safeDuration - requestedDuration)
     }
 
     function setCutTimingFields(index, startSeconds, endSeconds) {
@@ -242,8 +117,8 @@ Rectangle {
             clampedStart = Math.max(0, clampedEnd - root.minimumCutDurationSeconds)
         if (clampedEnd <= clampedStart) return false
 
-        root.cutsModel.setProperty(index, "start", root.formatSeconds(clampedStart))
-        root.cutsModel.setProperty(index, "end", root.formatSeconds(clampedEnd))
+        root.cutsModel.setProperty(index, "start", TimeUtils.formatSeconds(clampedStart))
+        root.cutsModel.setProperty(index, "end", TimeUtils.formatSeconds(clampedEnd))
         root.cutsModel.setProperty(index, "requestedStartSeconds", clampedStart)
         root.cutsModel.setProperty(index, "requestedEndSeconds", clampedEnd)
         return true
@@ -268,26 +143,26 @@ Rectangle {
         if (index < 0 || index >= root.cutsModel.count) return false
 
         var cut = root.cutsModel.get(index)
-        var range = root.requestedCutRange(cut)
+        var range = TimelineUtils.requestedCutRange(cut)
         if (!range.valid) return false
 
-        var startTime = root.formatSeconds(range.start)
-        var endTime = root.formatSeconds(range.end)
+        var startTime = TimeUtils.formatSeconds(range.start)
+        var endTime = TimeUtils.formatSeconds(range.end)
         var info = root.safeKeyframeInfoFor(startTime, endTime)
         if (!root.isUsableKeyframeInfo(info)) {
             root.clearCutSafeFields(index)
             return false
         }
 
-        root.cutsModel.setProperty(index, "safeStart", root.formatSeconds(info.safe_start))
-        root.cutsModel.setProperty(index, "safeEnd", root.formatSeconds(info.safe_end))
+        root.cutsModel.setProperty(index, "safeStart", TimeUtils.formatSeconds(info.safe_start))
+        root.cutsModel.setProperty(index, "safeEnd", TimeUtils.formatSeconds(info.safe_end))
         root.cutsModel.setProperty(index, "safeStartSeconds", info.safe_start)
         root.cutsModel.setProperty(index, "safeEndSeconds", info.safe_end)
         root.cutsModel.setProperty(index, "safeAvailable", true)
-        root.cutsModel.setProperty(index, "previousKeyframeStart", root.formatSeconds(info.previous_keyframe_start))
-        root.cutsModel.setProperty(index, "nextKeyframeStart", root.formatSeconds(info.next_keyframe_start))
-        root.cutsModel.setProperty(index, "previousKeyframeEnd", root.formatSeconds(info.previous_keyframe_end))
-        root.cutsModel.setProperty(index, "nextKeyframeEnd", root.formatSeconds(info.next_keyframe_end))
+        root.cutsModel.setProperty(index, "previousKeyframeStart", TimeUtils.formatSeconds(info.previous_keyframe_start))
+        root.cutsModel.setProperty(index, "nextKeyframeStart", TimeUtils.formatSeconds(info.next_keyframe_start))
+        root.cutsModel.setProperty(index, "previousKeyframeEnd", TimeUtils.formatSeconds(info.previous_keyframe_end))
+        root.cutsModel.setProperty(index, "nextKeyframeEnd", TimeUtils.formatSeconds(info.next_keyframe_end))
         root.cutsModel.setProperty(index, "extraBefore", Number(info.extra_before || 0).toFixed(1) + "s")
         root.cutsModel.setProperty(index, "extraAfter", Number(info.extra_after || 0).toFixed(1) + "s")
         root.cutsModel.setProperty(index, "status", "Pending")
@@ -296,12 +171,12 @@ Rectangle {
 
     function beginCutTimelineDrag(index, mode, trackX, trackWidth) {
         if (index < 0 || index >= root.cutsModel.count) return
-        var range = root.requestedCutRange(root.cutsModel.get(index))
+        var range = TimelineUtils.requestedCutRange(root.cutsModel.get(index))
         if (!range.valid) return
 
         root.draggingCutIndex = index
         root.draggingCutMode = mode
-        root.dragAnchorSeconds = root.timelineSecondsAtX(trackX, trackWidth)
+        root.dragAnchorSeconds = TimelineUtils.timelineSecondsAtX(trackX, trackWidth, root.durationMs)
         root.dragOriginalStartSeconds = range.start
         root.dragOriginalEndSeconds = range.end
     }
@@ -309,7 +184,7 @@ Rectangle {
     function updateCutTimelineDrag(trackX, trackWidth) {
         if (root.draggingCutIndex < 0 || root.draggingCutMode.length === 0) return
 
-        var pointerSeconds = root.timelineSecondsAtX(trackX, trackWidth)
+        var pointerSeconds = TimelineUtils.timelineSecondsAtX(trackX, trackWidth, root.durationMs)
         var durationSeconds = root.durationMs / 1000
         var startSeconds = root.dragOriginalStartSeconds
         var endSeconds = root.dragOriginalEndSeconds
@@ -355,14 +230,14 @@ Rectangle {
 
     function markStart() {
         if (!root.hasVideo) return
-        root.requestedStart = root.formatTime(player.position, true)
+        root.requestedStart = TimeUtils.formatTime(player.position, true)
         root.startPointSet = true
         root.refreshKeyframeInfo()
     }
 
     function markEnd() {
         if (!root.hasVideo) return
-        root.requestedEnd = root.formatTime(player.position, true)
+        root.requestedEnd = TimeUtils.formatTime(player.position, true)
         root.endPointSet = true
         root.refreshKeyframeInfo()
     }
@@ -370,8 +245,8 @@ Rectangle {
     function canAddCutFromTimes(startTime, endTime) {
         if (!root.hasVideo || !Number.isFinite(root.durationMs) || root.durationMs <= 0) return false
 
-        var startMs = root.parseTimeMs(startTime)
-        var endMs = root.parseTimeMs(endTime)
+        var startMs = TimeUtils.parseTimeMs(startTime)
+        var endMs = TimeUtils.parseTimeMs(endTime)
         return startMs >= 0
             && endMs >= 0
             && startMs < endMs
@@ -394,8 +269,8 @@ Rectangle {
     }
 
     function updateCutPreview() {
-        var startMs = root.parseTimeMs(root.requestedStart)
-        var endMs = root.parseTimeMs(root.requestedEnd)
+        var startMs = TimeUtils.parseTimeMs(root.requestedStart)
+        var endMs = TimeUtils.parseTimeMs(root.requestedEnd)
         var visible = startMs >= 0 && endMs >= 0 && (startMs !== 0 || endMs !== 0)
         if (!visible) {
             root.cutPreview = { "visible": false }
@@ -466,19 +341,19 @@ Rectangle {
         if (!root.isUsableKeyframeInfo(info)) return false
 
         root.cutAdded({
-            "start": root.formatTime(root.parseTimeMs(startTime), true),
-            "end": root.formatTime(root.parseTimeMs(endTime), true),
-            "safeStart": root.formatSeconds(info.safe_start),
-            "safeEnd": root.formatSeconds(info.safe_end),
+            "start": TimeUtils.formatTime(TimeUtils.parseTimeMs(startTime), true),
+            "end": TimeUtils.formatTime(TimeUtils.parseTimeMs(endTime), true),
+            "safeStart": TimeUtils.formatSeconds(info.safe_start),
+            "safeEnd": TimeUtils.formatSeconds(info.safe_end),
             "requestedStartSeconds": info.requested_start,
             "requestedEndSeconds": info.requested_end,
             "safeStartSeconds": info.safe_start,
             "safeEndSeconds": info.safe_end,
             "safeAvailable": true,
-            "previousKeyframeStart": root.formatSeconds(info.previous_keyframe_start),
-            "nextKeyframeStart": root.formatSeconds(info.next_keyframe_start),
-            "previousKeyframeEnd": root.formatSeconds(info.previous_keyframe_end),
-            "nextKeyframeEnd": root.formatSeconds(info.next_keyframe_end),
+            "previousKeyframeStart": TimeUtils.formatSeconds(info.previous_keyframe_start),
+            "nextKeyframeStart": TimeUtils.formatSeconds(info.next_keyframe_start),
+            "previousKeyframeEnd": TimeUtils.formatSeconds(info.previous_keyframe_end),
+            "nextKeyframeEnd": TimeUtils.formatSeconds(info.next_keyframe_end),
             "extraBefore": Number(info.extra_before || 0).toFixed(1) + "s",
             "extraAfter": Number(info.extra_after || 0).toFixed(1) + "s",
             "reason": reason || "Manual removal",
@@ -518,7 +393,7 @@ Rectangle {
 
     function previewCut() {
         if (!root.canAddCut()) return
-        var startMs = root.parseTimeMs(root.requestedStart)
+        var startMs = TimeUtils.parseTimeMs(root.requestedStart)
         player.position = startMs
         player.play()
     }
@@ -734,4 +609,3 @@ Rectangle {
         onActivated: root.markEnd()
     }
 }
-

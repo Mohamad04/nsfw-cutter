@@ -74,34 +74,12 @@ Rectangle {
         }
     }
 
-    function requestedSelectionText() {
-        if (!root.startPointSet && !root.endPointSet) return "Set start and end markers"
-        if (root.startPointSet && !root.endPointSet) return root.requestedStart + " -> Set end"
-        if (!root.startPointSet && root.endPointSet) return "Set start -> " + root.requestedEnd
-        return root.requestedStart + " -> " + root.requestedEnd
-    }
-
     function safeSelectionText() {
         if (root.hasSafeKeyframeInfo())
             return TimeUtils.formatSeconds(root.keyframeInfo.safe_start) + " -> " + TimeUtils.formatSeconds(root.keyframeInfo.safe_end)
         if (root.keyframeInfo && root.keyframeInfo.error)
             return root.keyframeInfo.error
         return root.canAddCut() ? "Waiting for valid keyframe range" : "Set start and end markers"
-    }
-
-    function deltaSelectionText() {
-        if (!root.hasSafeKeyframeInfo()) return "Start -- | End -- | Duration --"
-
-        var requestedStartSeconds = TimeUtils.parseTimeMs(root.requestedStart) / 1000
-        var requestedEndSeconds = TimeUtils.parseTimeMs(root.requestedEnd) / 1000
-        var safeStartSeconds = Number(root.keyframeInfo.safe_start)
-        var safeEndSeconds = Number(root.keyframeInfo.safe_end)
-        var requestedDuration = requestedEndSeconds - requestedStartSeconds
-        var safeDuration = safeEndSeconds - safeStartSeconds
-
-        return "Start " + TimeUtils.formatSignedDelta(safeStartSeconds - requestedStartSeconds)
-            + " | End " + TimeUtils.formatSignedDelta(safeEndSeconds - requestedEndSeconds)
-            + " | Duration " + TimeUtils.formatSignedDelta(safeDuration - requestedDuration)
     }
 
     function setCutTimingFields(index, startSeconds, endSeconds) {

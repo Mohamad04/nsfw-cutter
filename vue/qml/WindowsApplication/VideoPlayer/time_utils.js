@@ -49,17 +49,3 @@ function parseTimeMs(timeText) {
     if (hours < 0 || minutes < 0 || minutes > 59 || seconds < 0 || seconds >= 60) return -1
     return ((hours * 3600) + (minutes * 60) + seconds) * 1000
 }
-
-function formatSignedDelta(seconds) {
-    if (!Number.isFinite(seconds)) return "--"
-
-    var roundedSeconds = Math.round(seconds)
-    var sign = roundedSeconds >= 0 ? "+" : "-"
-    var absoluteSeconds = Math.abs(roundedSeconds)
-    var hours = Math.floor(absoluteSeconds / 3600)
-    var minutes = Math.floor((absoluteSeconds % 3600) / 60)
-    var wholeSeconds = absoluteSeconds % 60
-    if (hours > 0)
-        return sign + pad(hours) + ":" + pad(minutes) + ":" + pad(wholeSeconds)
-    return sign + pad(minutes) + ":" + pad(wholeSeconds)
-}

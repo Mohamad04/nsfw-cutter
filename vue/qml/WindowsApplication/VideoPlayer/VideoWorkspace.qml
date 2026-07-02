@@ -1336,61 +1336,18 @@ Rectangle {
 
                 Item { Layout.fillWidth: true }
 
-                Rectangle {
-                    Layout.preferredWidth: 430
+                CutModeControl {
+                    Layout.fillWidth: true
                     Layout.maximumWidth: 520
                     Layout.preferredHeight: 44
-                    radius: 12
-                    color: root.lightMode ? "#F8FAFC" : "#071525"
-                    border.color: root.lightMode ? "#DCE4EF" : "#1E3A5F"
+                    Layout.alignment: Qt.AlignVCenter
 
-                    RowLayout {
-                        anchors.fill: parent
-                        anchors.margins: 12
-                        spacing: 14
+                    cutTimingMode: root.cutTimingMode
+                    lightMode: root.lightMode
+                    mutedTextColor: root.mutedTextColor
 
-                        Text {
-                            text: "Cut Mode"
-                            color: root.mutedTextColor
-                            font.pixelSize: 11
-                            font.weight: Font.DemiBold
-                        }
-
-                        Rectangle {
-                            Layout.preferredWidth: 152
-                            Layout.preferredHeight: 28
-                            radius: 8
-                            color: root.lightMode ? "#EEF4FB" : "#0C1728"
-                            border.color: root.lightMode ? "#CBD5E1" : "#243244"
-
-                            RowLayout {
-                                anchors.fill: parent
-                                anchors.margins: 3
-                                spacing: 4
-
-                                AppButton {
-                                    text: "Smart"
-                                    variant: root.cutTimingMode === "safe" ? "primary" : "ghost"
-                                    size: "sm"
-                                    lightMode: root.lightMode
-                                    Layout.fillWidth: true
-                                    Layout.preferredHeight: 22
-                                    onClicked: root.timingModeSelected("safe")
-                                }
-
-                                AppButton {
-                                    text: "Fast"
-                                    variant: root.cutTimingMode === "requested" ? "primary" : "ghost"
-                                    size: "sm"
-                                    lightMode: root.lightMode
-                                    Layout.fillWidth: true
-                                    Layout.preferredHeight: 22
-                                    onClicked: root.timingModeSelected("requested")
-                                }
-                            }
-                        }
-
-
+                    onTimingModeSelected: function(mode) {
+                        root.timingModeSelected(mode)
                     }
                 }
             }

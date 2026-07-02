@@ -115,29 +115,19 @@ Rectangle {
             }
         }
 
-        RowLayout {
+        CutModeControl {
             Layout.fillWidth: true
-            Layout.preferredHeight: 30
-            spacing: 8
+            Layout.preferredHeight: 44
+            Layout.alignment: Qt.AlignVCenter
 
-            Text {
-                text: "Cut Mode"
-                color: root.mutedTextColor
-                font.pixelSize: 11
-                font.weight: Font.DemiBold
-            }
+            cutTimingMode: root.cutTimingMode
+            lightMode: root.lightMode
+            mutedTextColor: root.mutedTextColor
 
-            Item { Layout.fillWidth: true }
-
-            CutTimingModeSelector {
-                Layout.preferredWidth: 172
-                Layout.preferredHeight: 28
-                cutTimingMode: root.cutTimingMode
-                lightMode: root.lightMode
-                onTimingModeSelected: function(mode) { root.timingModeSelected(mode) }
+            onTimingModeSelected: function(mode) {
+                root.timingModeSelected(mode)
             }
         }
-
         GridLayout {
             Layout.fillWidth: true
             columns: 4

@@ -11,22 +11,27 @@ Rectangle {
 
     signal timingModeSelected(string mode)
 
+    implicitWidth: 220
+    implicitHeight: 34
+
     radius: 8
     color: root.lightMode ? "#EEF4FB" : "#0C1728"
     border.color: root.lightMode ? "#CBD5E1" : "#243244"
 
     RowLayout {
         anchors.fill: parent
-        anchors.margins: 5
-        spacing: 10
+        anchors.margins: 4
+        spacing: 6
 
         AppButton {
             text: "Smart"
             variant: root.cutTimingMode === "safe" ? "primary" : "ghost"
             size: "sm"
             lightMode: root.lightMode
+
             Layout.fillWidth: true
-            Layout.preferredHeight: 28
+            Layout.fillHeight: true
+
             onClicked: root.timingModeSelected("safe")
         }
 
@@ -35,10 +40,11 @@ Rectangle {
             variant: root.cutTimingMode === "requested" ? "primary" : "ghost"
             size: "sm"
             lightMode: root.lightMode
+
             Layout.fillWidth: true
-            Layout.preferredHeight: 28
+            Layout.fillHeight: true
+
             onClicked: root.timingModeSelected("requested")
         }
     }
 }
-

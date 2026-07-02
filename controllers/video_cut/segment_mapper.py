@@ -5,6 +5,7 @@ def segment_to_payload(index: int, segment: dict) -> dict:
     if not isinstance(segment, dict):
         raise ValueError("Each cut segment must be an object.")
 
+    timing_mode = str(segment.get("timing_mode") or segment.get("timingMode") or "safe").strip().lower()
     requested_start_seconds = segment_seconds(segment, "requested_start_seconds", "requestedStartSeconds")
     requested_end_seconds = segment_seconds(segment, "requested_end_seconds", "requestedEndSeconds")
     if requested_start_seconds is None:
@@ -12,16 +13,24 @@ def segment_to_payload(index: int, segment: dict) -> dict:
     if requested_end_seconds is None:
         requested_end_seconds = timecode_to_seconds(segment.get("end", ""))
 
-    start_seconds = segment_seconds(segment, "safe_start_seconds", "safe_start", "safeStart")
-    end_seconds = segment_seconds(segment, "safe_end_seconds", "safe_end", "safeEnd")
-    if start_seconds is None:
-        start_seconds = segment_seconds(segment, "start_seconds")
-    if end_seconds is None:
-        end_seconds = segment_seconds(segment, "end_seconds")
-    if start_seconds is None:
-        raise ValueError("Safe cut start is unavailable. Recompute keyframe alignment before exporting.")
-    if end_seconds is None:
-        raise ValueError("Safe cut end is unavailable. Recompute keyframe alignment before exporting.")
+    if timing_mode == "requested":
+        start_seconds = requested_start_seconds
+        end_seconds = requested_end_seconds
+        if start_seconds is None:
+            raise ValueError("Requested cut start is unavailable.")
+        if end_seconds is None:
+            raise ValueError("Requested cut end is unavailable.")
+    else:
+        start_seconds = segment_seconds(segment, "safe_start_seconds", "safe_start", "safeStart")
+        end_seconds = segment_seconds(segment, "safe_end_seconds", "safe_end", "safeEnd")
+        if start_seconds is None:
+            start_seconds = segment_seconds(segment, "start_seconds")
+        if end_seconds is None:
+            end_seconds = segment_seconds(segment, "end_seconds")
+        if start_seconds is None:
+            raise ValueError("Safe cut start is unavailable. Recompute keyframe alignment before exporting.")
+        if end_seconds is None:
+            raise ValueError("Safe cut end is unavailable. Recompute keyframe alignment before exporting.")
 
     return {
         "index": index,

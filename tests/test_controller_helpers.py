@@ -119,6 +119,23 @@ class SegmentMapperTests(unittest.TestCase):
         self.assertEqual(payload["start_seconds"], 0)
         self.assertEqual(payload["end_seconds"], 4)
 
+    def test_segment_can_export_requested_timing_mode(self):
+        payload = segment_to_payload(
+            1,
+            {
+                "start": "00:00:01",
+                "end": "00:00:03",
+                "requestedStartSeconds": 1.0,
+                "requestedEndSeconds": 3.0,
+                "safeStart": "00:00:00",
+                "safeEnd": "00:00:04",
+                "timingMode": "requested",
+            },
+        )
+
+        self.assertEqual(payload["start_seconds"], 1.0)
+        self.assertEqual(payload["end_seconds"], 3.0)
+
     def test_segment_with_numeric_seconds(self):
         payload = segment_to_payload(
             2,

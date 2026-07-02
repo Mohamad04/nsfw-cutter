@@ -703,33 +703,13 @@ Rectangle {
                 }
             }
 
-            Rectangle {
+            SubtitleOverlay {
                 anchors.horizontalCenter: parent.horizontalCenter
                 anchors.bottom: parent.bottom
                 anchors.bottomMargin: 28
-                width: Math.min(parent.width * 0.82, subtitleText.implicitWidth + 28)
-                height: subtitleText.implicitHeight + 14
-                radius: 10
-                color: "#000000"
-                opacity: appController.previewSubtitleText.length > 0 ? 0.78 : 0
-                visible: opacity > 0
-                z: 3
 
-                Text {
-                    id: subtitleText
-
-                    anchors.centerIn: parent
-                    width: Math.min(root.width * 0.78, implicitWidth)
-                    text: appController.previewSubtitleText
-                    color: "#FFFFFF"
-                    font.pixelSize: 22
-                    font.weight: Font.DemiBold
-                    horizontalAlignment: Text.AlignHCenter
-                    verticalAlignment: Text.AlignVCenter
-                    wrapMode: Text.Wrap
-                    style: Text.Outline
-                    styleColor: "#000000"
-                }
+                subtitleText: appController.previewSubtitleText
+                lightMode: root.lightMode
             }
         }
 

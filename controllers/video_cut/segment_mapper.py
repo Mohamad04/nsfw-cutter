@@ -24,10 +24,6 @@ def segment_to_payload(index: int, segment: dict) -> dict:
         start_seconds = segment_seconds(segment, "safe_start_seconds", "safe_start", "safeStart")
         end_seconds = segment_seconds(segment, "safe_end_seconds", "safe_end", "safeEnd")
         if start_seconds is None:
-            start_seconds = segment_seconds(segment, "start_seconds")
-        if end_seconds is None:
-            end_seconds = segment_seconds(segment, "end_seconds")
-        if start_seconds is None:
             raise ValueError("Safe cut start is unavailable. Recompute keyframe alignment before exporting.")
         if end_seconds is None:
             raise ValueError("Safe cut end is unavailable. Recompute keyframe alignment before exporting.")

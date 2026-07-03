@@ -17,7 +17,7 @@ ColumnLayout {
     property var cutPreview: ({ "visible": false })
     property var keyframeInfo: ({
         "valid": false,
-        "error": "Mark Start and End to preview keyframe-safe removal.",
+        "error": "Mark Start and End to preview Smart Cutting boundaries.",
         "requested_start": 0,
         "requested_end": 0,
         "safe_start": null,
@@ -108,7 +108,7 @@ ColumnLayout {
     function resetKeyframeInfo(message) {
         root.keyframeInfo = {
             "valid": false,
-            "error": message || "Mark Start and End to preview keyframe-safe removal.",
+            "error": message || "Mark Start and End to preview Smart Cutting boundaries.",
             "requested_start": 0,
             "requested_end": 0,
             "safe_start": null,

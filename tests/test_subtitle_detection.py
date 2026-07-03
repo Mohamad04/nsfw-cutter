@@ -294,6 +294,72 @@ class SubtitleDetectionTests(unittest.TestCase):
         self.assertEqual(len(candidates), 2)
         self.assertEqual([candidate["source"] for candidate in candidates], ["embedded", "external"])
 
+    def test_external_candidates_survive_embedded_probe_failure(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            folder = Path(temp_dir)
+            video = folder / "movie.mkv"
+            subtitle = folder / "movie.eng.srt"
+            video.touch()
+            subtitle.touch()
+
+            def failing_embedded_inspection(_path):
+                raise RuntimeError("ffprobe failed")
+
+            service = SubtitleService(
+                embedded_inspection=failing_embedded_inspection,
+            )
+
+            candidates = service.discover_subtitles(video)
+
+        self.assertEqual(len(candidates), 1)
+        self.assertEqual(candidates[0]["source"], "external")
+        self.assertEqual(candidates[0]["filename"], "movie.eng.srt")
+
+    def test_embedded_candidates_survive_external_scan_failure(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            video = Path(temp_dir) / "movie.mkv"
+            video.touch()
+
+            def failing_external_discovery(_path):
+                raise OSError("folder read failed")
+
+            service = SubtitleService(
+                external_discovery=failing_external_discovery,
+                embedded_inspection=lambda _path: [
+                    {
+                        "source": "embedded",
+                        "kind": "text",
+                        "is_text_readable": True,
+                        "stream_index": 2,
+                    }
+                ],
+            )
+
+            candidates = service.discover_subtitles(video)
+
+        self.assertEqual(len(candidates), 1)
+        self.assertEqual(candidates[0]["source"], "embedded")
+        self.assertEqual(candidates[0]["stream_index"], 2)
+
+    def test_discovery_raises_when_all_sources_fail_without_candidates(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            video = Path(temp_dir) / "movie.mkv"
+            video.touch()
+
+            def failing_external_discovery(_path):
+                raise OSError("folder read failed")
+
+            def failing_embedded_inspection(_path):
+                raise RuntimeError("ffprobe failed")
+
+            service = SubtitleService(
+                external_discovery=failing_external_discovery,
+                embedded_inspection=failing_embedded_inspection,
+            )
+
+            with self.assertRaisesRegex(RuntimeError, "Embedded subtitle discovery failed"):
+                service.discover_subtitles(video)
+
 
 if __name__ == "__main__":
     unittest.main()

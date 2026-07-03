@@ -51,7 +51,7 @@ Rectangle {
         anchors.centerIn: parent
         width: parent.width - 28
         visible: root.hasCuts && !root.hasSelection
-        text: "Select a cut to view safe-adjustment details."
+        text: "Select a cut to view requested timing and keyframe details."
         color: root.mutedTextColor
         font.pixelSize: 12
         horizontalAlignment: Text.AlignHCenter
@@ -136,7 +136,7 @@ Rectangle {
 
             Text { text: ""; Layout.preferredWidth: 54 }
             Text { text: "Requested"; color: root.requestedColor; font.pixelSize: 10; font.weight: Font.DemiBold; Layout.fillWidth: true; elide: Text.ElideRight }
-            Text { text: "Safe Adjusted"; color: root.safeColor; font.pixelSize: 10; font.weight: Font.DemiBold; Layout.fillWidth: true; elide: Text.ElideRight }
+            Text { text: "Keyframe Span"; color: root.safeColor; font.pixelSize: 10; font.weight: Font.DemiBold; Layout.fillWidth: true; elide: Text.ElideRight }
             Text { text: "Delta"; color: root.mutedTextColor; font.pixelSize: 10; font.weight: Font.DemiBold; Layout.preferredWidth: 54; horizontalAlignment: Text.AlignRight }
 
             Text { text: "Start"; color: root.mutedTextColor; font.pixelSize: 11 }
@@ -195,7 +195,7 @@ Rectangle {
             Layout.fillWidth: true
             text: root.cutTimingMode === "requested"
                 ? "Fast mode uses the exact requested range for preview and export."
-                : "Smart mode uses safe-adjusted keyframe ranges for stream-copy export."
+                : "Smart mode removes the requested range exactly and only re-encodes boundary video chunks."
             color: root.mutedTextColor
             font.pixelSize: 11
             wrapMode: Text.WordWrap

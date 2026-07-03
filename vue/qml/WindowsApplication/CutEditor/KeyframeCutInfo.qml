@@ -41,7 +41,7 @@ Rectangle {
 
             Text {
                 Layout.fillWidth: true
-                text: "Keyframe-aligned removal"
+                text: "Smart boundary keyframes"
                 color: root.lightMode ? "#92400E" : root.textMain
                 font.pixelSize: 12
                 font.bold: true
@@ -57,7 +57,7 @@ Rectangle {
 
                 Text {
                     anchors.centerIn: parent
-                    text: "stream copy"
+                    text: "boundary"
                     color: root.lightMode ? "#B45309" : "#FDBA74"
                     font.pixelSize: 10
                     font.bold: true
@@ -86,7 +86,7 @@ Rectangle {
             Rectangle { Layout.preferredWidth: 8; Layout.preferredHeight: 8; radius: 4; color: "#F97316" }
             Text {
                 Layout.fillWidth: true
-                text: "Safe cut:  " + root.safeStart + " -> " + root.safeEnd
+                text: "Boundary span:  " + root.safeStart + " -> " + root.safeEnd
                 color: root.lightMode ? "#B45309" : "#FED7AA"
                 font.pixelSize: 11
                 font.bold: true
@@ -96,7 +96,7 @@ Rectangle {
 
         Text {
             Layout.fillWidth: true
-            text: "Extra removed: -" + root.extraBefore + " before, +" + root.extraAfter + " after"
+            text: "Boundary video: -" + root.extraBefore + " before, +" + root.extraAfter + " after"
             color: root.lightMode ? "#A16207" : "#FDE68A"
             font.pixelSize: 11
             elide: Text.ElideRight
@@ -120,7 +120,7 @@ Rectangle {
 
         Text {
             Layout.fillWidth: true
-            text: root.valid ? "No re-encoding mode cuts on or near keyframes." : root.errorText
+            text: root.valid ? "Smart export removes the requested range exactly." : root.errorText
             color: root.lightMode ? (root.valid ? "#A16207" : "#DC2626") : (root.valid ? "#FDE68A" : "#FCA5A5")
             font.pixelSize: 10
             elide: Text.ElideRight

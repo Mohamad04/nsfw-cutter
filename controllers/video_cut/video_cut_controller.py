@@ -5,11 +5,18 @@ from controllers.video_cut.cut_export_runner import CutExportCallbacks, CutExpor
 from controllers.video_cut.keyframe_alignment import KeyframeAlignmentController
 from controllers.video_cut.output_preferences import OutputPreferences
 from controllers.video_cut.segment_mapper import segment_to_payload
+from controllers.video_cut.smart_cutting_export_runner import SmartCuttingExportRunner
 from controllers.video_cut.video_cut_state import VideoCutState
 from core.job_registry import JobRegistry
 from services.editing.cut_plan_service import CutPlanService
 from services.editing.keyframe_service import KeyframeService
+from services.export.export_router_service import (
+    FAST_CUTTING_MODE,
+    SMART_CUTTING_MODE,
+    ExportRouterService,
+)
 from services.settings_service import SettingsService
+from workers.smart_cutting_worker import SmartCuttingWorker
 from workers.video_cut_worker import VideoCutWorker
 
 
@@ -31,6 +38,7 @@ class VideoCutController(QObject):
         thread_pool=None,
         job_registry=None,
         worker_factory=None,
+        smart_worker_factory=None,
         settings_service: SettingsService | None = None,
         keyframe_service: KeyframeService | None = None,
         cut_plan_service: CutPlanService | None = None,
@@ -39,6 +47,7 @@ class VideoCutController(QObject):
         self._thread_pool = thread_pool or QThreadPool.globalInstance()
         self._job_registry = job_registry or JobRegistry()
         self._worker_factory = worker_factory or VideoCutWorker
+        self._smart_worker_factory = smart_worker_factory or SmartCuttingWorker
         self._settings_service = settings_service or SettingsService()
         self._keyframe_service = keyframe_service or KeyframeService()
         self._cut_plan_service = cut_plan_service or CutPlanService()
@@ -53,6 +62,17 @@ class VideoCutController(QObject):
             self._job_registry,
             self._worker_factory,
             self._output_preferences,
+        )
+        self._smart_cutting_export_runner = SmartCuttingExportRunner(
+            self._thread_pool,
+            self._job_registry,
+            self._smart_worker_factory,
+            self._output_preferences,
+        )
+        self._export_router = ExportRouterService(
+            fast_export_start=self._cut_export_runner.start,
+            smart_export_start=self._smart_cutting_export_runner.start,
+            fast_segment_mapper=segment_to_payload,
         )
 
     @Property(bool, notify=cutBusyChanged)
@@ -96,17 +116,23 @@ class VideoCutController(QObject):
 
     @Slot(str, "QVariantList", str, str)
     def exportSegments(self, input_path: str, segments, output_dir: str, export_mode: str):
+        callbacks = self._callbacks()
         try:
-            parsed_segments = []
-            for index, segment in enumerate(segments or [], start=1):
-                parsed_segments.append(segment_to_payload(index, segment))
+            raw_segments = list(segments or [])
+            cutting_mode = self._cutting_mode_for_segments(raw_segments)
+            self._export_router.start(
+                cutting_mode,
+                input_path,
+                raw_segments,
+                output_dir,
+                export_mode,
+                callbacks,
+            )
         except ValueError as exc:
             error_message = str(exc)
             self._set_cut_error(error_message)
             self._set_cut_status("Video export failed")
             self.cutFailed.emit(error_message)
-            return
-        self._start_export(input_path, parsed_segments, output_dir, export_mode)
 
     @Slot(str, str, str, float, result="QVariantMap")
     def keyframeCutInfo(self, input_path: str, requested_start: str, requested_end: str, duration_seconds: float = 0.0):
@@ -133,18 +159,45 @@ class VideoCutController(QObject):
             segments,
             output_dir,
             export_mode,
-            CutExportCallbacks(
-                on_busy=self._set_cut_busy,
-                on_status=self._set_cut_status,
-                on_progress_value=self._set_cut_progress,
-                on_error=self._set_cut_error,
-                on_details=self._set_cut_details,
-                on_warning=self._set_cut_warning,
-                on_started=self.cutStarted.emit,
-                on_finished=self.cutFinished.emit,
-                on_failed=self.cutFailed.emit,
-                on_progress=self.cutProgress.emit,
-            ),
+            self._callbacks(),
+        )
+
+    def _callbacks(self) -> CutExportCallbacks:
+        return CutExportCallbacks(
+            on_busy=self._set_cut_busy,
+            on_status=self._set_cut_status,
+            on_progress_value=self._set_cut_progress,
+            on_error=self._set_cut_error,
+            on_details=self._set_cut_details,
+            on_warning=self._set_cut_warning,
+            on_started=self.cutStarted.emit,
+            on_finished=self.cutFinished.emit,
+            on_failed=self.cutFailed.emit,
+            on_progress=self.cutProgress.emit,
+        )
+
+    def _cutting_mode_for_segments(self, segments) -> str:
+        for segment in segments or []:
+            if not isinstance(segment, dict):
+                continue
+            timing_mode = str(segment.get("timing_mode") or segment.get("timingMode") or "safe").strip().lower()
+            if timing_mode == "requested":
+                return FAST_CUTTING_MODE
+        return SMART_CUTTING_MODE
+
+    def _start_fast_export(
+        self,
+        input_path: str,
+        segments: list[dict],
+        output_dir: str,
+        export_mode: str,
+    ):
+        self._cut_export_runner.start(
+            input_path,
+            segments,
+            output_dir,
+            export_mode,
+            self._callbacks(),
         )
 
     @Slot(str, int, str)

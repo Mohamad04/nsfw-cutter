@@ -17,8 +17,8 @@ def run_video_cut_job(request_data: dict, progress_callback=None, service_factor
         db.commit()
         job_id = job.id
 
-    _emit(progress_callback, 0, "Fast cut job created")
-    logger.info("Fast cut job started: id=%s input=%s", job_id, request.input_path)
+    _emit(progress_callback, 0, "Video cut job created")
+    logger.info("Video cut job started: id=%s input=%s", job_id, request.input_path)
 
     try:
         with SessionLocal() as db:
@@ -31,7 +31,7 @@ def run_video_cut_job(request_data: dict, progress_callback=None, service_factor
             mark_completed(db, job_id, result)
             db.commit()
 
-        logger.info("Fast cut job completed: id=%s outputs=%s", job_id, result.output_paths)
+        logger.info("Video cut job completed: id=%s outputs=%s", job_id, result.output_paths)
         return {
             "job_id": job_id,
             "result": result.model_dump(mode="json"),
@@ -40,7 +40,7 @@ def run_video_cut_job(request_data: dict, progress_callback=None, service_factor
         with SessionLocal() as db:
             mark_failed(db, job_id, str(exc))
             db.commit()
-        logger.exception("Fast cut job failed: id=%s", job_id)
+        logger.exception("Video cut job failed: id=%s", job_id)
         raise
 
 

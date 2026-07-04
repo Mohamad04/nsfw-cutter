@@ -38,7 +38,7 @@ Rectangle {
 
         AppButton {
             text: ""
-            accessibilityLabel: "Set start point of selected cut"
+            accessibilityLabel: qsTr("Set start point of selected cut")
             iconSource: Qt.resolvedUrl("../../../../assets/icons/set_start.png")
             imageIconWidth: 60
             imageIconHeight: 34
@@ -52,13 +52,13 @@ Rectangle {
             Layout.preferredWidth: 68
             Layout.preferredHeight: 44
             ToolTip.visible: hovered
-            ToolTip.text: "Set start"
+            ToolTip.text: qsTr("Set start")
             onClicked: root.markStartRequested()
         }
 
         AppButton {
             text: ""
-            accessibilityLabel: "Set end point of selected cut"
+            accessibilityLabel: qsTr("Set end point of selected cut")
             iconSource: Qt.resolvedUrl("../../../../assets/icons/set_end.png")
             imageIconWidth: 60
             imageIconHeight: 34
@@ -73,13 +73,13 @@ Rectangle {
             Layout.preferredWidth: 68
             Layout.preferredHeight: 44
             ToolTip.visible: hovered
-            ToolTip.text: "Set end"
+            ToolTip.text: qsTr("Set end")
             onClicked: root.markEndRequested()
         }
 
         AppButton {
             text: ""
-            accessibilityLabel: "Cut video segment"
+            accessibilityLabel: qsTr("Cut video segment")
             iconSource: Qt.resolvedUrl("../../../../assets/icons/cut.png")
             imageIconSize: 32
             variant: "primary"
@@ -89,12 +89,12 @@ Rectangle {
             Layout.preferredWidth: 44
             Layout.preferredHeight: 44
             ToolTip.visible: hovered
-            ToolTip.text: root.canAddCut ? (root.hasSafeKeyframeInfo ? "Cut" : root.safeSelectionText) : "Set start and end"
+            ToolTip.text: root.canAddCut ? (root.hasSafeKeyframeInfo ? qsTr("Cut") : root.safeSelectionText) : qsTr("Set start and end")
             onClicked: root.addCutRequested()
         }
 
         AppButton {
-            text: "Preview Cut"
+            text: qsTr("Preview Cut")
             iconName: "eye"
             variant: "ghost"
             size: "sm"

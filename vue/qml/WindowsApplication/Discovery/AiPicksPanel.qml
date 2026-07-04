@@ -52,7 +52,7 @@ Rectangle {
         visible: root.pickCount === 0
 
         Text {
-            text: "AI PICKS"
+            text: qsTr("AI PICKS")
             color: root.accent
             font.pixelSize: 14
             font.bold: true
@@ -62,7 +62,7 @@ Rectangle {
 
         Text {
             Layout.fillWidth: true
-            text: "No suggestions loaded."
+            text: qsTr("No suggestions loaded.")
             color: root.textMuted
             font.pixelSize: 12
             elide: Text.ElideRight
@@ -82,7 +82,7 @@ Rectangle {
 
             Text {
                 Layout.fillWidth: true
-                text: "AI PICKS"
+                text: qsTr("AI PICKS")
                 color: root.accent
                 font.pixelSize: 14
                 font.bold: true
@@ -92,7 +92,7 @@ Rectangle {
 
             Text {
                 Layout.fillWidth: true
-                text: root.pickCount + " suggestions"
+                text: qsTr("%1 suggestions").arg(root.pickCount)
                 color: root.textMuted
                 font.pixelSize: 12
                 elide: Text.ElideRight

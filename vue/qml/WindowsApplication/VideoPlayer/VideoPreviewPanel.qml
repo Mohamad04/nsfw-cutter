@@ -218,7 +218,7 @@ Panel {
             spacing: 8
 
             Text {
-                text: "VIDEO PREVIEW"
+                text: qsTr("VIDEO PREVIEW")
                 color: root.accent
                 font.pixelSize: 14
                 font.bold: true
@@ -226,7 +226,7 @@ Panel {
             }
 
             Text {
-                text: player.duration > 0 ? "Preview ready" : "Waiting for media"
+                text: player.duration > 0 ? qsTr("Preview ready") : qsTr("Waiting for media")
                 color: root.textMuted
                 font.pixelSize: 12
             }
@@ -234,7 +234,7 @@ Panel {
             Item { Layout.fillWidth: true }
 
             Text {
-                text: "Cuts: " + root.cutCount
+                text: qsTr("Cuts: %1").arg(root.cutCount)
                 color: root.textMuted
                 font.pixelSize: 12
             }

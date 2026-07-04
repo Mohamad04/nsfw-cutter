@@ -21,7 +21,7 @@ Button {
     scale: root.down ? 0.975 : 1.0
     opacity: root.enabled ? 1.0 : (root.lightMode ? 0.64 : 0.56)
 
-    Accessible.name: "Seek forward 5 seconds"
+    Accessible.name: qsTr("Seek forward 5 seconds")
 
     Behavior on scale {
         NumberAnimation {

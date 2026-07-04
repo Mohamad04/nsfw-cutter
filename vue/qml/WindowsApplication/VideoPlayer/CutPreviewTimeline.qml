@@ -114,7 +114,7 @@ Rectangle {
             && trackY <= requestedRange.y + requestedRange.height + 3
 
         if (overRequested)
-            return "Requested: " + root.formatTime(root.requestedStartSeconds) + " -> " + root.formatTime(root.requestedEndSeconds)
+            return qsTr("Requested: %1 -> %2").arg(root.formatTime(root.requestedStartSeconds)).arg(root.formatTime(root.requestedEndSeconds))
         return root.formatTime(seconds)
     }
 
@@ -275,7 +275,7 @@ Rectangle {
                     anchors.bottom: timelineTrack.top
                     anchors.bottomMargin: 4
                     visible: root.showDecorativeLabels && root.hasRequestedRange
-                    text: "REQUESTED CUT"
+                    text: qsTr("REQUESTED CUT")
                     color: root.requestedColor
                     font.pixelSize: 11
                     font.weight: Font.DemiBold
@@ -386,7 +386,7 @@ Rectangle {
                     }
 
                     Text {
-                        text: "Start Requested"
+                        text: qsTr("Start Requested")
                         color: root.mutedText
                         font.pixelSize: 11
                         anchors.verticalCenter: parent.verticalCenter
@@ -408,7 +408,7 @@ Rectangle {
                     }
 
                     Text {
-                        text: "End Requested"
+                        text: qsTr("End Requested")
                         color: root.mutedText
                         font.pixelSize: 11
                         anchors.verticalCenter: parent.verticalCenter

@@ -27,7 +27,7 @@ ColumnLayout {
 
         Text {
             Layout.fillWidth: true
-            text: "Cut List"
+            text: qsTr("Cut List")
             color: root.textColor
             font.pixelSize: 18
             font.weight: Font.DemiBold
@@ -37,8 +37,10 @@ ColumnLayout {
 
     Text {
         Layout.fillWidth: true
-        text: root.cutsCount + (root.cutsCount === 1 ? " cut" : " cuts")
-              + " - Total removed: " + root.totalRemovedText
+        text: qsTr("%1 %2 - Total removed: %3")
+              .arg(root.cutsCount)
+              .arg(root.cutsCount === 1 ? qsTr("cut") : qsTr("cuts"))
+              .arg(root.totalRemovedText)
         color: root.mutedTextColor
         font.pixelSize: 12
         elide: Text.ElideRight

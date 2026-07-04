@@ -39,7 +39,7 @@ Rectangle {
             spacing: 8
 
             Text {
-                text: "Output Folder"
+                text: qsTr("Output Folder")
                 color: root.textMain
                 font.pixelSize: 12
                 font.bold: true
@@ -59,7 +59,7 @@ Rectangle {
                     anchors.fill: parent
                     anchors.leftMargin: 12
                     anchors.rightMargin: 12
-                    text: root.outputDir.length > 0 ? root.outputDir : "Choose an output folder"
+                    text: root.outputDir.length > 0 ? root.outputDir : qsTr("Choose an output folder")
                     color: root.outputDir.length > 0 ? root.textMain : root.textMuted
                     font.pixelSize: 11
                     elide: Text.ElideMiddle
@@ -68,7 +68,7 @@ Rectangle {
             }
 
             AppButton {
-                text: "Change"
+                text: qsTr("Change")
                 variant: "secondary"
                 size: "sm"
                 lightMode: root.lightMode
@@ -79,7 +79,7 @@ Rectangle {
             }
 
             AppButton {
-                text: "Preview Cuts"
+                text: qsTr("Preview Cuts")
                 variant: "control"
                 size: "sm"
                 lightMode: root.lightMode
@@ -90,7 +90,7 @@ Rectangle {
             }
 
             AppButton {
-                text: "Export Clean Video"
+                text: qsTr("Export Clean Video")
                 variant: "success"
                 size: "sm"
                 lightMode: root.lightMode
@@ -110,14 +110,14 @@ Rectangle {
                 Layout.fillWidth: true
                 text: videoCutController.cutBusy
                       ? videoCutController.cutStatus
-                      : "Smart cuts exact intervals with boundary re-encoding. Fast uses stream copy."
+                      : qsTr("Smart cuts exact intervals with boundary re-encoding. Fast uses stream copy.")
                 color: videoCutController.cutError.length > 0 ? (root.lightMode ? theme.lightDanger : theme.darkDanger) : root.textMuted
                 font.pixelSize: 11
                 elide: Text.ElideRight
             }
 
             Text {
-                text: videoCutController.cutBusy ? root.cutProgressPercent + "% / 100% - " + root.cutRemainingPercent + "% left" : ""
+                text: videoCutController.cutBusy ? qsTr("%1% / 100% - %2% left").arg(root.cutProgressPercent).arg(root.cutRemainingPercent) : ""
                 color: root.accent
                 font.pixelSize: 11
                 font.bold: true

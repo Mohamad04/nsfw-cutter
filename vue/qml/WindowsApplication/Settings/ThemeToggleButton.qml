@@ -12,7 +12,7 @@ Button {
     property url moonIconSource: Qt.resolvedUrl("../../../../assets/icons/theme-toggle-moon-icon-app.png")
     readonly property int moonIconWidth: Math.max(44, Math.min(52, Math.round(root.width - 12)))
     readonly property int moonIconHeight: Math.max(34, Math.min(40, Math.round(root.height - 6)))
-    readonly property string actionLabel: root.lightMode ? "Switch to Dark Mode" : "Switch to Light Mode"
+    readonly property string actionLabel: root.lightMode ? qsTr("Switch to Dark Mode") : qsTr("Switch to Light Mode")
 
     implicitWidth: 64
     implicitHeight: 44

@@ -48,7 +48,7 @@ Rectangle {
                     spacing: 8
 
                     Text {
-                        text: "FOUND VIDEOS IN FOLDER"
+                        text: qsTr("FOUND VIDEOS IN FOLDER")
                         color: root.accent
                         font.pixelSize: 15
                         font.bold: true
@@ -68,7 +68,7 @@ Rectangle {
                 Text {
                     Layout.fillWidth: true
                     Layout.minimumWidth: 0
-                    text: appController.currentFolder.length > 0 ? appController.currentFolder : "Choose a video folder"
+                    text: appController.currentFolder.length > 0 ? appController.currentFolder : qsTr("Choose a video folder")
                     color: root.textMuted
                     font.pixelSize: 10
                     elide: Text.ElideMiddle
@@ -88,7 +88,7 @@ Rectangle {
             Text {
                 anchors.centerIn: parent
                 visible: appController.availableVideos.length === 0
-                text: appController.currentFolder.length > 0 ? "No videos found" : "No folder selected"
+                text: appController.currentFolder.length > 0 ? qsTr("No videos found") : qsTr("No folder selected")
                 color: root.textMuted
                 font.pixelSize: 12
             }
@@ -161,7 +161,7 @@ Rectangle {
                                 }
 
                                 Text {
-                                    text: videoDelegate.modelData.subtitle_found ? "Subtitle: " + videoDelegate.modelData.subtitle_name : "No subtitle"
+                                    text: videoDelegate.modelData.subtitle_found ? qsTr("Subtitle: %1").arg(videoDelegate.modelData.subtitle_name) : qsTr("No subtitle")
                                     color: videoDelegate.modelData.subtitle_found ? (root.lightMode ? "#16A34A" : "#86EFAC") : root.textMuted
                                     font.pixelSize: 10
                                     elide: Text.ElideRight
@@ -171,7 +171,7 @@ Rectangle {
                         }
 
                         AppButton {
-                            text: "Load"
+                            text: qsTr("Load")
                             variant: "primary"
                             size: "sm"
                             lightMode: root.lightMode

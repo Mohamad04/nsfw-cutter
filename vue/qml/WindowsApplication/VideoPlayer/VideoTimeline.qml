@@ -230,9 +230,10 @@ RowLayout {
                         onClicked: root.cutSelected(cutMarker.index)
 
                         ToolTip.visible: containsMouse
-                        ToolTip.text: "Drag to move cut\nRequested: " + cutMarker.start + " -> " + cutMarker.end
-                                      + "\nSafe cut: " + cutMarker.safeStart + " -> " + cutMarker.safeEnd
-                                      + "\nReason: " + cutMarker.reason + "\nTags: " + cutMarker.tags
+                        ToolTip.text: qsTr("Drag to move cut")
+                                      + "\n" + qsTr("Requested: %1 -> %2").arg(cutMarker.start).arg(cutMarker.end)
+                                      + "\n" + qsTr("Safe cut: %1 -> %2").arg(cutMarker.safeStart).arg(cutMarker.safeEnd)
+                                      + "\n" + qsTr("Reason: %1").arg(cutMarker.reason) + "\n" + qsTr("Tags: %1").arg(cutMarker.tags)
                     }
 
                     Rectangle {
@@ -263,7 +264,7 @@ RowLayout {
                                 root.cutRangeChanged(cutMarker.index, Math.max(0, newStart), cutMarker.markerEndMs)
                             }
                             ToolTip.visible: containsMouse
-                            ToolTip.text: "Drag start"
+                            ToolTip.text: qsTr("Drag start")
                         }
                     }
 
@@ -295,7 +296,7 @@ RowLayout {
                                 root.cutRangeChanged(cutMarker.index, cutMarker.markerStartMs, Math.min(root.durationMs, newEnd))
                             }
                             ToolTip.visible: containsMouse
-                            ToolTip.text: "Drag end"
+                            ToolTip.text: qsTr("Drag end")
                         }
                     }
 
@@ -309,9 +310,9 @@ RowLayout {
                         onClicked: root.cutSelected(parent.index)
 
                         ToolTip.visible: containsMouse
-                        ToolTip.text: "Requested: " + parent.start + " -> " + parent.end
-                                      + "\nSafe cut: " + parent.safeStart + " -> " + parent.safeEnd
-                                      + "\nReason: " + parent.reason + "\nTags: " + parent.tags
+                        ToolTip.text: qsTr("Requested: %1 -> %2").arg(parent.start).arg(parent.end)
+                                      + "\n" + qsTr("Safe cut: %1 -> %2").arg(parent.safeStart).arg(parent.safeEnd)
+                                      + "\n" + qsTr("Reason: %1").arg(parent.reason) + "\n" + qsTr("Tags: %1").arg(parent.tags)
                     }
                 }
             }
@@ -357,8 +358,8 @@ RowLayout {
                     hoverEnabled: true
                     ToolTip.visible: containsMouse
                     ToolTip.text: root.cutPreview.valid === true
-                        ? "Draft requested cut\nOrange: requested range\nGreen: safe adjusted removal"
-                        : "Invalid draft cut\nEnd time must be after start time"
+                        ? qsTr("Draft requested cut\nOrange: requested range\nGreen: safe adjusted removal")
+                        : qsTr("Invalid draft cut\nEnd time must be after start time")
                 }
             }
         }

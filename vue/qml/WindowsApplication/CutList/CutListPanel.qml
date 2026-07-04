@@ -116,7 +116,7 @@ Rectangle {
 
             Text {
                 Layout.minimumWidth: 0
-                text: "CUT TIMELINE"
+                text: qsTr("CUT TIMELINE")
                 color: root.accent
                 font.pixelSize: 15
                 font.bold: true
@@ -125,7 +125,7 @@ Rectangle {
             }
 
             Text {
-                text: root.cutsModel.count + " cuts - Total removed: " + root.formatTime(root.totalRemovedMs())
+                text: qsTr("%1 cuts - Total removed: %2").arg(root.cutsModel.count).arg(root.formatTime(root.totalRemovedMs()))
                 color: root.textMuted
                 font.pixelSize: 12
                 elide: Text.ElideRight
@@ -135,7 +135,7 @@ Rectangle {
             Item { Layout.fillWidth: true }
 
             AppButton {
-                text: "Import"
+                text: qsTr("Import")
                 variant: "primary"
                 size: "sm"
                 lightMode: root.lightMode
@@ -144,7 +144,7 @@ Rectangle {
             }
 
             AppButton {
-                text: "JSON"
+                text: qsTr("JSON")
                 variant: "secondary"
                 size: "sm"
                 lightMode: root.lightMode
@@ -154,7 +154,7 @@ Rectangle {
             }
 
             AppButton {
-                text: "Clear"
+                text: qsTr("Clear")
                 variant: "ghost"
                 size: "sm"
                 lightMode: root.lightMode
@@ -180,7 +180,7 @@ Rectangle {
                 anchors.top: parent.top
                 anchors.leftMargin: 10
                 anchors.topMargin: root.cutsModel.count === 0 ? 6 : 8
-                text: root.durationMs > 0 ? "Orange requested - green safe adjusted removal" : "Timeline waits for loaded video duration"
+                text: root.durationMs > 0 ? qsTr("Orange requested - green safe adjusted removal") : qsTr("Timeline waits for loaded video duration")
                 color: root.textMuted
                 font.pixelSize: 11
             }
@@ -190,7 +190,7 @@ Rectangle {
                 anchors.top: parent.top
                 anchors.rightMargin: 10
                 anchors.topMargin: root.cutsModel.count === 0 ? 6 : 8
-                text: root.durationMs > 0 ? "Full video: 00:00:00 -> " + root.formatTime(root.durationMs) : ""
+                text: root.durationMs > 0 ? qsTr("Full video: 00:00:00 -> %1").arg(root.formatTime(root.durationMs)) : ""
                 color: root.textMuted
                 font.pixelSize: 11
             }
@@ -255,9 +255,9 @@ Rectangle {
                             hoverEnabled: true
                             onClicked: root.cutSelected(parent.index)
                             ToolTip.visible: containsMouse
-                            ToolTip.text: "Requested: " + parent.start + " -> " + parent.end
-                                          + "\nSafe cut: " + parent.safeStart + " -> " + parent.safeEnd
-                                          + "\nReason: " + parent.reason + "\nTags: " + parent.tags
+                            ToolTip.text: qsTr("Requested: %1 -> %2").arg(parent.start).arg(parent.end)
+                                          + "\n" + qsTr("Safe cut: %1 -> %2").arg(parent.safeStart).arg(parent.safeEnd)
+                                          + "\n" + qsTr("Reason: %1").arg(parent.reason) + "\n" + qsTr("Tags: %1").arg(parent.tags)
                         }
                     }
                 }
@@ -287,14 +287,14 @@ Rectangle {
                 anchors.rightMargin: 8
                 spacing: root.tableSpacing
                 Text { text: "#"; color: root.textMuted; font.pixelSize: 11; Layout.preferredWidth: root.indexColumnWidth; Layout.minimumWidth: 0 }
-                Text { text: "Status"; color: root.textMuted; font.pixelSize: 11; Layout.preferredWidth: root.statusColumnWidth; Layout.minimumWidth: 0; elide: Text.ElideRight }
-                Text { text: "Requested Start"; color: root.textMuted; font.pixelSize: 11; Layout.preferredWidth: root.timeColumnWidth; Layout.minimumWidth: 0; elide: Text.ElideRight }
-                Text { text: "Requested End"; color: root.textMuted; font.pixelSize: 11; Layout.preferredWidth: root.timeColumnWidth; Layout.minimumWidth: 0; elide: Text.ElideRight }
-                Text { text: "Safe Start"; color: root.textMuted; font.pixelSize: 11; Layout.preferredWidth: root.timeColumnWidth; Layout.minimumWidth: 0; elide: Text.ElideRight }
-                Text { text: "Safe End"; color: root.textMuted; font.pixelSize: 11; Layout.preferredWidth: root.timeColumnWidth; Layout.minimumWidth: 0; elide: Text.ElideRight }
-                Text { text: "Removed Duration"; color: root.textMuted; font.pixelSize: 11; Layout.preferredWidth: root.durationColumnWidth; Layout.minimumWidth: 0; elide: Text.ElideRight }
+                Text { text: qsTr("Status"); color: root.textMuted; font.pixelSize: 11; Layout.preferredWidth: root.statusColumnWidth; Layout.minimumWidth: 0; elide: Text.ElideRight }
+                Text { text: qsTr("Requested Start"); color: root.textMuted; font.pixelSize: 11; Layout.preferredWidth: root.timeColumnWidth; Layout.minimumWidth: 0; elide: Text.ElideRight }
+                Text { text: qsTr("Requested End"); color: root.textMuted; font.pixelSize: 11; Layout.preferredWidth: root.timeColumnWidth; Layout.minimumWidth: 0; elide: Text.ElideRight }
+                Text { text: qsTr("Safe Start"); color: root.textMuted; font.pixelSize: 11; Layout.preferredWidth: root.timeColumnWidth; Layout.minimumWidth: 0; elide: Text.ElideRight }
+                Text { text: qsTr("Safe End"); color: root.textMuted; font.pixelSize: 11; Layout.preferredWidth: root.timeColumnWidth; Layout.minimumWidth: 0; elide: Text.ElideRight }
+                Text { text: qsTr("Removed Duration"); color: root.textMuted; font.pixelSize: 11; Layout.preferredWidth: root.durationColumnWidth; Layout.minimumWidth: 0; elide: Text.ElideRight }
                 Item { Layout.fillWidth: true; Layout.minimumWidth: root.extraColumnWidth }
-                Text { text: "Actions"; color: root.textMuted; font.pixelSize: 11; Layout.preferredWidth: root.actionsColumnWidth; Layout.minimumWidth: 0; elide: Text.ElideRight }
+                Text { text: qsTr("Actions"); color: root.textMuted; font.pixelSize: 11; Layout.preferredWidth: root.actionsColumnWidth; Layout.minimumWidth: 0; elide: Text.ElideRight }
             }
         }
 
@@ -311,7 +311,7 @@ Rectangle {
             Text {
                 anchors.centerIn: parent
                 visible: root.cutsModel.count === 0
-                text: "No cuts added yet. Use Set Start and Set End, then Add Cut."
+                text: qsTr("No cuts added yet. Use Set Start and Set End, then Add Cut.")
                 color: root.textMuted
                 font.pixelSize: 12
             }

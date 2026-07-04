@@ -22,7 +22,7 @@ Button {
     scale: root.down ? 0.975 : 1.0
     opacity: root.enabled ? 1.0 : (root.lightMode ? 0.62 : 0.48)
 
-    Accessible.name: root.playing ? "Pause playback" : "Play playback"
+    Accessible.name: root.playing ? qsTr("Pause playback") : qsTr("Play playback")
 
     Behavior on scale {
         NumberAnimation {

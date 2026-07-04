@@ -23,6 +23,21 @@ Popup {
     property color textMuted: darkMode ? "#94A3B8" : "#475569"
     property string lastVideoPath: ""
     property var recentVideos: []
+    readonly property var themeOptions: [
+        { "code": "dark", "name": qsTr("Dark") },
+        { "code": "light", "name": qsTr("Light") },
+        { "code": "system", "name": qsTr("System") }
+    ]
+    readonly property var exportModeOptions: [
+        { "code": "remove_intervals", "name": qsTr("Remove intervals") },
+        { "code": "export_clips_separate", "name": qsTr("Export clips separately") },
+        { "code": "export_clips_merged", "name": qsTr("Export merged clips") }
+    ]
+    readonly property var providerOptions: [
+        { "code": "local", "name": qsTr("Local") },
+        { "code": "openai", "name": qsTr("OpenAI") },
+        { "code": "custom", "name": qsTr("Custom") }
+    ]
 
     function modelIndex(model, value, roleName) {
         if (!model) return 0
@@ -37,11 +52,11 @@ Popup {
     }
 
     function openWithCurrentSettings() {
-        themeCombo.currentIndex = modelIndex(themeCombo.model, settingsController.getTheme())
+        themeCombo.currentIndex = modelIndex(themeCombo.model, settingsController.getTheme(), "code")
         languageCombo.currentIndex = modelIndex(languageCombo.model, settingsController.getLanguage(), "code")
-        providerCombo.currentIndex = modelIndex(providerCombo.model, settingsController.getAIProvider())
+        providerCombo.currentIndex = modelIndex(providerCombo.model, settingsController.getAIProvider(), "code")
         exportFolderField.text = settingsController.getExportDir()
-        exportModeCombo.currentIndex = modelIndex(exportModeCombo.model, settingsController.getLastExportMode())
+        exportModeCombo.currentIndex = modelIndex(exportModeCombo.model, settingsController.getLastExportMode(), "code")
         promptArea.text = settingsController.getUserPrompt()
         modelNameField.text = settingsController.getAIModelName()
         gpuCheckbox.checked = settingsController.getEnableGpu()
@@ -114,7 +129,13 @@ Popup {
                             Layout.fillWidth: true
                             spacing: 8
                             Text { text: qsTr("Theme"); color: root.textMuted; Layout.preferredWidth: 84 }
-                            ComboBox { id: themeCombo; Layout.fillWidth: true; model: ["dark", "light", "system"] }
+                            ComboBox {
+                                id: themeCombo
+                                Layout.fillWidth: true
+                                model: root.themeOptions
+                                textRole: "name"
+                                valueRole: "code"
+                            }
                         }
 
                         RowLayout {
@@ -169,7 +190,9 @@ Popup {
                             ComboBox {
                                 id: exportModeCombo
                                 Layout.fillWidth: true
-                                model: ["remove_intervals", "export_clips_separate", "export_clips_merged"]
+                                model: root.exportModeOptions
+                                textRole: "name"
+                                valueRole: "code"
                             }
                         }
                     }
@@ -255,7 +278,13 @@ Popup {
                             Layout.fillWidth: true
                             spacing: 8
                             Text { text: qsTr("Provider"); color: root.textMuted; Layout.preferredWidth: 84 }
-                            ComboBox { id: providerCombo; Layout.fillWidth: true; model: ["local", "openai", "custom"] }
+                            ComboBox {
+                                id: providerCombo
+                                Layout.fillWidth: true
+                                model: root.providerOptions
+                                textRole: "name"
+                                valueRole: "code"
+                            }
                         }
 
                         AppTextField {
@@ -313,12 +342,12 @@ Popup {
                 variant: "primary"
                 lightMode: root.lightMode
                 onClicked: {
-                    settingsController.setTheme(themeCombo.currentText)
+                    settingsController.setTheme(themeCombo.currentValue)
                     settingsController.setLanguage(languageCombo.currentValue)
                     settingsController.setExportDir(exportFolderField.text)
-                    settingsController.setLastExportMode(exportModeCombo.currentText)
+                    settingsController.setLastExportMode(exportModeCombo.currentValue)
                     settingsController.setUserPrompt(promptArea.text)
-                    settingsController.setAIProvider(providerCombo.currentText)
+                    settingsController.setAIProvider(providerCombo.currentValue)
                     settingsController.setAIModelName(modelNameField.text)
                     settingsController.setEnableGpu(gpuCheckbox.checked)
                     settingsController.setBatchSize(batchSizeSpin.value)

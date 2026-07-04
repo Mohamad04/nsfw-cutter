@@ -71,7 +71,7 @@ Popup {
                     anchors.rightMargin: 10
                     anchors.topMargin: 4
                     anchors.bottomMargin: 6
-                    text: "ANALYSIS SUBTITLE"
+                    text: qsTr("ANALYSIS SUBTITLE")
                     color: root.lightMode ? "#64748B" : root.mutedTextColor
                     font.pixelSize: 11
                     font.weight: Font.DemiBold
@@ -92,7 +92,7 @@ Popup {
                     anchors.fill: parent
                     anchors.leftMargin: 10
                     anchors.rightMargin: 10
-                    text: "No subtitle candidates"
+                    text: qsTr("No subtitle candidates")
                     color: root.lightMode ? "#94A3B8" : "#64748B"
                     font.pixelSize: 13
                     verticalAlignment: Text.AlignVCenter
@@ -184,7 +184,9 @@ Popup {
                     anchors.rightMargin: 10
                     anchors.topMargin: 5
                     anchors.bottomMargin: 4
-                    text: root.detectedCount + (root.detectedCount === 1 ? " subtitle detected" : " subtitles detected")
+                    text: qsTr("%1 %2 detected")
+                        .arg(root.detectedCount)
+                        .arg(root.detectedCount === 1 ? qsTr("subtitle") : qsTr("subtitles"))
                     color: root.lightMode ? "#64748B" : root.mutedTextColor
                     font.pixelSize: 12
                     elide: Text.ElideRight

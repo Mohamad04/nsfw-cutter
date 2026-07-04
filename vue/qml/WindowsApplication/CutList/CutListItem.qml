@@ -23,6 +23,12 @@ Rectangle {
     signal removeRequested(int index)
     signal editorDismissRequested()
 
+    function localizedStatusText(status) {
+        if (status === "Adjusted") return qsTr("Adjusted")
+        if (status === "Safe") return qsTr("Safe")
+        return status
+    }
+
     height: 72
     radius: 10
     color: root.selected
@@ -76,7 +82,7 @@ Rectangle {
 
                 Text {
                     Layout.fillWidth: true
-                    text: "Cut " + (root.rowIndex + 1)
+                    text: qsTr("Cut %1").arg(root.rowIndex + 1)
                     color: root.textColor
                     font.pixelSize: 13
                     font.weight: Font.DemiBold
@@ -109,7 +115,7 @@ Rectangle {
 
                         Text {
                             id: rowStatusText
-                            text: root.rowStatus
+                            text: root.localizedStatusText(root.rowStatus)
                             color: root.rowStatus === "Adjusted"
                                 ? (root.lightMode ? "#A16207" : "#FDE68A")
                                 : root.safeColor
@@ -151,7 +157,7 @@ Rectangle {
             Layout.preferredWidth: 38
             Layout.preferredHeight: 32
             ToolTip.visible: hovered
-            ToolTip.text: "Delete cut"
+            ToolTip.text: qsTr("Delete cut")
             onPressed: root.editorDismissRequested()
             onClicked: root.removeRequested(root.rowIndex)
         }

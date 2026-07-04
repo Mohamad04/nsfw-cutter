@@ -19,7 +19,7 @@ Rectangle {
     property var cutPreview: ({ "visible": false })
     property var keyframeInfo: ({
         "valid": false,
-        "error": "Set Start and Set End to preview the safe removal.",
+        "error": qsTr("Set Start and Set End to preview the safe removal."),
         "requested_start": 0,
         "requested_end": 0,
         "safe_start": null,
@@ -138,7 +138,7 @@ Rectangle {
     function resetKeyframeInfo(message) {
         root.keyframeInfo = {
             "valid": false,
-            "error": message || "Set Start and Set End to preview the safe removal.",
+            "error": message || qsTr("Set Start and Set End to preview the safe removal."),
             "requested_start": 0,
             "requested_end": 0,
             "safe_start": null,
@@ -155,10 +155,10 @@ Rectangle {
     function validationMessage() {
         var startMs = root.parseTimeToMs(startInput.text)
         var endMs = root.parseTimeToMs(endInput.text)
-        if (startMs < 0 || endMs < 0) return "Use HH:MM:SS for start and end."
+        if (startMs < 0 || endMs < 0) return qsTr("Use HH:MM:SS for start and end.")
         if (startMs === 0 && endMs === 0) return ""
-        if (startMs >= endMs) return "End time must be after start time."
-        if (root.selectedVideoPath.length === 0) return "Load a video before adding a stream-copy cut."
+        if (startMs >= endMs) return qsTr("End time must be after start time.")
+        if (root.selectedVideoPath.length === 0) return qsTr("Load a video before adding a stream-copy cut.")
         return ""
     }
 
@@ -201,7 +201,7 @@ Rectangle {
             "requested_end": endMs / 1000,
             "safe_start": validOrder && hasSafe ? root.keyframeInfo.safe_start : null,
             "safe_end": validOrder && hasSafe ? root.keyframeInfo.safe_end : null,
-            "error": validOrder ? "" : "End time must be after start time."
+            "error": validOrder ? "" : qsTr("End time must be after start time.")
         }
         root.previewChanged(root.cutPreview)
     }
@@ -241,7 +241,7 @@ Rectangle {
 
         root.keyframeInfo = {
             "valid": safeAvailable,
-            "error": safeAvailable ? "" : "Safe keyframes unavailable for this cut.",
+            "error": safeAvailable ? "" : qsTr("Safe keyframes unavailable for this cut."),
             "requested_start": requestedStart,
             "requested_end": requestedEnd,
             "safe_start": safeAvailable ? safeStart : null,
@@ -308,7 +308,7 @@ Rectangle {
             "extraBefore": root.formatDelta(info.extra_before),
             "extraAfter": root.formatDelta(info.extra_after),
             "cutType": "Remove",
-            "reason": reasonInput.text.length > 0 ? reasonInput.text : "Manual removal",
+            "reason": reasonInput.text.length > 0 ? reasonInput.text : qsTr("Manual removal"),
             "tags": tagsInput.text.length > 0 ? tagsInput.text : "manual",
             "source": source,
             "score": score,
@@ -342,7 +342,7 @@ Rectangle {
 
                 Text {
                     Layout.fillWidth: true
-                    text: "CURRENT CUT"
+                    text: qsTr("CURRENT CUT")
                     color: root.accent
                     font.pixelSize: 14
                     font.bold: true
@@ -352,7 +352,7 @@ Rectangle {
 
                 Text {
                     Layout.fillWidth: true
-                    text: root.selectedCutIndex >= 0 ? ("Cut " + (root.selectedCutIndex + 1) + " of " + root.cutCount) : "New removal interval"
+                    text: root.selectedCutIndex >= 0 ? qsTr("Cut %1 of %2").arg(root.selectedCutIndex + 1).arg(root.cutCount) : qsTr("New removal interval")
                     color: root.textMuted
                     font.pixelSize: 12
                     elide: Text.ElideRight
@@ -360,7 +360,7 @@ Rectangle {
             }
 
             AppButton {
-                text: "Prev"
+                text: qsTr("Prev")
                 variant: "ghost"
                 size: "sm"
                 lightMode: root.lightMode
@@ -370,7 +370,7 @@ Rectangle {
             }
 
             AppButton {
-                text: "Next"
+                text: qsTr("Next")
                 variant: "ghost"
                 size: "sm"
                 lightMode: root.lightMode
@@ -409,7 +409,7 @@ Rectangle {
                     ColumnLayout {
                         Layout.fillWidth: true
                         spacing: 4
-                        Text { text: "Start"; color: root.textMuted; font.pixelSize: 11; font.bold: true }
+                        Text { text: qsTr("Start"); color: root.textMuted; font.pixelSize: 11; font.bold: true }
                         AppTextField {
                             id: startInput
                             Layout.fillWidth: true
@@ -423,7 +423,7 @@ Rectangle {
                     ColumnLayout {
                         Layout.fillWidth: true
                         spacing: 4
-                        Text { text: "End"; color: root.textMuted; font.pixelSize: 11; font.bold: true }
+                        Text { text: qsTr("End"); color: root.textMuted; font.pixelSize: 11; font.bold: true }
                         AppTextField {
                             id: endInput
                             Layout.fillWidth: true
@@ -460,7 +460,7 @@ Rectangle {
                         RowLayout {
                             Layout.fillWidth: true
                             Text {
-                                text: "Safe Comparison"
+                                text: qsTr("Safe Comparison")
                                 color: root.textMain
                                 font.pixelSize: 13
                                 font.bold: true
@@ -475,7 +475,7 @@ Rectangle {
                                 border.color: root.safeColor
                                 Text {
                                     anchors.centerIn: parent
-                                    text: "Safe (adjusted)"
+                                    text: qsTr("Safe (adjusted)")
                                     color: root.safeColor
                                     font.pixelSize: 10
                                     font.bold: true
@@ -490,21 +490,21 @@ Rectangle {
                             rowSpacing: 7
 
                             Text { text: ""; color: root.textMuted; font.pixelSize: 10; Layout.preferredWidth: 54 }
-                            Text { text: "Requested"; color: root.requestedColor; font.pixelSize: 10; font.bold: true; Layout.fillWidth: true }
-                            Text { text: "Safe (adjusted)"; color: root.safeColor; font.pixelSize: 10; font.bold: true; Layout.fillWidth: true }
-                            Text { text: "Delta"; color: root.textMuted; font.pixelSize: 10; font.bold: true; Layout.preferredWidth: 52 }
+                            Text { text: qsTr("Requested"); color: root.requestedColor; font.pixelSize: 10; font.bold: true; Layout.fillWidth: true }
+                            Text { text: qsTr("Safe (adjusted)"); color: root.safeColor; font.pixelSize: 10; font.bold: true; Layout.fillWidth: true }
+                            Text { text: qsTr("Delta"); color: root.textMuted; font.pixelSize: 10; font.bold: true; Layout.preferredWidth: 52 }
 
-                            Text { text: "Start"; color: root.textMuted; font.pixelSize: 11 }
+                            Text { text: qsTr("Start"); color: root.textMuted; font.pixelSize: 11 }
                             Text { text: startInput.text; color: root.requestedColor; font.pixelSize: 11; font.bold: true }
                             Text { text: root.hasSafeKeyframeInfo() ? root.formatSeconds(root.keyframeInfo.safe_start) : "--"; color: root.safeColor; font.pixelSize: 11; font.bold: true }
                             Text { text: root.hasSafeKeyframeInfo() ? root.formatSignedClockDelta(root.keyframeInfo.safe_start - root.keyframeInfo.requested_start) : "--"; color: root.textMuted; font.pixelSize: 11 }
 
-                            Text { text: "End"; color: root.textMuted; font.pixelSize: 11 }
+                            Text { text: qsTr("End"); color: root.textMuted; font.pixelSize: 11 }
                             Text { text: endInput.text; color: root.requestedColor; font.pixelSize: 11; font.bold: true }
                             Text { text: root.hasSafeKeyframeInfo() ? root.formatSeconds(root.keyframeInfo.safe_end) : "--"; color: root.safeColor; font.pixelSize: 11; font.bold: true }
                             Text { text: root.hasSafeKeyframeInfo() ? root.formatSignedClockDelta(root.keyframeInfo.safe_end - root.keyframeInfo.requested_end) : "--"; color: root.textMuted; font.pixelSize: 11 }
 
-                            Text { text: "Duration"; color: root.textMuted; font.pixelSize: 11 }
+                            Text { text: qsTr("Duration"); color: root.textMuted; font.pixelSize: 11 }
                             Text { text: root.formatDuration(root.parseSeconds(startInput.text), root.parseSeconds(endInput.text)); color: root.requestedColor; font.pixelSize: 11; font.bold: true }
                             Text { text: root.hasSafeKeyframeInfo() ? root.formatDuration(root.keyframeInfo.safe_start, root.keyframeInfo.safe_end) : "--"; color: root.safeColor; font.pixelSize: 11; font.bold: true }
                             Text { text: root.hasSafeKeyframeInfo() ? root.formatSignedClockDelta((root.keyframeInfo.safe_end - root.keyframeInfo.safe_start) - (root.keyframeInfo.requested_end - root.keyframeInfo.requested_start)) : "--"; color: root.textMuted; font.pixelSize: 11 }
@@ -513,8 +513,8 @@ Rectangle {
                         Text {
                             Layout.fillWidth: true
                             text: root.hasSafeKeyframeInfo()
-                                  ? (root.formatSignedClockDelta(root.keyframeInfo.extra_before + root.keyframeInfo.extra_after) + " extra removed - Keyframe-aligned stream-copy.")
-                                  : (root.keyframeInfo.error || "Set Start and Set End to calculate the adjusted removal.")
+                                  ? qsTr("%1 extra removed - Keyframe-aligned stream-copy.").arg(root.formatSignedClockDelta(root.keyframeInfo.extra_before + root.keyframeInfo.extra_after))
+                                  : (root.keyframeInfo.error || qsTr("Set Start and Set End to calculate the adjusted removal."))
                             color: root.hasSafeKeyframeInfo() ? root.textMuted : (root.lightMode ? theme.lightWarning : theme.darkWarning)
                             font.pixelSize: 11
                             wrapMode: Text.WordWrap
@@ -524,7 +524,7 @@ Rectangle {
 
                 Text {
                     Layout.fillWidth: true
-                    text: "Optional reason and tags appear after setting a valid interval."
+                    text: qsTr("Optional reason and tags appear after setting a valid interval.")
                     color: root.textMuted
                     font.pixelSize: 11
                     wrapMode: Text.WordWrap
@@ -532,7 +532,7 @@ Rectangle {
                 }
 
                 Text {
-                    text: "Reason"
+                    text: qsTr("Reason")
                     color: root.textMuted
                     font.pixelSize: 11
                     font.bold: true
@@ -544,12 +544,12 @@ Rectangle {
                     Layout.fillWidth: true
                     Layout.preferredHeight: root.shortMode ? 50 : 62
                     lightMode: root.lightMode
-                    placeholderText: "Reason for this cut..."
+                    placeholderText: qsTr("Reason for this cut...")
                     visible: root.showOptionalDetails()
                 }
 
                 Text {
-                    text: "Tags"
+                    text: qsTr("Tags")
                     color: root.textMuted
                     font.pixelSize: 11
                     font.bold: true
@@ -561,7 +561,7 @@ Rectangle {
                     Layout.fillWidth: true
                     Layout.preferredHeight: 42
                     lightMode: root.lightMode
-                    placeholderText: "kissing, romance, nsfw"
+                    placeholderText: qsTr("kissing, romance, nsfw")
                     visible: root.showOptionalDetails()
                     onAccepted: root.addCut("Manual", "--")
                 }
@@ -572,8 +572,8 @@ Rectangle {
                     spacing: 8
 
                     AppButton {
-                        text: "+ Add Cut"
-                        accessibilityLabel: "Cut video segment"
+                        text: qsTr("+ Add Cut")
+                        accessibilityLabel: qsTr("Cut video segment")
                         iconSource: Qt.resolvedUrl("../../../../assets/icons/cut.png")
                         imageIconSize: 32
                         variant: "primary"
@@ -582,12 +582,12 @@ Rectangle {
                         Layout.fillWidth: true
                         enabled: root.canAddSafeCut()
                         ToolTip.visible: hovered
-                        ToolTip.text: "Cut"
+                        ToolTip.text: qsTr("Cut")
                         onClicked: root.addCut("Manual", "--")
                     }
 
                     AppButton {
-                        text: "Reset"
+                        text: qsTr("Reset")
                         variant: "ghost"
                         size: "md"
                         lightMode: root.lightMode

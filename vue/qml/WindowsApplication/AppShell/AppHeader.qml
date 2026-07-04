@@ -61,24 +61,24 @@ Item {
     }
 
     function selectedSubtitleLabel() {
-        if (appController.subtitleDetectionState === "loading") return "Detecting subtitles"
+        if (appController.subtitleDetectionState === "loading") return qsTr("Detecting subtitles")
 
         var selected = root.selectedSubtitleOption()
-        if (selected && selected.source === "off") return "Subtitles Off"
+        if (selected && selected.source === "off") return qsTr("Subtitles Off")
         var selectedName = root.cleanSubtitleName(selected)
         if (selectedName.length > 0) return selectedName
 
         var available = root.selectableSubtitleCount()
-        if (available > 1) return "Select subtitle - " + available + " available"
-        if (available === 1) return "Select subtitle - 1 available"
-        if (appController.subtitleCandidates.length > 0) return "Subtitles unavailable"
-        return "Subtitle: Not detected"
+        if (available > 1) return qsTr("Select subtitle - %1 available").arg(available)
+        if (available === 1) return qsTr("Select subtitle - 1 available")
+        if (appController.subtitleCandidates.length > 0) return qsTr("Subtitles unavailable")
+        return qsTr("Subtitle: Not detected")
     }
 
     function mediaExtensionLabel() {
         var path = appController.selectedVideoPath
         var dotIndex = String(path).lastIndexOf(".")
-        if (dotIndex < 0 || dotIndex >= path.length - 1) return "Video"
+        if (dotIndex < 0 || dotIndex >= path.length - 1) return qsTr("Video")
         return String(path).substring(dotIndex + 1).toUpperCase()
     }
 
@@ -93,12 +93,12 @@ Item {
     }
 
     function mediaInfoLabel() {
-        if (appController.selectedVideoPath.length === 0) return "Open a video to start marking removal intervals"
+        if (appController.selectedVideoPath.length === 0) return qsTr("Open a video to start marking removal intervals")
         var parts = []
         var duration = root.formatDuration(root.durationMs)
         if (duration.length > 0) parts.push(duration)
         parts.push(root.mediaExtensionLabel())
-        parts.push("Stream-copy")
+        parts.push(qsTr("Stream-copy"))
         return parts.join(" - ")
     }
 
@@ -160,7 +160,7 @@ Item {
                     Layout.fillWidth: true
                     text: appController.videoName.length > 0 && appController.selectedVideoPath.length > 0
                         ? appController.videoName
-                        : "No video loaded"
+                        : qsTr("No video loaded")
                     color: root.textColor
                     font.pixelSize: root.compactMode ? 13 : 15
                     font.weight: Font.DemiBold
@@ -188,7 +188,7 @@ Item {
             AppButton {
                 id: mediaButton
 
-                text: "+ Add / Open Video"
+                text: qsTr("+ Add / Open Video")
                 variant: "secondary"
                 size: "md"
                 lightMode: root.lightMode
@@ -263,7 +263,7 @@ Item {
 
             AppButton {
                 text: ""
-                accessibilityLabel: "Settings"
+                accessibilityLabel: qsTr("Settings")
                 iconSource: Qt.resolvedUrl("../../../../assets/icons/settings.png")
                 imageIconSize: 32
                 variant: "ghost"
@@ -272,7 +272,7 @@ Item {
                 Layout.preferredWidth: 44
                 Layout.preferredHeight: 44
                 ToolTip.visible: hovered
-                ToolTip.text: "Settings"
+                ToolTip.text: qsTr("Settings")
                 onClicked: root.settingsClicked()
             }
         }

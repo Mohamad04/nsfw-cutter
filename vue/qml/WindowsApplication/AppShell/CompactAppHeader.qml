@@ -59,30 +59,30 @@ Item {
     }
 
     function subtitleButtonLabel() {
-        if (appController.subtitleDetectionState === "loading") return "Detecting subtitles"
+        if (appController.subtitleDetectionState === "loading") return qsTr("Detecting subtitles")
 
         var selected = root.selectedSubtitleOption()
-        if (selected && selected.source === "off") return "Select subtitle"
+        if (selected && selected.source === "off") return qsTr("Select subtitle")
 
         var name = root.subtitleName(selected)
-        if (name.length > 0) return "Subtitles: " + name
+        if (name.length > 0) return qsTr("Subtitles: %1").arg(name)
 
-        return "Select subtitle"
+        return qsTr("Select subtitle")
     }
 
     function formatLabel() {
         var path = appController.selectedVideoPath
         var dotIndex = String(path).lastIndexOf(".")
-        if (dotIndex < 0 || dotIndex >= path.length - 1) return "Video"
+        if (dotIndex < 0 || dotIndex >= path.length - 1) return qsTr("Video")
         return String(path).substring(dotIndex + 1).toUpperCase()
     }
 
     function mediaDetailLabel() {
-        if (appController.selectedVideoPath.length === 0) return "Select a video to begin"
+        if (appController.selectedVideoPath.length === 0) return qsTr("Select a video to begin")
         var parts = []
         var format = root.formatLabel()
         if (format.length > 0) parts.push(format)
-        parts.push("Stream copy")
+        parts.push(qsTr("Stream copy"))
         return parts.join("   •   ")
     }
 
@@ -200,17 +200,17 @@ Item {
     }
 
     function aiPicksTitle() {
-        if (appController.selectedVideoPath.length === 0) return "AI Picks unavailable"
-        if (appController.aiAnalysisState === "running") return "Analyzing video..."
-        if (aiPicksModel.count === 0) return "No AI picks yet"
-        return "AI Picks"
+        if (appController.selectedVideoPath.length === 0) return qsTr("AI Picks unavailable")
+        if (appController.aiAnalysisState === "running") return qsTr("Analyzing video...")
+        if (aiPicksModel.count === 0) return qsTr("No AI picks yet")
+        return qsTr("AI Picks")
     }
 
     function aiPicksSubtitle() {
-        if (appController.selectedVideoPath.length === 0) return "Open a video first."
-        if (appController.aiAnalysisState === "running") return "Please wait while analysis runs."
-        if (aiPicksModel.count === 0) return "Run analysis to generate suggestions."
-        return "Suggested cuts detected"
+        if (appController.selectedVideoPath.length === 0) return qsTr("Open a video first.")
+        if (appController.aiAnalysisState === "running") return qsTr("Please wait while analysis runs.")
+        if (aiPicksModel.count === 0) return qsTr("Run analysis to generate suggestions.")
+        return qsTr("Suggested cuts detected")
     }
 
     Component.onCompleted: root.rebuildAiPicksModel()
@@ -296,7 +296,7 @@ Item {
                 id: openButton
                 objectName: "openMenuButton"
 
-                text: "Open"
+                text: qsTr("Open")
                 font.pixelSize: 13
                 font.weight: Font.DemiBold
                 Layout.preferredWidth: 112
@@ -355,7 +355,7 @@ Item {
                     Layout.fillWidth: true
                     text: appController.selectedVideoPath.length > 0 && appController.videoName.length > 0
                         ? appController.videoName
-                        : "No video loaded"
+                        : qsTr("No video loaded")
                     color: appController.selectedVideoPath.length > 0 ? root.textColor : root.mutedTextColor
                     font.pixelSize: 15
                     font.weight: Font.DemiBold
@@ -399,7 +399,7 @@ Item {
                 id: aiPicksButton
                 objectName: "aiPicksButton"
 
-                text: "AI Picks ▼"
+                text: qsTr("AI Picks ▼")
                 iconName: "sparkle"
                 variant: "ghost"
                 size: "md"
@@ -420,7 +420,7 @@ Item {
 
             AppButton {
                 text: ""
-                accessibilityLabel: "Settings"
+                accessibilityLabel: qsTr("Settings")
                 iconSource: Qt.resolvedUrl("../../../../assets/icons/settings.png")
                 imageIconSize: 32
                 variant: "ghost"
@@ -429,7 +429,7 @@ Item {
                 Layout.preferredWidth: 44
                 Layout.preferredHeight: 44
                 ToolTip.visible: hovered
-                ToolTip.text: "Settings"
+                ToolTip.text: qsTr("Settings")
                 onClicked: root.settingsRequested()
             }
         }
@@ -719,7 +719,7 @@ Item {
                     spacing: 8
 
                     AppButton {
-                        text: "Add selected"
+                        text: qsTr("Add selected")
                         variant: "secondary"
                         size: "sm"
                         lightMode: false
@@ -729,7 +729,7 @@ Item {
                     }
 
                     AppButton {
-                        text: "Add all"
+                        text: qsTr("Add all")
                         variant: "primary"
                         size: "sm"
                         lightMode: false
@@ -805,7 +805,7 @@ Item {
 
                 MenuAction {
                     iconName: "open"
-                    label: "Select Video..."
+                    label: qsTr("Select Video...")
                     shortcut: "Ctrl+O"
                     onTriggered: {
                         openMenu.closeAfterAction()
@@ -815,7 +815,7 @@ Item {
 
                 MenuAction {
                     iconName: "folder"
-                    label: "Select Folder..."
+                    label: qsTr("Select Folder...")
                     shortcut: "Ctrl+Shift+O"
                     onTriggered: {
                         openMenu.closeAfterAction()
@@ -826,12 +826,12 @@ Item {
                 MenuSeparator {}
 
                 SectionLabel {
-                    text: "Recent Videos"
+                    text: qsTr("Recent Videos")
                 }
 
                 MenuAction {
                     visible: appController.recentFiles.length === 0
-                    label: "No recent videos"
+                    label: qsTr("No recent videos")
                     enabled: false
                 }
 
@@ -859,7 +859,7 @@ Item {
 
                 MenuAction {
                     iconName: "trash"
-                    label: "Clear Recent List"
+                    label: qsTr("Clear Recent List")
                     enabled: appController.recentFiles.length > 0
                     onTriggered: {
                         openMenu.closeAfterAction()

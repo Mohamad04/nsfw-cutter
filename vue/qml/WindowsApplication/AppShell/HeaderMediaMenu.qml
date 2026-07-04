@@ -85,7 +85,7 @@ Popup {
             spacing: 4
 
             MenuAction {
-                label: "Open File..."
+                label: qsTr("Open File...")
                 shortcut: "Ctrl+O"
                 onHovered: root.recentOpen = false
                 onTriggered: {
@@ -95,7 +95,7 @@ Popup {
             }
 
             MenuAction {
-                label: "Open Files..."
+                label: qsTr("Open Files...")
                 onHovered: root.recentOpen = false
                 onTriggered: {
                     root.closeAfterAction()
@@ -104,7 +104,7 @@ Popup {
             }
 
             MenuAction {
-                label: "Open Folder..."
+                label: qsTr("Open Folder...")
                 onHovered: root.recentOpen = false
                 onTriggered: {
                     root.closeAfterAction()
@@ -117,7 +117,7 @@ Popup {
             MenuAction {
                 id: recentItem
 
-                label: "Recent Files"
+                label: qsTr("Recent Files")
                 accessory: ">"
                 onHovered: root.recentOpen = true
                 onTriggered: root.recentOpen = true
@@ -126,7 +126,7 @@ Popup {
             MenuSeparator {}
 
             MenuAction {
-                label: "Clear Current Media"
+                label: qsTr("Clear Current Media")
                 enabled: root.canClearCurrentMedia
                 onHovered: root.recentOpen = false
                 onTriggered: {
@@ -159,7 +159,7 @@ Popup {
 
                 MenuAction {
                     visible: root.recentFiles.length === 0
-                    label: "No recent files"
+                    label: qsTr("No recent files")
                     enabled: false
                 }
 
@@ -181,7 +181,7 @@ Popup {
                 MenuSeparator {}
 
                 MenuAction {
-                    label: "Clear Recent Files"
+                    label: qsTr("Clear Recent Files")
                     enabled: root.recentFiles.length > 0
                     onTriggered: {
                         root.closeAfterAction()

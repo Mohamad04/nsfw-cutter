@@ -17,7 +17,7 @@ ColumnLayout {
     property var cutPreview: ({ "visible": false })
     property var keyframeInfo: ({
         "valid": false,
-        "error": "Mark Start and End to preview Smart Cutting boundaries.",
+        "error": qsTr("Mark Start and End to preview Smart Cutting boundaries."),
         "requested_start": 0,
         "requested_end": 0,
         "safe_start": null,
@@ -78,9 +78,9 @@ ColumnLayout {
     }
 
     function formatSeconds(seconds) {
-        if (seconds === null || seconds === undefined || seconds === "") return "unavailable"
+        if (seconds === null || seconds === undefined || seconds === "") return qsTr("unavailable")
         var safeSeconds = Number(seconds)
-        if (!Number.isFinite(safeSeconds)) return "unavailable"
+        if (!Number.isFinite(safeSeconds)) return qsTr("unavailable")
         safeSeconds = Math.max(0, safeSeconds)
         var totalMilliseconds = Math.round(safeSeconds * 1000)
         var totalSeconds = Math.floor(totalMilliseconds / 1000)
@@ -108,7 +108,7 @@ ColumnLayout {
     function resetKeyframeInfo(message) {
         root.keyframeInfo = {
             "valid": false,
-            "error": message || "Mark Start and End to preview Smart Cutting boundaries.",
+            "error": message || qsTr("Mark Start and End to preview Smart Cutting boundaries."),
             "requested_start": 0,
             "requested_end": 0,
             "safe_start": null,
@@ -143,7 +143,7 @@ ColumnLayout {
             "requested_end": endMs / 1000,
             "safe_start": validOrder && hasSafe ? root.keyframeInfo.safe_start : null,
             "safe_end": validOrder && hasSafe ? root.keyframeInfo.safe_end : null,
-            "error": validOrder ? "" : "End time must be after start time."
+            "error": validOrder ? "" : qsTr("End time must be after start time.")
         }
         root.previewChanged(root.cutPreview)
     }
@@ -168,9 +168,9 @@ ColumnLayout {
         var startMs = parseTimeToMs(startInput.text)
         var endMs = parseTimeToMs(endInput.text)
 
-        if (startMs < 0 || endMs < 0) return "Use HH:MM:SS for start and end."
+        if (startMs < 0 || endMs < 0) return qsTr("Use HH:MM:SS for start and end.")
         if (startMs === 0 && endMs === 0) return ""
-        if (startMs >= endMs) return "End time must be after start time."
+        if (startMs >= endMs) return qsTr("End time must be after start time.")
         return ""
     }
 
@@ -217,7 +217,7 @@ ColumnLayout {
             "extraBefore": root.formatDelta(info.extra_before),
             "extraAfter": root.formatDelta(info.extra_after),
             "cutType": "Remove",
-            "reason": reasonInput.text.length > 0 ? reasonInput.text : "Manual removal",
+            "reason": reasonInput.text.length > 0 ? reasonInput.text : qsTr("Manual removal"),
             "tags": tagsInput.text.length > 0 ? tagsInput.text : "manual",
             "source": source,
             "score": score,
@@ -242,7 +242,7 @@ ColumnLayout {
             spacing: 2
 
             Text {
-                text: "CURRENT CUT"
+                text: qsTr("CURRENT CUT")
                 color: root.accent
                 font.pixelSize: 16
                 font.bold: true
@@ -250,7 +250,7 @@ ColumnLayout {
             }
 
             Text {
-                text: "Mark a removal interval"
+                text: qsTr("Mark a removal interval")
                 color: root.textMuted
                 font.pixelSize: 12
             }
@@ -274,7 +274,7 @@ ColumnLayout {
 
                 Text {
                     anchors.centerIn: parent
-                    text: "Manual"
+                    text: qsTr("Manual")
                     color: root.lightMode ? "#2563EB" : root.textMuted
                     font.pixelSize: 12
                 }
@@ -291,7 +291,7 @@ ColumnLayout {
                 size: "icon"
                 lightMode: root.lightMode
                 ToolTip.visible: hovered
-                ToolTip.text: "Expand header"
+                ToolTip.text: qsTr("Expand header")
                 onClicked: root.headerExpandRequested()
             }
         }
@@ -303,16 +303,16 @@ ColumnLayout {
         Layout.fillWidth: true
         Layout.preferredHeight: 50
         spacing: 8
-        Text { text: "Start"; color: root.textMain; font.pixelSize: 13; Layout.preferredWidth: 40 }
+        Text { text: qsTr("Start"); color: root.textMain; font.pixelSize: 13; Layout.preferredWidth: 40 }
         AppTextField { id: startInput; Layout.fillWidth: true; lightMode: root.lightMode; placeholderText: "00:00:00"; text: "00:00:00"; onEditingFinished: root.refreshKeyframeInfo() }
-        AppButton { text: "Reset"; variant: "ghost"; size: "sm"; lightMode: root.lightMode; Layout.preferredWidth: 58; onClicked: { startInput.text = "00:00:00"; root.refreshKeyframeInfo() } }
+        AppButton { text: qsTr("Reset"); variant: "ghost"; size: "sm"; lightMode: root.lightMode; Layout.preferredWidth: 58; onClicked: { startInput.text = "00:00:00"; root.refreshKeyframeInfo() } }
     }
 
     RowLayout {
         Layout.fillWidth: true
         Layout.preferredHeight: 50
         spacing: 8
-        Text { text: "End"; color: root.textMain; font.pixelSize: 13; Layout.preferredWidth: 40 }
+        Text { text: qsTr("End"); color: root.textMain; font.pixelSize: 13; Layout.preferredWidth: 40 }
         AppTextField {
             id: endInput
             Layout.fillWidth: true
@@ -322,7 +322,7 @@ ColumnLayout {
             onAccepted: root.addCut("Manual", "--")
             onEditingFinished: root.refreshKeyframeInfo()
         }
-        AppButton { text: "Reset"; variant: "ghost"; size: "sm"; lightMode: root.lightMode; Layout.preferredWidth: 58; onClicked: { endInput.text = "00:00:00"; root.refreshKeyframeInfo() } }
+        AppButton { text: qsTr("Reset"); variant: "ghost"; size: "sm"; lightMode: root.lightMode; Layout.preferredWidth: 58; onClicked: { endInput.text = "00:00:00"; root.refreshKeyframeInfo() } }
     }
 
     Text {
@@ -348,31 +348,31 @@ ColumnLayout {
         nextKeyframeEnd: root.formatSeconds(root.keyframeInfo.next_keyframe_end)
         extraBefore: root.formatDelta(root.keyframeInfo.extra_before)
         extraAfter: root.formatDelta(root.keyframeInfo.extra_after)
-        errorText: root.keyframeInfo.error || "Keyframe data unavailable."
+        errorText: root.keyframeInfo.error || qsTr("Keyframe data unavailable.")
         textMain: root.textMain
         textMuted: root.textMuted
         accent: root.accent
         lightMode: root.lightMode
     }
 
-    Text { text: "Reason"; color: root.textMain; font.pixelSize: 13; Layout.preferredHeight: 24 }
+    Text { text: qsTr("Reason"); color: root.textMain; font.pixelSize: 13; Layout.preferredHeight: 24 }
 
     AppTextArea {
         id: reasonInput
         Layout.fillWidth: true
         Layout.preferredHeight: 48
         lightMode: root.lightMode
-        placeholderText: "Reason for this cut..."
+        placeholderText: qsTr("Reason for this cut...")
     }
 
-    Text { text: "Tags"; color: root.textMain; font.pixelSize: 13; Layout.preferredHeight: 24 }
+    Text { text: qsTr("Tags"); color: root.textMain; font.pixelSize: 13; Layout.preferredHeight: 24 }
 
     AppTextField {
         id: tagsInput
         Layout.fillWidth: true
         Layout.preferredHeight: 48
         lightMode: root.lightMode
-        placeholderText: "kissing, romance, nsfw"
+        placeholderText: qsTr("kissing, romance, nsfw")
         onAccepted: root.addCut("Manual", "--")
     }
 
@@ -382,8 +382,8 @@ ColumnLayout {
         spacing: 8
 
         AppButton {
-            text: "+ Add Cut"
-            accessibilityLabel: "Cut video segment"
+            text: qsTr("+ Add Cut")
+            accessibilityLabel: qsTr("Cut video segment")
             iconSource: Qt.resolvedUrl("../../../../assets/icons/cut.png")
             imageIconSize: 32
             variant: "primary"
@@ -392,12 +392,12 @@ ColumnLayout {
             Layout.fillWidth: true
             enabled: root.canAddSafeCut()
             ToolTip.visible: hovered
-            ToolTip.text: "Cut"
+            ToolTip.text: qsTr("Cut")
             onClicked: root.addCut("Manual", "--")
         }
 
         AppButton {
-            text: "Reset"
+            text: qsTr("Reset")
             variant: "danger"
             size: "md"
             lightMode: root.lightMode

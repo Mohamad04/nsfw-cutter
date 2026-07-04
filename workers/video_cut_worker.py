@@ -23,7 +23,7 @@ class VideoCutWorker(QRunnable):
                     message,
                 ),
             )
-            self.signals.progress.emit(self.job_key, 100, "Fast cut completed")
+            self.signals.progress.emit(self.job_key, 100, "Video cut completed")
             self.signals.finished.emit(self.job_key, result)
         except Exception as exc:
             self.signals.error.emit(self.job_key, str(exc))

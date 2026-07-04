@@ -324,6 +324,7 @@ Item {
                 lightMode: root.lightMode
                 hasVideo: appController.selectedVideoPath.length > 0
                 hasCuts: cutsModel.count > 0
+                cutTimingMode: root.cutTimingMode
                 panelColor: root.surface
                 strokeColor: root.borderColor
                 textColor: root.textMain

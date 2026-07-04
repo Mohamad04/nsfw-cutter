@@ -88,7 +88,24 @@ Panel {
         return player.subtitleTracks ? player.subtitleTracks.length : 0
     }
 
+    function audioTrackCount() {
+        return player.audioTracks ? player.audioTracks.length : 0
+    }
+
+    function videoTrackCount() {
+        return player.videoTracks ? player.videoTracks.length : 0
+    }
+
+    function ensureActiveMediaTracks() {
+        if (root.audioTrackCount() > 0 && player.activeAudioTrack < 0)
+            player.activeAudioTrack = 0
+
+        if (root.videoTrackCount() > 0 && player.activeVideoTrack < 0)
+            player.activeVideoTrack = 0
+    }
+
     function syncSubtitleTracks() {
+        root.ensureActiveMediaTracks()
         appController.updatePlayerSubtitleTrackCount(root.subtitleTrackCount())
         root.applyActiveSubtitleTrack()
     }
@@ -146,11 +163,18 @@ Panel {
         id: player
         source: appController.videoUrl
         videoOutput: videoPlayer.videoOutput
-        audioOutput: AudioOutput { volume: root.volumeLevel }
+        audioOutput: AudioOutput {
+            volume: Math.max(0, Math.min(1, root.volumeLevel))
+            muted: false
+        }
         activeSubtitleTrack: -1
 
+        onAudioTracksChanged: root.scheduleSubtitleTrackSync()
+        onVideoTracksChanged: root.scheduleSubtitleTrackSync()
         onSubtitleTracksChanged: root.scheduleSubtitleTrackSync()
         onSourceChanged: {
+            player.activeAudioTrack = -1
+            player.activeVideoTrack = -1
             player.activeSubtitleTrack = -1
             root.logPlayerState("sourceChanged")
             root.scheduleSubtitleTrackSync()
@@ -194,7 +218,7 @@ Panel {
             spacing: 8
 
             Text {
-                text: "VIDEO PREVIEW"
+                text: qsTr("VIDEO PREVIEW")
                 color: root.accent
                 font.pixelSize: 14
                 font.bold: true
@@ -202,7 +226,7 @@ Panel {
             }
 
             Text {
-                text: player.duration > 0 ? "Preview ready" : "Waiting for media"
+                text: player.duration > 0 ? qsTr("Preview ready") : qsTr("Waiting for media")
                 color: root.textMuted
                 font.pixelSize: 12
             }
@@ -210,7 +234,7 @@ Panel {
             Item { Layout.fillWidth: true }
 
             Text {
-                text: "Cuts: " + root.cutCount
+                text: qsTr("Cuts: %1").arg(root.cutCount)
                 color: root.textMuted
                 font.pixelSize: 12
             }

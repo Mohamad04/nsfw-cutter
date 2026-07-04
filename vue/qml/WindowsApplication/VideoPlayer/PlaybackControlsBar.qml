@@ -553,7 +553,7 @@ Rectangle {
             Layout.preferredWidth: 42
             Layout.preferredHeight: 36
             ToolTip.visible: hovered
-            ToolTip.text: "Fullscreen is not connected in this phase"
+            ToolTip.text: qsTr("Fullscreen is not connected in this phase")
         }
     }
 }

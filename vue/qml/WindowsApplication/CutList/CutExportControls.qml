@@ -13,6 +13,8 @@ Rectangle {
     property color textMain: "#F3F6FB"
     property color textMuted: "#92A2B8"
     property color accent: "#2F7BFF"
+    readonly property int cutProgressPercent: Math.max(0, Math.min(100, Math.round(videoCutController.cutProgressValue)))
+    readonly property int cutRemainingPercent: Math.max(0, 100 - root.cutProgressPercent)
 
     signal chooseFolderRequested()
     signal previewCutsRequested()
@@ -37,7 +39,7 @@ Rectangle {
             spacing: 8
 
             Text {
-                text: "Output Folder"
+                text: qsTr("Output Folder")
                 color: root.textMain
                 font.pixelSize: 12
                 font.bold: true
@@ -57,7 +59,7 @@ Rectangle {
                     anchors.fill: parent
                     anchors.leftMargin: 12
                     anchors.rightMargin: 12
-                    text: root.outputDir.length > 0 ? root.outputDir : "Choose an output folder"
+                    text: root.outputDir.length > 0 ? root.outputDir : qsTr("Choose an output folder")
                     color: root.outputDir.length > 0 ? root.textMain : root.textMuted
                     font.pixelSize: 11
                     elide: Text.ElideMiddle
@@ -66,7 +68,7 @@ Rectangle {
             }
 
             AppButton {
-                text: "Change"
+                text: qsTr("Change")
                 variant: "secondary"
                 size: "sm"
                 lightMode: root.lightMode
@@ -77,7 +79,7 @@ Rectangle {
             }
 
             AppButton {
-                text: "Preview Cuts"
+                text: qsTr("Preview Cuts")
                 variant: "control"
                 size: "sm"
                 lightMode: root.lightMode
@@ -88,7 +90,7 @@ Rectangle {
             }
 
             AppButton {
-                text: "Export Clean Video"
+                text: qsTr("Export Clean Video")
                 variant: "success"
                 size: "sm"
                 lightMode: root.lightMode
@@ -108,14 +110,14 @@ Rectangle {
                 Layout.fillWidth: true
                 text: videoCutController.cutBusy
                       ? videoCutController.cutStatus
-                      : "Stream-copy - No re-encoding - Safe cuts align to nearby keyframes."
+                      : qsTr("Smart cuts exact intervals with boundary re-encoding. Fast uses stream copy.")
                 color: videoCutController.cutError.length > 0 ? (root.lightMode ? theme.lightDanger : theme.darkDanger) : root.textMuted
                 font.pixelSize: 11
                 elide: Text.ElideRight
             }
 
             Text {
-                text: videoCutController.cutProgressValue > 0 && videoCutController.cutBusy ? videoCutController.cutProgressValue + "%" : ""
+                text: videoCutController.cutBusy ? qsTr("%1% / 100% - %2% left").arg(root.cutProgressPercent).arg(root.cutRemainingPercent) : ""
                 color: root.accent
                 font.pixelSize: 11
                 font.bold: true
@@ -129,12 +131,12 @@ Rectangle {
             visible: videoCutController.cutBusy
             from: 0
             to: 1
-            value: videoCutController.cutProgressValue / 100
+            value: root.cutProgressPercent / 100
 
             background: Rectangle { radius: 3; color: root.lightMode ? "#E2E8F0" : "#111827" }
             contentItem: Item {
                 Rectangle {
-                    width: parent.width * videoCutController.cutProgressValue / 100
+                    width: parent.width * root.cutProgressPercent / 100
                     height: parent.height
                     radius: 3
                     color: root.accent

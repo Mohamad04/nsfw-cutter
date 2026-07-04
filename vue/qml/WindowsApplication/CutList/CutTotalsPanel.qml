@@ -26,7 +26,7 @@ Rectangle {
 
             Text {
                 Layout.fillWidth: true
-                text: "Total Removed"
+                text: qsTr("Total Removed")
                 color: root.mutedTextColor
                 font.pixelSize: 12
             }
@@ -44,7 +44,7 @@ Rectangle {
 
             Text {
                 Layout.fillWidth: true
-                text: "Video After Cuts"
+                text: qsTr("Video After Cuts")
                 color: root.mutedTextColor
                 font.pixelSize: 12
             }

@@ -85,7 +85,7 @@ FocusScope {
         cursorShape: Qt.IBeamCursor
         onClicked: root.beginEdit()
         ToolTip.visible: containsMouse
-        ToolTip.text: "Edit time"
+        ToolTip.text: qsTr("Edit time")
     }
 
     Rectangle {

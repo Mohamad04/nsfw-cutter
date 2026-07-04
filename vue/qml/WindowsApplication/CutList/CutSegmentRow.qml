@@ -62,6 +62,16 @@ Rectangle {
         return pad(hours) + ":" + pad(minutes) + ":" + pad(seconds)
     }
 
+    function localizedStatusText(status) {
+        if (status === "Warning") return qsTr("Warning")
+        if (status === "Failed") return qsTr("Failed")
+        if (status === "Safe unavailable") return qsTr("Safe unavailable")
+        if (status === "Exporting") return qsTr("Exporting")
+        if (status === "Done") return qsTr("Done")
+        if (status === "Pending") return qsTr("Pending")
+        return status
+    }
+
     MouseArea {
         anchors.fill: parent
         onClicked: root.selectedRequested()
@@ -75,7 +85,7 @@ Rectangle {
         visible: !root.narrowMode
 
         Text { text: root.segmentIndex; color: root.textMain; font.pixelSize: 11; Layout.preferredWidth: root.indexColumnWidth; Layout.minimumWidth: 0 }
-        Text { text: root.status; color: root.status === "Warning" ? (root.lightMode ? "#A16207" : "#FDE68A") : (root.status === "Failed" || root.status === "Safe unavailable" ? (root.lightMode ? "#DC2626" : "#FCA5A5") : (root.lightMode ? "#15803D" : "#8AE6A2")); font.pixelSize: 11; Layout.preferredWidth: root.statusColumnWidth; Layout.minimumWidth: 0; elide: Text.ElideRight }
+        Text { text: root.localizedStatusText(root.status); color: root.status === "Warning" ? (root.lightMode ? "#A16207" : "#FDE68A") : (root.status === "Failed" || root.status === "Safe unavailable" ? (root.lightMode ? "#DC2626" : "#FCA5A5") : (root.lightMode ? "#15803D" : "#8AE6A2")); font.pixelSize: 11; Layout.preferredWidth: root.statusColumnWidth; Layout.minimumWidth: 0; elide: Text.ElideRight }
         Text { text: root.startTime; color: root.requestedColor; font.pixelSize: 11; font.bold: true; Layout.preferredWidth: root.timeColumnWidth; Layout.minimumWidth: 0; elide: Text.ElideRight }
         Text { text: root.endTime; color: root.requestedColor; font.pixelSize: 11; font.bold: true; Layout.preferredWidth: root.timeColumnWidth; Layout.minimumWidth: 0; elide: Text.ElideRight }
         Text { text: root.safeStartTime; color: root.safeColor; font.pixelSize: 11; font.bold: true; Layout.preferredWidth: root.timeColumnWidth; Layout.minimumWidth: 0; elide: Text.ElideRight }
@@ -83,9 +93,9 @@ Rectangle {
         Text { text: root.durationText(); color: root.textMuted; font.pixelSize: 11; Layout.preferredWidth: root.durationColumnWidth; Layout.minimumWidth: 0; elide: Text.ElideRight }
         Item { Layout.fillWidth: true; Layout.minimumWidth: root.extraColumnWidth }
 
-        AppButton { text: "Jump"; variant: "secondary"; size: "sm"; lightMode: root.lightMode; Layout.preferredWidth: root.jumpButtonWidth; Layout.minimumWidth: 0; onClicked: root.jumpStartRequested() }
-        AppButton { text: "Edit"; variant: "ghost"; size: "sm"; lightMode: root.lightMode; Layout.preferredWidth: root.editButtonWidth; Layout.minimumWidth: 0; onClicked: root.editRequested() }
-        AppButton { text: "Delete"; variant: "danger"; size: "sm"; lightMode: root.lightMode; Layout.preferredWidth: root.deleteButtonWidth; Layout.minimumWidth: 0; onClicked: root.removeRequested() }
+        AppButton { text: qsTr("Jump"); variant: "secondary"; size: "sm"; lightMode: root.lightMode; Layout.preferredWidth: root.jumpButtonWidth; Layout.minimumWidth: 0; onClicked: root.jumpStartRequested() }
+        AppButton { text: qsTr("Edit"); variant: "ghost"; size: "sm"; lightMode: root.lightMode; Layout.preferredWidth: root.editButtonWidth; Layout.minimumWidth: 0; onClicked: root.editRequested() }
+        AppButton { text: qsTr("Delete"); variant: "danger"; size: "sm"; lightMode: root.lightMode; Layout.preferredWidth: root.deleteButtonWidth; Layout.minimumWidth: 0; onClicked: root.removeRequested() }
     }
 
     ColumnLayout {
@@ -96,7 +106,13 @@ Rectangle {
 
         Text {
             Layout.fillWidth: true
-            text: "#" + root.segmentIndex + "  " + root.status + "  Requested " + root.startTime + " -> " + root.endTime + "  Safe " + root.safeStartTime + " -> " + root.safeEndTime
+            text: qsTr("#%1  %2  Requested %3 -> %4  Safe %5 -> %6")
+                .arg(root.segmentIndex)
+                .arg(root.localizedStatusText(root.status))
+                .arg(root.startTime)
+                .arg(root.endTime)
+                .arg(root.safeStartTime)
+                .arg(root.safeEndTime)
             color: root.textMain
             font.pixelSize: 11
             elide: Text.ElideRight
@@ -104,7 +120,7 @@ Rectangle {
 
         Text {
             Layout.fillWidth: true
-            text: "Removed " + root.durationText() + " | " + root.reason + " | " + root.tags
+            text: qsTr("Removed %1 | %2 | %3").arg(root.durationText()).arg(root.reason).arg(root.tags)
             color: root.textMuted
             font.pixelSize: 11
             elide: Text.ElideRight
@@ -113,9 +129,9 @@ Rectangle {
         RowLayout {
             Layout.fillWidth: true
             spacing: 4
-            AppButton { text: "Jump"; variant: "secondary"; size: "sm"; lightMode: root.lightMode; Layout.fillWidth: true; onClicked: root.jumpStartRequested() }
-            AppButton { text: "Edit"; variant: "ghost"; size: "sm"; lightMode: root.lightMode; Layout.fillWidth: true; onClicked: root.editRequested() }
-            AppButton { text: "Delete"; variant: "danger"; size: "sm"; lightMode: root.lightMode; Layout.fillWidth: true; onClicked: root.removeRequested() }
+            AppButton { text: qsTr("Jump"); variant: "secondary"; size: "sm"; lightMode: root.lightMode; Layout.fillWidth: true; onClicked: root.jumpStartRequested() }
+            AppButton { text: qsTr("Edit"); variant: "ghost"; size: "sm"; lightMode: root.lightMode; Layout.fillWidth: true; onClicked: root.editRequested() }
+            AppButton { text: qsTr("Delete"); variant: "danger"; size: "sm"; lightMode: root.lightMode; Layout.fillWidth: true; onClicked: root.removeRequested() }
         }
     }
 }

@@ -34,7 +34,7 @@ Column {
 
     Text {
         anchors.horizontalCenter: parent.horizontalCenter
-        text: "No cuts added yet"
+        text: qsTr("No cuts added yet")
         color: root.textColor
         font.pixelSize: 15
         font.weight: Font.DemiBold
@@ -42,7 +42,7 @@ Column {
 
     Text {
         width: parent.width
-        text: "Use Set Start and Set End below the video,\nthen select Add Cut."
+        text: qsTr("Use Set Start and Set End below the video,\nthen select Add Cut.")
         color: root.mutedTextColor
         font.pixelSize: 12
         horizontalAlignment: Text.AlignHCenter

@@ -136,7 +136,7 @@ class SegmentMapperTests(unittest.TestCase):
         self.assertEqual(payload["start_seconds"], 1.0)
         self.assertEqual(payload["end_seconds"], 3.0)
 
-    def test_segment_with_numeric_seconds(self):
+    def test_fast_segment_with_numeric_seconds_uses_requested_bounds(self):
         payload = segment_to_payload(
             2,
             {
@@ -144,13 +144,26 @@ class SegmentMapperTests(unittest.TestCase):
                 "requested_end_seconds": 3.5,
                 "start_seconds": 1.0,
                 "end_seconds": 4.0,
+                "timingMode": "requested",
             },
         )
 
         self.assertEqual(payload["index"], 2)
         self.assertEqual(payload["requested_start_seconds"], 1.5)
-        self.assertEqual(payload["start_seconds"], 1.0)
-        self.assertEqual(payload["end_seconds"], 4.0)
+        self.assertEqual(payload["start_seconds"], 1.5)
+        self.assertEqual(payload["end_seconds"], 3.5)
+
+    def test_smart_segment_rejects_raw_seconds_without_safe_bounds(self):
+        with self.assertRaisesRegex(ValueError, "Safe cut start is unavailable"):
+            segment_to_payload(
+                2,
+                {
+                    "requested_start_seconds": 1.5,
+                    "requested_end_seconds": 3.5,
+                    "start_seconds": 1.0,
+                    "end_seconds": 4.0,
+                },
+            )
 
     def test_invalid_segment_type_raises(self):
         with self.assertRaisesRegex(ValueError, "object"):

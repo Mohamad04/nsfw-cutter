@@ -36,6 +36,12 @@ Rectangle {
     signal editorDismissRequested()
     signal editorActiveChanged(bool active)
 
+    function localizedStatusText(status) {
+        if (status === "Adjusted") return qsTr("Adjusted")
+        if (status === "Safe") return qsTr("Safe")
+        return status
+    }
+
     radius: 12
     color: root.lightMode ? "#F8FAFC" : "#07101D"
     border.color: root.lightMode ? "#E2E8F0" : "#17263E"
@@ -51,7 +57,7 @@ Rectangle {
         anchors.centerIn: parent
         width: parent.width - 28
         visible: root.hasCuts && !root.hasSelection
-        text: "Select a cut to view safe-adjustment details."
+        text: qsTr("Select a cut to view requested timing and keyframe details.")
         color: root.mutedTextColor
         font.pixelSize: 12
         horizontalAlignment: Text.AlignHCenter
@@ -71,7 +77,7 @@ Rectangle {
 
             Text {
                 Layout.fillWidth: true
-                text: "Cut " + (root.selectedIndex + 1) + " Details"
+                text: qsTr("Cut %1 Details").arg(root.selectedIndex + 1)
                 color: root.textColor
                 font.pixelSize: 14
                 font.weight: Font.DemiBold
@@ -104,7 +110,7 @@ Rectangle {
 
                     Text {
                         id: detailStatusText
-                        text: root.statusText
+                        text: root.localizedStatusText(root.statusText)
                         color: root.adjusted
                             ? (root.lightMode ? "#A16207" : "#FDE68A")
                             : root.safeColor
@@ -135,11 +141,11 @@ Rectangle {
             rowSpacing: 7
 
             Text { text: ""; Layout.preferredWidth: 54 }
-            Text { text: "Requested"; color: root.requestedColor; font.pixelSize: 10; font.weight: Font.DemiBold; Layout.fillWidth: true; elide: Text.ElideRight }
-            Text { text: "Safe Adjusted"; color: root.safeColor; font.pixelSize: 10; font.weight: Font.DemiBold; Layout.fillWidth: true; elide: Text.ElideRight }
-            Text { text: "Delta"; color: root.mutedTextColor; font.pixelSize: 10; font.weight: Font.DemiBold; Layout.preferredWidth: 54; horizontalAlignment: Text.AlignRight }
+            Text { text: qsTr("Requested"); color: root.requestedColor; font.pixelSize: 10; font.weight: Font.DemiBold; Layout.fillWidth: true; elide: Text.ElideRight }
+            Text { text: qsTr("Keyframe Span"); color: root.safeColor; font.pixelSize: 10; font.weight: Font.DemiBold; Layout.fillWidth: true; elide: Text.ElideRight }
+            Text { text: qsTr("Delta"); color: root.mutedTextColor; font.pixelSize: 10; font.weight: Font.DemiBold; Layout.preferredWidth: 54; horizontalAlignment: Text.AlignRight }
 
-            Text { text: "Start"; color: root.mutedTextColor; font.pixelSize: 11 }
+            Text { text: qsTr("Start"); color: root.mutedTextColor; font.pixelSize: 11 }
             EditableRequestedTime {
                 fieldName: "start"
                 displayText: root.requestedStartText
@@ -156,7 +162,7 @@ Rectangle {
             Text { text: root.safeStartText; color: root.safeColor; font.pixelSize: 11; font.weight: Font.DemiBold; elide: Text.ElideRight; Layout.fillWidth: true }
             Text { text: root.startDeltaText; color: root.textColor; font.pixelSize: 11; horizontalAlignment: Text.AlignRight; Layout.preferredWidth: 54 }
 
-            Text { text: "End"; color: root.mutedTextColor; font.pixelSize: 11 }
+            Text { text: qsTr("End"); color: root.mutedTextColor; font.pixelSize: 11 }
             EditableRequestedTime {
                 fieldName: "end"
                 displayText: root.requestedEndText
@@ -173,7 +179,7 @@ Rectangle {
             Text { text: root.safeEndText; color: root.safeColor; font.pixelSize: 11; font.weight: Font.DemiBold; elide: Text.ElideRight; Layout.fillWidth: true }
             Text { text: root.endDeltaText; color: root.textColor; font.pixelSize: 11; horizontalAlignment: Text.AlignRight; Layout.preferredWidth: 54 }
 
-            Text { text: "Duration"; color: root.mutedTextColor; font.pixelSize: 11 }
+            Text { text: qsTr("Duration"); color: root.mutedTextColor; font.pixelSize: 11 }
             EditableRequestedTime {
                 fieldName: "duration"
                 displayText: root.requestedDurationText
@@ -194,8 +200,8 @@ Rectangle {
         Text {
             Layout.fillWidth: true
             text: root.cutTimingMode === "requested"
-                ? "Fast mode uses the exact requested range for preview and export."
-                : "Smart mode uses safe-adjusted keyframe ranges for stream-copy export."
+                ? qsTr("Fast mode uses the exact requested range for preview and export.")
+                : qsTr("Smart mode removes the requested range exactly and only re-encodes boundary video chunks.")
             color: root.mutedTextColor
             font.pixelSize: 11
             wrapMode: Text.WordWrap

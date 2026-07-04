@@ -68,7 +68,7 @@ Rectangle {
 
         Text {
             anchors.horizontalCenter: parent.horizontalCenter
-            text: "Video preview will appear here"
+            text: qsTr("Video preview will appear here")
             color: root.textColor
             font.pixelSize: 18
             font.weight: Font.DemiBold
@@ -76,7 +76,7 @@ Rectangle {
 
         Text {
             anchors.horizontalCenter: parent.horizontalCenter
-            text: "Open a video to get started"
+            text: qsTr("Open a video to get started")
             color: root.mutedTextColor
             font.pixelSize: 13
         }

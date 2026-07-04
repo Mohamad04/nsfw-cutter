@@ -41,7 +41,7 @@ Rectangle {
 
             Text {
                 Layout.fillWidth: true
-                text: "Keyframe-aligned removal"
+                text: qsTr("Smart boundary keyframes")
                 color: root.lightMode ? "#92400E" : root.textMain
                 font.pixelSize: 12
                 font.bold: true
@@ -57,7 +57,7 @@ Rectangle {
 
                 Text {
                     anchors.centerIn: parent
-                    text: "stream copy"
+                    text: qsTr("boundary")
                     color: root.lightMode ? "#B45309" : "#FDBA74"
                     font.pixelSize: 10
                     font.bold: true
@@ -72,7 +72,7 @@ Rectangle {
             Rectangle { Layout.preferredWidth: 8; Layout.preferredHeight: 8; radius: 4; color: root.lightMode ? "#0284C7" : root.accent }
             Text {
                 Layout.fillWidth: true
-                text: "Requested: " + root.requestedStart + " -> " + root.requestedEnd
+                text: qsTr("Requested: %1 -> %2").arg(root.requestedStart).arg(root.requestedEnd)
                 color: root.lightMode ? "#78350F" : root.textMain
                 font.pixelSize: 11
                 elide: Text.ElideRight
@@ -86,7 +86,7 @@ Rectangle {
             Rectangle { Layout.preferredWidth: 8; Layout.preferredHeight: 8; radius: 4; color: "#F97316" }
             Text {
                 Layout.fillWidth: true
-                text: "Safe cut:  " + root.safeStart + " -> " + root.safeEnd
+                text: qsTr("Boundary span: %1 -> %2").arg(root.safeStart).arg(root.safeEnd)
                 color: root.lightMode ? "#B45309" : "#FED7AA"
                 font.pixelSize: 11
                 font.bold: true
@@ -96,7 +96,7 @@ Rectangle {
 
         Text {
             Layout.fillWidth: true
-            text: "Extra removed: -" + root.extraBefore + " before, +" + root.extraAfter + " after"
+            text: qsTr("Boundary video: -%1 before, +%2 after").arg(root.extraBefore).arg(root.extraAfter)
             color: root.lightMode ? "#A16207" : "#FDE68A"
             font.pixelSize: 11
             elide: Text.ElideRight
@@ -104,7 +104,7 @@ Rectangle {
 
         Text {
             Layout.fillWidth: true
-            text: "Start keyframes: prev " + root.previousKeyframeStart + " | next " + root.nextKeyframeStart
+            text: qsTr("Start keyframes: prev %1 | next %2").arg(root.previousKeyframeStart).arg(root.nextKeyframeStart)
             color: root.lightMode ? "#A16207" : root.textMuted
             font.pixelSize: 10
             elide: Text.ElideRight
@@ -112,7 +112,7 @@ Rectangle {
 
         Text {
             Layout.fillWidth: true
-            text: "End keyframes:   prev " + root.previousKeyframeEnd + " | next " + root.nextKeyframeEnd
+            text: qsTr("End keyframes: prev %1 | next %2").arg(root.previousKeyframeEnd).arg(root.nextKeyframeEnd)
             color: root.lightMode ? "#A16207" : root.textMuted
             font.pixelSize: 10
             elide: Text.ElideRight
@@ -120,7 +120,7 @@ Rectangle {
 
         Text {
             Layout.fillWidth: true
-            text: root.valid ? "No re-encoding mode cuts on or near keyframes." : root.errorText
+            text: root.valid ? qsTr("Smart export removes the requested range exactly.") : root.errorText
             color: root.lightMode ? (root.valid ? "#A16207" : "#DC2626") : (root.valid ? "#FDE68A" : "#FCA5A5")
             font.pixelSize: 10
             elide: Text.ElideRight

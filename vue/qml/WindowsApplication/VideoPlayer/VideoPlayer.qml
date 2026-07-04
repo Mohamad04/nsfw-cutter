@@ -81,7 +81,7 @@ Rectangle {
 
             Text {
                 anchors.centerIn: parent
-                text: "Open"
+                text: qsTr("Open")
                 color: root.lightMode ? "#142033" : "#F8FAFC"
                 font.pixelSize: root.compactMode ? 16 : 19
                 font.bold: true
@@ -90,7 +90,7 @@ Rectangle {
 
         Text {
             anchors.horizontalCenter: parent.horizontalCenter
-            text: "No video loaded"
+            text: qsTr("No video loaded")
             color: root.textMuted
             font.pixelSize: 13
         }
@@ -108,7 +108,7 @@ Rectangle {
 
         Text {
             anchors.centerIn: parent
-            text: "Play"
+            text: qsTr("Play")
             color: "#F8FAFC"
             font.pixelSize: root.compactMode ? 16 : 19
             font.bold: true

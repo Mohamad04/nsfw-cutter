@@ -4,6 +4,7 @@ from pathlib import Path
 
 from controllers.video_cut.keyframe_alignment import KeyframeAlignmentController
 from controllers.video_cut_controller import VideoCutController
+from services.export.export_router_service import FAST_CUTTING_MODE, SMART_CUTTING_MODE
 from services.editing.cut_plan_service import CutPlanService
 from services.editing.keyframe_service import KeyframeService
 
@@ -33,18 +34,21 @@ class VideoCutControllerTests(unittest.TestCase):
         self.assertEqual(payload["previous_keyframe_start"], 32)
         self.assertEqual(payload["next_keyframe_end"], 44)
 
-    def test_export_segments_fails_clearly_without_safe_bounds(self):
+    def test_default_export_segments_route_to_smart_cutting(self):
         controller = VideoCutController()
 
-        controller.exportSegments(
-            "missing.mp4",
-            [{"start": "00:00:01", "end": "00:00:03"}],
-            "",
-            "remove_intervals",
+        mode = controller._cutting_mode_for_segments([{"start": "00:00:01", "end": "00:00:03"}])
+
+        self.assertEqual(mode, SMART_CUTTING_MODE)
+
+    def test_requested_timing_routes_to_fast_cutting(self):
+        controller = VideoCutController()
+
+        mode = controller._cutting_mode_for_segments(
+            [{"start": "00:00:01", "end": "00:00:03", "timingMode": "requested"}]
         )
 
-        self.assertEqual(controller.cutStatus, "Video export failed")
-        self.assertIn("Safe cut start is unavailable", controller.cutError)
+        self.assertEqual(mode, FAST_CUTTING_MODE)
 
 
 class KeyframeAlignmentControllerTests(unittest.TestCase):

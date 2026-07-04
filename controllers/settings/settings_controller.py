@@ -6,6 +6,7 @@ from controllers.settings.appearance_settings import AppearanceSettings
 from controllers.settings.export_settings import ExportSettings
 from controllers.settings.recent_video_settings import RecentVideoSettings
 from controllers.settings.settings_accessor import SettingsAccessor
+from services.i18n import TranslationService
 from services.settings_service import SettingsService
 
 
@@ -13,9 +14,14 @@ class SettingsController(QObject):
     settingsChanged = Signal()
     themeChanged = Signal()
 
-    def __init__(self, settings_service: SettingsService | None = None):
+    def __init__(
+        self,
+        settings_service: SettingsService | None = None,
+        translation_service: TranslationService | None = None,
+    ):
         super().__init__()
         self._service = settings_service or SettingsService()
+        self._translation_service = translation_service
         self._accessor = SettingsAccessor(self._service)
         self._settings = self._accessor.settings
         self._appearance = AppearanceSettings(self._accessor)
@@ -39,9 +45,20 @@ class SettingsController(QObject):
     def getLanguage(self) -> str:
         return self._appearance.get_language()
 
-    @Slot(str)
-    def setLanguage(self, language: str) -> None:
-        self._update_from(self._appearance.set_language, language)
+    @Slot(str, result=bool)
+    def setLanguage(self, language: str) -> bool:
+        if self._translation_service is not None:
+            if not self._translation_service.setLanguage(language):
+                return False
+
+        try:
+            self._settings = self._appearance.set_language(language)
+        except ValidationError:
+            self._reload()
+            return False
+
+        self.settingsChanged.emit()
+        return True
 
     @Slot(result=str)
     def getUserPrompt(self) -> str:

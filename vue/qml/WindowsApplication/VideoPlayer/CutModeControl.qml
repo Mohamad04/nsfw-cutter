@@ -23,7 +23,7 @@ Rectangle {
         spacing: 10
 
         Text {
-            text: "Cut Mode"
+            text: qsTr("Cut Mode")
             color: root.mutedTextColor
             font.pixelSize: 11
             font.weight: Font.DemiBold

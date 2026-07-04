@@ -25,7 +25,7 @@ Rectangle {
     property bool startPointSet: false
     property bool endPointSet: false
     property string cutTimingMode: "safe"
-    property var keyframeInfo: defaultKeyframeInfo("Set start and end points to create a cut.")
+    property var keyframeInfo: defaultKeyframeInfo(qsTr("Set start and end points to create a cut."))
     property var cutPreview: ({ "visible": false })
     property int draggingCutIndex: -1
     property string draggingCutMode: ""
@@ -79,7 +79,7 @@ Rectangle {
             return TimeUtils.formatSeconds(root.keyframeInfo.safe_start) + " -> " + TimeUtils.formatSeconds(root.keyframeInfo.safe_end)
         if (root.keyframeInfo && root.keyframeInfo.error)
             return root.keyframeInfo.error
-        return root.canAddCut() ? "Waiting for valid keyframe range" : "Set start and end markers"
+        return root.canAddCut() ? qsTr("Waiting for valid keyframe range") : qsTr("Set start and end markers")
     }
 
     function setCutTimingFields(index, startSeconds, endSeconds) {
@@ -265,14 +265,14 @@ Rectangle {
             "requested_end": endMs / 1000,
             "safe_start": hasSafe ? root.keyframeInfo.safe_start : null,
             "safe_end": hasSafe ? root.keyframeInfo.safe_end : null,
-            "error": valid ? "" : "End time must be after start time."
+            "error": valid ? "" : qsTr("End time must be after start time.")
         }
     }
 
     function refreshKeyframeInfo() {
         if (!root.canAddCut()) {
             root.keyframeInfo = root.defaultKeyframeInfo(
-                root.hasVideo ? "Set an end point after the start point." : "Open a video to create cuts."
+                root.hasVideo ? qsTr("Set an end point after the start point.") : qsTr("Open a video to create cuts.")
             )
             root.updateCutPreview()
             return
@@ -289,7 +289,7 @@ Rectangle {
 
     function safeKeyframeInfoFor(startTime, endTime) {
         if (!root.canAddCutFromTimes(startTime, endTime))
-            return root.defaultKeyframeInfo("Invalid cut range.")
+            return root.defaultKeyframeInfo(qsTr("Invalid cut range."))
 
         return videoCutController.keyframeCutInfo(
             appController.selectedVideoPath,
@@ -334,7 +334,7 @@ Rectangle {
             "nextKeyframeEnd": TimeUtils.formatSeconds(info.next_keyframe_end),
             "extraBefore": Number(info.extra_before || 0).toFixed(1) + "s",
             "extraAfter": Number(info.extra_after || 0).toFixed(1) + "s",
-            "reason": reason || "Manual removal",
+            "reason": reason || qsTr("Manual removal"),
             "tags": tags || "manual",
             "source": source || "Manual",
             "score": score || "--",
@@ -350,7 +350,7 @@ Rectangle {
             startTime,
             endTime,
             "AI",
-            reason || "AI suggestion",
+            reason || qsTr("AI suggestion"),
             "ai,suggestion",
             confidence || "--",
             false
@@ -358,14 +358,14 @@ Rectangle {
     }
 
     function addCurrentCut() {
-        if (!root.addCutFromTimes(root.requestedStart, root.requestedEnd, "Manual", "Manual removal", "manual", "--", true))
+        if (!root.addCutFromTimes(root.requestedStart, root.requestedEnd, "Manual", qsTr("Manual removal"), "manual", "--", true))
             return
 
         root.requestedStart = "00:00:00"
         root.requestedEnd = "00:00:00"
         root.startPointSet = false
         root.endPointSet = false
-        root.keyframeInfo = root.defaultKeyframeInfo("Set start and end points to create a cut.")
+        root.keyframeInfo = root.defaultKeyframeInfo(qsTr("Set start and end points to create a cut."))
         root.updateCutPreview()
     }
 
@@ -380,7 +380,24 @@ Rectangle {
         return player.subtitleTracks ? player.subtitleTracks.length : 0
     }
 
+    function audioTrackCount() {
+        return player.audioTracks ? player.audioTracks.length : 0
+    }
+
+    function videoTrackCount() {
+        return player.videoTracks ? player.videoTracks.length : 0
+    }
+
+    function ensureActiveMediaTracks() {
+        if (root.audioTrackCount() > 0 && player.activeAudioTrack < 0)
+            player.activeAudioTrack = 0
+
+        if (root.videoTrackCount() > 0 && player.activeVideoTrack < 0)
+            player.activeVideoTrack = 0
+    }
+
     function syncSubtitleTracks() {
+        root.ensureActiveMediaTracks()
         appController.updatePlayerSubtitleTrackCount(root.subtitleTrackCount())
         root.applyActiveSubtitleTrack()
     }
@@ -428,11 +445,18 @@ Rectangle {
 
         source: appController.videoUrl
         videoOutput: videoStage.videoOutput
-        audioOutput: AudioOutput { volume: root.volumeLevel }
+        audioOutput: AudioOutput {
+            volume: Math.max(0, Math.min(1, root.volumeLevel))
+            muted: false
+        }
         activeSubtitleTrack: -1
 
+        onAudioTracksChanged: root.scheduleSubtitleTrackSync()
+        onVideoTracksChanged: root.scheduleSubtitleTrackSync()
         onSubtitleTracksChanged: root.scheduleSubtitleTrackSync()
         onSourceChanged: {
+            player.activeAudioTrack = -1
+            player.activeVideoTrack = -1
             player.activeSubtitleTrack = -1
             root.logPlayerState("sourceChanged")
             root.scheduleSubtitleTrackSync()
@@ -469,7 +493,7 @@ Rectangle {
             root.requestedEnd = "00:00:00"
             root.startPointSet = false
             root.endPointSet = false
-            root.keyframeInfo = root.defaultKeyframeInfo("Set start and end points to create a cut.")
+            root.keyframeInfo = root.defaultKeyframeInfo(qsTr("Set start and end points to create a cut."))
             root.updateCutPreview()
         }
 

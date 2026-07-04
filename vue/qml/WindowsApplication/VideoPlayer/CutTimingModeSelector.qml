@@ -24,7 +24,7 @@ Rectangle {
         spacing: 6
 
         AppButton {
-            text: "Smart"
+            text: qsTr("Smart")
             variant: root.cutTimingMode === "safe" ? "primary" : "ghost"
             size: "sm"
             lightMode: root.lightMode
@@ -36,7 +36,7 @@ Rectangle {
         }
 
         AppButton {
-            text: "Fast"
+            text: qsTr("Fast")
             variant: root.cutTimingMode === "requested" ? "primary" : "ghost"
             size: "sm"
             lightMode: root.lightMode

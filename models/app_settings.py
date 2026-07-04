@@ -10,11 +10,6 @@ class Theme(str, Enum):
     SYSTEM = "system"
 
 
-class Language(str, Enum):
-    EN = "en"
-    FR = "fr"
-
-
 class AIProvider(str, Enum):
     LOCAL = "local"
     OPENAI = "openai"
@@ -27,7 +22,7 @@ class AppSettings(BaseModel):
     version: int = 1
 
     theme: Theme = Theme.DARK
-    language: Language = Language.EN
+    language: str = Field(default="en", pattern=r"^[A-Za-z][A-Za-z0-9_-]*$")
     window_width: int = Field(default=1280, ge=800, le=3840)
     window_height: int = Field(default=800, ge=600, le=2160)
 

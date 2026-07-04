@@ -98,11 +98,11 @@ Rectangle {
     }
 
     function activeStartSeconds(cut) {
-        return root.cutTimingMode === "requested" ? root.requestedStartSeconds(cut) : root.safeStartSeconds(cut)
+        return root.requestedStartSeconds(cut)
     }
 
     function activeEndSeconds(cut) {
-        return root.cutTimingMode === "requested" ? root.requestedEndSeconds(cut) : root.safeEndSeconds(cut)
+        return root.requestedEndSeconds(cut)
     }
 
     function activeDurationSeconds(cut) {

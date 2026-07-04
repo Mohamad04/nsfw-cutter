@@ -24,16 +24,21 @@ Popup {
     property string lastVideoPath: ""
     property var recentVideos: []
 
-    function modelIndex(model, value) {
-        for (var index = 0; index < model.length; index += 1) {
-            if (model[index] === value) return index
+    function modelIndex(model, value, roleName) {
+        if (!model) return 0
+
+        var count = model.length !== undefined ? model.length : model.count
+        for (var index = 0; index < count; index += 1) {
+            var item = model.get ? model.get(index) : model[index]
+            var itemValue = roleName && item && item[roleName] !== undefined ? item[roleName] : item
+            if (itemValue === value) return index
         }
         return 0
     }
 
     function openWithCurrentSettings() {
         themeCombo.currentIndex = modelIndex(themeCombo.model, settingsController.getTheme())
-        languageCombo.currentIndex = modelIndex(languageCombo.model, settingsController.getLanguage())
+        languageCombo.currentIndex = modelIndex(languageCombo.model, settingsController.getLanguage(), "code")
         providerCombo.currentIndex = modelIndex(providerCombo.model, settingsController.getAIProvider())
         exportFolderField.text = settingsController.getExportDir()
         exportModeCombo.currentIndex = modelIndex(exportModeCombo.model, settingsController.getLastExportMode())
@@ -63,7 +68,7 @@ Popup {
             Layout.fillWidth: true
 
             Text {
-                text: "Settings"
+                text: qsTr("Settings")
                 color: root.textMain
                 font.pixelSize: 22
                 font.bold: true
@@ -103,23 +108,29 @@ Popup {
                         anchors.margins: 12
                         spacing: 8
 
-                        Text { text: "User Preferences"; color: root.textMain; font.pixelSize: 14; font.bold: true }
+                        Text { text: qsTr("User Preferences"); color: root.textMain; font.pixelSize: 14; font.bold: true }
 
                         RowLayout {
                             Layout.fillWidth: true
                             spacing: 8
-                            Text { text: "Theme"; color: root.textMuted; Layout.preferredWidth: 84 }
+                            Text { text: qsTr("Theme"); color: root.textMuted; Layout.preferredWidth: 84 }
                             ComboBox { id: themeCombo; Layout.fillWidth: true; model: ["dark", "light", "system"] }
                         }
 
                         RowLayout {
                             Layout.fillWidth: true
                             spacing: 8
-                            Text { text: "Language"; color: root.textMuted; Layout.preferredWidth: 84 }
-                            ComboBox { id: languageCombo; Layout.fillWidth: true; model: ["en", "fr"] }
+                            Text { text: qsTr("Language"); color: root.textMuted; Layout.preferredWidth: 84 }
+                            ComboBox {
+                                id: languageCombo
+                                Layout.fillWidth: true
+                                model: translationService.availableLanguages
+                                textRole: "name"
+                                valueRole: "code"
+                            }
                         }
 
-                        Text { text: "Export folder"; color: root.textMuted; font.pixelSize: 12 }
+                        Text { text: qsTr("Export folder"); color: root.textMuted; font.pixelSize: 12 }
 
                         RowLayout {
                             Layout.fillWidth: true
@@ -128,10 +139,10 @@ Popup {
                                 id: exportFolderField
                                 Layout.fillWidth: true
                                 lightMode: root.lightMode
-                                placeholderText: "Leave blank for project defaults"
+                                placeholderText: qsTr("Leave blank for project defaults")
                             }
                             AppButton {
-                                text: "Browse"
+                                text: qsTr("Browse")
                                 variant: "secondary"
                                 size: "sm"
                                 lightMode: root.lightMode
@@ -142,7 +153,7 @@ Popup {
                                 }
                             }
                             AppButton {
-                                text: "Clear"
+                                text: qsTr("Clear")
                                 variant: "ghost"
                                 size: "sm"
                                 lightMode: root.lightMode
@@ -154,7 +165,7 @@ Popup {
                         RowLayout {
                             Layout.fillWidth: true
                             spacing: 8
-                            Text { text: "Export mode"; color: root.textMuted; Layout.preferredWidth: 84 }
+                            Text { text: qsTr("Export mode"); color: root.textMuted; Layout.preferredWidth: 84 }
                             ComboBox {
                                 id: exportModeCombo
                                 Layout.fillWidth: true
@@ -177,18 +188,18 @@ Popup {
                         anchors.margins: 12
                         spacing: 6
 
-                        Text { text: "Video Preferences"; color: root.textMain; font.pixelSize: 14; font.bold: true }
-                        Text { text: "Last opened video"; color: root.textMuted; font.pixelSize: 12 }
+                        Text { text: qsTr("Video Preferences"); color: root.textMain; font.pixelSize: 14; font.bold: true }
+                        Text { text: qsTr("Last opened video"); color: root.textMuted; font.pixelSize: 12 }
                         Text {
                             Layout.fillWidth: true
-                            text: root.lastVideoPath.length > 0 ? root.lastVideoPath : "No video remembered yet"
+                            text: root.lastVideoPath.length > 0 ? root.lastVideoPath : qsTr("No video remembered yet")
                             color: root.textMain
                             font.pixelSize: 12
                             elide: Text.ElideMiddle
                         }
-                        Text { text: "Recent videos"; color: root.textMuted; font.pixelSize: 12 }
+                        Text { text: qsTr("Recent videos"); color: root.textMuted; font.pixelSize: 12 }
                         Repeater {
-                            model: root.recentVideos.length > 0 ? root.recentVideos : ["No recent videos"]
+                            model: root.recentVideos.length > 0 ? root.recentVideos : [qsTr("No recent videos")]
                             Text {
                                 required property var modelData
                                 Layout.fillWidth: true
@@ -213,14 +224,14 @@ Popup {
                         anchors.margins: 12
                         spacing: 8
 
-                        Text { text: "Prompt"; color: root.textMain; font.pixelSize: 14; font.bold: true }
+                        Text { text: qsTr("Prompt"); color: root.textMain; font.pixelSize: 14; font.bold: true }
 
                         AppTextArea {
                             id: promptArea
                             Layout.fillWidth: true
                             Layout.fillHeight: true
                             lightMode: root.lightMode
-                            placeholderText: "Write your custom AI prompt here..."
+                            placeholderText: qsTr("Write your custom AI prompt here...")
                         }
                     }
                 }
@@ -238,12 +249,12 @@ Popup {
                         anchors.margins: 12
                         spacing: 8
 
-                        Text { text: "AI Settings"; color: root.textMain; font.pixelSize: 14; font.bold: true }
+                        Text { text: qsTr("AI Settings"); color: root.textMain; font.pixelSize: 14; font.bold: true }
 
                         RowLayout {
                             Layout.fillWidth: true
                             spacing: 8
-                            Text { text: "Provider"; color: root.textMuted; Layout.preferredWidth: 84 }
+                            Text { text: qsTr("Provider"); color: root.textMuted; Layout.preferredWidth: 84 }
                             ComboBox { id: providerCombo; Layout.fillWidth: true; model: ["local", "openai", "custom"] }
                         }
 
@@ -251,25 +262,25 @@ Popup {
                             id: modelNameField
                             Layout.fillWidth: true
                             lightMode: root.lightMode
-                            placeholderText: "Model name"
+                            placeholderText: qsTr("Model name")
                         }
 
                         CheckBox {
                             id: gpuCheckbox
-                            text: "Enable GPU"
+                            text: qsTr("Enable GPU")
                         }
 
                         RowLayout {
                             Layout.fillWidth: true
                             spacing: 8
-                            Text { text: "Batch size"; color: root.textMuted; Layout.preferredWidth: 84 }
+                            Text { text: qsTr("Batch size"); color: root.textMuted; Layout.preferredWidth: 84 }
                             SpinBox { id: batchSizeSpin; from: 1; to: 64; value: 8 }
                         }
 
                         ColumnLayout {
                             Layout.fillWidth: true
                             spacing: 2
-                            Text { text: "Confidence threshold " + confidenceSlider.value.toFixed(2); color: root.textMuted }
+                            Text { text: qsTr("Confidence threshold") + " " + confidenceSlider.value.toFixed(2); color: root.textMuted }
                             Slider { id: confidenceSlider; Layout.fillWidth: true; from: 0; to: 1; value: 0.5 }
                         }
                     }
@@ -277,7 +288,7 @@ Popup {
 
                 Text {
                     Layout.fillWidth: true
-                    text: "Settings file: " + settingsController.getSettingsJsonPath()
+                    text: qsTr("Settings file:") + " " + settingsController.getSettingsJsonPath()
                     color: root.textMuted
                     font.pixelSize: 10
                     elide: Text.ElideMiddle
@@ -291,19 +302,19 @@ Popup {
             Item { Layout.fillWidth: true }
 
             AppButton {
-                text: "Cancel"
+                text: qsTr("Cancel")
                 variant: "ghost"
                 lightMode: root.lightMode
                 onClicked: root.close()
             }
 
             AppButton {
-                text: "Save"
+                text: qsTr("Save")
                 variant: "primary"
                 lightMode: root.lightMode
                 onClicked: {
                     settingsController.setTheme(themeCombo.currentText)
-                    settingsController.setLanguage(languageCombo.currentText)
+                    settingsController.setLanguage(languageCombo.currentValue)
                     settingsController.setExportDir(exportFolderField.text)
                     settingsController.setLastExportMode(exportModeCombo.currentText)
                     settingsController.setUserPrompt(promptArea.text)

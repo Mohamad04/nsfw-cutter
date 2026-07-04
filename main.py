@@ -13,10 +13,25 @@ from core.logging_config import configure_logging
 from core.paths import APP_AUTHOR, APP_NAME, get_resource_path
 from database.init_db import init_database
 from services.editing.keyframe_service import KeyframeService
+from services.i18n import TranslationService
 from services.settings_service import SettingsService
 
 
 WINDOWS_APP_USER_MODEL_ID = "com.nsfwcutter.desktop"
+WINDOWS_UI_FONT_FILES = (
+    "segoeui.ttf",
+    "segoeuib.ttf",
+    "segoeuii.ttf",
+    "segoeuiz.ttf",
+    "segoeuil.ttf",
+    "seguili.ttf",
+    "segoeuisl.ttf",
+    "seguisli.ttf",
+    "seguisb.ttf",
+    "seguisbi.ttf",
+    "seguibl.ttf",
+    "seguibli.ttf",
+)
 
 
 def set_windows_app_user_model_id() -> None:
@@ -24,6 +39,23 @@ def set_windows_app_user_model_id() -> None:
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
             WINDOWS_APP_USER_MODEL_ID
         )
+
+
+def load_windows_ui_font_family() -> str:
+    if sys.platform != "win32":
+        return "Segoe UI"
+
+    loaded_family = ""
+    for font_file in WINDOWS_UI_FONT_FILES:
+        font_id = QFontDatabase.addApplicationFont(f"C:/Windows/Fonts/{font_file}")
+        if font_id < 0:
+            continue
+        if not loaded_family:
+            font_families = QFontDatabase.applicationFontFamilies(font_id)
+            if font_families:
+                loaded_family = font_families[0]
+
+    return loaded_family or "Segoe UI"
 
 
 def main():
@@ -37,12 +69,7 @@ def main():
     app.setApplicationName(APP_NAME)
     app.setApplicationDisplayName(APP_NAME)
     app.setOrganizationName(APP_AUTHOR)
-    ui_font_family = "Segoe UI"
-    if sys.platform == "win32":
-        ui_font_id = QFontDatabase.addApplicationFont("C:/Windows/Fonts/segoeui.ttf")
-        ui_font_families = QFontDatabase.applicationFontFamilies(ui_font_id)
-        if ui_font_families:
-            ui_font_family = ui_font_families[0]
+    ui_font_family = load_windows_ui_font_family()
     app.setFont(QFont(ui_font_family, 9))
     app_icon = QIcon(str(get_resource_path("assets/icons/app.ico")))
     app.setWindowIcon(app_icon)
@@ -50,6 +77,13 @@ def main():
     engine = QQmlApplicationEngine()
 
     settings_service = SettingsService()
+    translation_service = TranslationService(
+        engine,
+        get_resource_path("resources/i18n"),
+        parent=app,
+    )
+    engine.rootContext().setContextProperty("translationService", translation_service)
+
     keyframe_service = KeyframeService()
     controller = AppController(
         settings_service=settings_service,
@@ -58,9 +92,13 @@ def main():
     controller.setParent(app)
     engine.rootContext().setContextProperty("appController", controller)
 
-    settings_controller = SettingsController(settings_service=settings_service)
+    settings_controller = SettingsController(
+        settings_service=settings_service,
+        translation_service=translation_service,
+    )
     settings_controller.setParent(app)
     engine.rootContext().setContextProperty("settingsController", settings_controller)
+    translation_service.setLanguage(settings_controller.getLanguage())
 
     video_cut_controller = VideoCutController(
         settings_service=settings_service,

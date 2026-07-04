@@ -49,6 +49,40 @@ if ($LASTEXITCODE -ne 0) {
     }
 }
 
+$translationDir = Join-Path $ProjectRoot "resources\i18n"
+if (Test-Path -LiteralPath $translationDir -PathType Container) {
+    $translationFiles = Get-ChildItem -LiteralPath $translationDir -Filter "*.ts" -File
+    if ($translationFiles) {
+        $translationCompiler = $null
+        if (Test-Path -LiteralPath $pythonExe -PathType Leaf) {
+            $localCompiler = Join-Path (Split-Path -Parent $pythonExe) "pyside6-lrelease.exe"
+            if (Test-Path -LiteralPath $localCompiler -PathType Leaf) {
+                $translationCompiler = $localCompiler
+            }
+        }
+
+        if ($null -eq $translationCompiler) {
+            $pathCompiler = Get-Command "pyside6-lrelease" -ErrorAction SilentlyContinue
+            if ($null -ne $pathCompiler) {
+                $translationCompiler = $pathCompiler.Source
+            }
+        }
+
+        if ($null -eq $translationCompiler) {
+            throw "pyside6-lrelease was not found. Install PySide6 or run this script from the project virtualenv."
+        }
+
+        Write-Host "Compiling translations"
+        foreach ($translationFile in $translationFiles) {
+            $qmPath = Join-Path $translationDir "$($translationFile.BaseName).qm"
+            & $translationCompiler $translationFile.FullName -qm $qmPath
+            if ($LASTEXITCODE -ne 0) {
+                throw "Translation compilation failed: $($translationFile.FullName)"
+            }
+        }
+    }
+}
+
 foreach ($generatedPath in @($buildDir, $distDir)) {
     if (Test-Path -LiteralPath $generatedPath) {
         Write-Host "Removing $generatedPath"

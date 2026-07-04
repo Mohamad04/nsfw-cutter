@@ -2,7 +2,6 @@ from pathlib import Path
 
 from services.subtitles.subtitle_loader_service import (
     load_subtitle_events,
-    subtitle_text_at_position,
 )
 
 

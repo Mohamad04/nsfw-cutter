@@ -101,6 +101,82 @@
     </message>
 </context>
 <context>
+    <name>CleanShellPage</name>
+    <message>
+        <location filename="../../vue/qml/WindowsApplication/AppShell/CleanShellPage.qml" line="284"/>
+        <source>Invalid JSON content</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../../vue/qml/WindowsApplication/AppShell/CleanShellPage.qml" line="290"/>
+        <source>Could not import cuts</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../../vue/qml/WindowsApplication/AppShell/CleanShellPage.qml" line="308"/>
+        <source>No cuts to export</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../../vue/qml/WindowsApplication/AppShell/CleanShellPage.qml" line="312"/>
+        <source>Could not export cuts</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../../vue/qml/WindowsApplication/AppShell/CleanShellPage.qml" line="324"/>
+        <location filename="../../vue/qml/WindowsApplication/AppShell/CleanShellPage.qml" line="330"/>
+        <source>No JSON content to copy</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../../vue/qml/WindowsApplication/AppShell/CleanShellPage.qml" line="329"/>
+        <location filename="../../vue/qml/WindowsApplication/AppShell/CleanShellPage.qml" line="622"/>
+        <source>Cuts copied to clipboard</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../../vue/qml/WindowsApplication/AppShell/CleanShellPage.qml" line="482"/>
+        <source>Import Cuts JSON</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../../vue/qml/WindowsApplication/AppShell/CleanShellPage.qml" line="491"/>
+        <source>Paste your cuts JSON below.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../../vue/qml/WindowsApplication/AppShell/CleanShellPage.qml" line="499"/>
+        <location filename="../../vue/qml/WindowsApplication/AppShell/CleanShellPage.qml" line="593"/>
+        <source>JSON content</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../../vue/qml/WindowsApplication/AppShell/CleanShellPage.qml" line="539"/>
+        <source>Cancel</source>
+        <translation type="unfinished">Annuler</translation>
+    </message>
+    <message>
+        <location filename="../../vue/qml/WindowsApplication/AppShell/CleanShellPage.qml" line="548"/>
+        <source>Import</source>
+        <translation type="unfinished">Importer</translation>
+    </message>
+    <message>
+        <location filename="../../vue/qml/WindowsApplication/AppShell/CleanShellPage.qml" line="584"/>
+        <source>Export Cuts JSON</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../../vue/qml/WindowsApplication/AppShell/CleanShellPage.qml" line="636"/>
+        <source>Copy</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../../vue/qml/WindowsApplication/AppShell/CleanShellPage.qml" line="645"/>
+        <source>Close</source>
+        <translation type="unfinished"></translation>
+    </message>
+</context>
+<context>
     <name>CompactAppHeader</name>
     <message>
         <location filename="../../vue/qml/WindowsApplication/AppShell/CompactAppHeader.qml" line="62"/>
@@ -429,64 +505,62 @@
 <context>
     <name>CutDetailsPanel</name>
     <message>
-        <location filename="../../vue/qml/WindowsApplication/CutList/CutDetailsPanel.qml" line="40"/>
+        <location filename="../../vue/qml/WindowsApplication/CutList/CutDetailsPanel.qml" line="36"/>
         <source>Adjusted</source>
         <translation>Ajusté</translation>
     </message>
     <message>
-        <location filename="../../vue/qml/WindowsApplication/CutList/CutDetailsPanel.qml" line="41"/>
+        <location filename="../../vue/qml/WindowsApplication/CutList/CutDetailsPanel.qml" line="37"/>
         <source>Safe</source>
         <translation>Sûr</translation>
     </message>
     <message>
-        <location filename="../../vue/qml/WindowsApplication/CutList/CutDetailsPanel.qml" line="60"/>
+        <location filename="../../vue/qml/WindowsApplication/CutList/CutDetailsPanel.qml" line="56"/>
         <source>Select a cut to view requested timing and keyframe details.</source>
         <translation>Sélectionnez une coupe pour voir le timing demandé et les détails des images clés.</translation>
     </message>
     <message>
-        <location filename="../../vue/qml/WindowsApplication/CutList/CutDetailsPanel.qml" line="80"/>
+        <location filename="../../vue/qml/WindowsApplication/CutList/CutDetailsPanel.qml" line="76"/>
         <source>Cut %1 Details</source>
         <translation>Détails de la coupe %1</translation>
     </message>
     <message>
-        <location filename="../../vue/qml/WindowsApplication/CutList/CutDetailsPanel.qml" line="144"/>
+        <location filename="../../vue/qml/WindowsApplication/CutList/CutDetailsPanel.qml" line="127"/>
         <source>Requested</source>
         <translation>Demandé</translation>
     </message>
     <message>
-        <location filename="../../vue/qml/WindowsApplication/CutList/CutDetailsPanel.qml" line="145"/>
+        <location filename="../../vue/qml/WindowsApplication/CutList/CutDetailsPanel.qml" line="128"/>
         <source>Keyframe Span</source>
         <translation>Plage d&apos;images clés</translation>
     </message>
     <message>
-        <location filename="../../vue/qml/WindowsApplication/CutList/CutDetailsPanel.qml" line="146"/>
+        <location filename="../../vue/qml/WindowsApplication/CutList/CutDetailsPanel.qml" line="129"/>
         <source>Delta</source>
         <translation>Écart</translation>
     </message>
     <message>
-        <location filename="../../vue/qml/WindowsApplication/CutList/CutDetailsPanel.qml" line="148"/>
+        <location filename="../../vue/qml/WindowsApplication/CutList/CutDetailsPanel.qml" line="131"/>
         <source>Start</source>
         <translation>Début</translation>
     </message>
     <message>
-        <location filename="../../vue/qml/WindowsApplication/CutList/CutDetailsPanel.qml" line="165"/>
+        <location filename="../../vue/qml/WindowsApplication/CutList/CutDetailsPanel.qml" line="148"/>
         <source>End</source>
         <translation>Fin</translation>
     </message>
     <message>
-        <location filename="../../vue/qml/WindowsApplication/CutList/CutDetailsPanel.qml" line="182"/>
+        <location filename="../../vue/qml/WindowsApplication/CutList/CutDetailsPanel.qml" line="165"/>
         <source>Duration</source>
         <translation>Durée</translation>
     </message>
     <message>
-        <location filename="../../vue/qml/WindowsApplication/CutList/CutDetailsPanel.qml" line="203"/>
         <source>Fast mode uses the exact requested range for preview and export.</source>
-        <translation>Le mode rapide utilise la plage demandée exacte pour la prévisualisation et l&apos;export.</translation>
+        <translation type="vanished">Le mode rapide utilise la plage demandée exacte pour la prévisualisation et l&apos;export.</translation>
     </message>
     <message>
-        <location filename="../../vue/qml/WindowsApplication/CutList/CutDetailsPanel.qml" line="204"/>
         <source>Smart mode removes the requested range exactly and only re-encodes boundary video chunks.</source>
-        <translation>Le mode intelligent supprime exactement la plage demandée et ne réencode que les morceaux vidéo de bordure.</translation>
+        <translation type="vanished">Le mode intelligent supprime exactement la plage demandée et ne réencode que les morceaux vidéo de bordure.</translation>
     </message>
 </context>
 <context>
@@ -676,117 +750,118 @@ puis sélectionnez Ajouter une coupe.</translation>
 <context>
     <name>CutListPanel</name>
     <message>
-        <location filename="../../vue/qml/WindowsApplication/CutList/CutListPanel.qml" line="126"/>
+        <location filename="../../vue/qml/WindowsApplication/CutList/CutListPanel.qml" line="133"/>
         <source>CUT TIMELINE</source>
         <translation>CHRONOLOGIE DES COUPES</translation>
     </message>
     <message>
-        <location filename="../../vue/qml/WindowsApplication/CutList/CutListPanel.qml" line="135"/>
+        <location filename="../../vue/qml/WindowsApplication/CutList/CutListPanel.qml" line="142"/>
         <source>%1 cuts - Total removed: %2</source>
         <translation>%1 coupes - Total supprimé : %2</translation>
     </message>
     <message>
-        <location filename="../../vue/qml/WindowsApplication/CutList/CutListPanel.qml" line="145"/>
+        <location filename="../../vue/qml/WindowsApplication/CutList/CutListPanel.qml" line="152"/>
         <source>Import</source>
         <translation>Importer</translation>
     </message>
     <message>
-        <location filename="../../vue/qml/WindowsApplication/CutList/CutListPanel.qml" line="154"/>
+        <location filename="../../vue/qml/WindowsApplication/CutList/CutListPanel.qml" line="161"/>
         <source>JSON</source>
         <translation>JSON</translation>
     </message>
     <message>
-        <location filename="../../vue/qml/WindowsApplication/CutList/CutListPanel.qml" line="164"/>
+        <location filename="../../vue/qml/WindowsApplication/CutList/CutListPanel.qml" line="50"/>
+        <location filename="../../vue/qml/WindowsApplication/CutList/CutListPanel.qml" line="171"/>
         <source>Clear List</source>
         <translation>Effacer la liste</translation>
     </message>
     <message>
-        <location filename="../../vue/qml/WindowsApplication/CutList/CutListPanel.qml" line="188"/>
+        <location filename="../../vue/qml/WindowsApplication/CutList/CutListPanel.qml" line="196"/>
         <source>Orange requested - green safe adjusted removal</source>
         <translation>Orange demandé - vert suppression sûre ajustée</translation>
     </message>
     <message>
-        <location filename="../../vue/qml/WindowsApplication/CutList/CutListPanel.qml" line="188"/>
+        <location filename="../../vue/qml/WindowsApplication/CutList/CutListPanel.qml" line="196"/>
         <source>Timeline waits for loaded video duration</source>
         <translation>La chronologie attend la durée de la vidéo chargée</translation>
     </message>
     <message>
-        <location filename="../../vue/qml/WindowsApplication/CutList/CutListPanel.qml" line="198"/>
+        <location filename="../../vue/qml/WindowsApplication/CutList/CutListPanel.qml" line="206"/>
         <source>Full video: 00:00:00 -&gt; %1</source>
         <translation>Vidéo complète : 00:00:00 -&gt; %1</translation>
     </message>
     <message>
-        <location filename="../../vue/qml/WindowsApplication/CutList/CutListPanel.qml" line="263"/>
+        <location filename="../../vue/qml/WindowsApplication/CutList/CutListPanel.qml" line="271"/>
         <source>Requested: %1 -&gt; %2</source>
         <translation>Demandé : %1 -&gt; %2</translation>
     </message>
     <message>
-        <location filename="../../vue/qml/WindowsApplication/CutList/CutListPanel.qml" line="264"/>
+        <location filename="../../vue/qml/WindowsApplication/CutList/CutListPanel.qml" line="272"/>
         <source>Safe cut: %1 -&gt; %2</source>
         <translation>Coupe sûre : %1 -&gt; %2</translation>
     </message>
     <message>
-        <location filename="../../vue/qml/WindowsApplication/CutList/CutListPanel.qml" line="265"/>
+        <location filename="../../vue/qml/WindowsApplication/CutList/CutListPanel.qml" line="273"/>
         <source>Reason: %1</source>
         <translation>Raison : %1</translation>
     </message>
     <message>
-        <location filename="../../vue/qml/WindowsApplication/CutList/CutListPanel.qml" line="265"/>
+        <location filename="../../vue/qml/WindowsApplication/CutList/CutListPanel.qml" line="273"/>
         <source>Tags: %1</source>
         <translation>Tags : %1</translation>
     </message>
     <message>
-        <location filename="../../vue/qml/WindowsApplication/CutList/CutListPanel.qml" line="295"/>
+        <location filename="../../vue/qml/WindowsApplication/CutList/CutListPanel.qml" line="303"/>
         <source>Status</source>
         <translation>Statut</translation>
     </message>
     <message>
-        <location filename="../../vue/qml/WindowsApplication/CutList/CutListPanel.qml" line="296"/>
+        <location filename="../../vue/qml/WindowsApplication/CutList/CutListPanel.qml" line="304"/>
         <source>Requested Start</source>
         <translation>Début demandé</translation>
     </message>
     <message>
-        <location filename="../../vue/qml/WindowsApplication/CutList/CutListPanel.qml" line="297"/>
+        <location filename="../../vue/qml/WindowsApplication/CutList/CutListPanel.qml" line="305"/>
         <source>Requested End</source>
         <translation>Fin demandée</translation>
     </message>
     <message>
-        <location filename="../../vue/qml/WindowsApplication/CutList/CutListPanel.qml" line="298"/>
+        <location filename="../../vue/qml/WindowsApplication/CutList/CutListPanel.qml" line="306"/>
         <source>Safe Start</source>
         <translation>Début sûr</translation>
     </message>
     <message>
-        <location filename="../../vue/qml/WindowsApplication/CutList/CutListPanel.qml" line="299"/>
+        <location filename="../../vue/qml/WindowsApplication/CutList/CutListPanel.qml" line="307"/>
         <source>Safe End</source>
         <translation>Fin sûre</translation>
     </message>
     <message>
-        <location filename="../../vue/qml/WindowsApplication/CutList/CutListPanel.qml" line="300"/>
+        <location filename="../../vue/qml/WindowsApplication/CutList/CutListPanel.qml" line="308"/>
         <source>Removed Duration</source>
         <translation>Durée supprimée</translation>
     </message>
     <message>
-        <location filename="../../vue/qml/WindowsApplication/CutList/CutListPanel.qml" line="302"/>
+        <location filename="../../vue/qml/WindowsApplication/CutList/CutListPanel.qml" line="310"/>
         <source>Actions</source>
         <translation>Actions</translation>
     </message>
     <message>
-        <location filename="../../vue/qml/WindowsApplication/CutList/CutListPanel.qml" line="319"/>
+        <location filename="../../vue/qml/WindowsApplication/CutList/CutListPanel.qml" line="327"/>
         <source>No cuts added yet. Use Set Start and Set End, then Add Cut.</source>
         <translation>Aucune coupe ajoutée. Utilisez Définir le début et Définir la fin, puis Ajouter une coupe.</translation>
     </message>
     <message>
-        <location filename="../../vue/qml/WindowsApplication/CutList/CutListPanel.qml" line="445"/>
+        <location filename="../../vue/qml/WindowsApplication/CutList/CutListPanel.qml" line="453"/>
         <source>Are you sure you want to delete all cuts?</source>
         <translation>Voulez-vous vraiment supprimer toutes les coupes ?</translation>
     </message>
     <message>
-        <location filename="../../vue/qml/WindowsApplication/CutList/CutListPanel.qml" line="461"/>
+        <location filename="../../vue/qml/WindowsApplication/CutList/CutListPanel.qml" line="469"/>
         <source>No</source>
         <translation>Non</translation>
     </message>
     <message>
-        <location filename="../../vue/qml/WindowsApplication/CutList/CutListPanel.qml" line="470"/>
+        <location filename="../../vue/qml/WindowsApplication/CutList/CutListPanel.qml" line="478"/>
         <source>Yes</source>
         <translation>Oui</translation>
     </message>
@@ -794,28 +869,29 @@ puis sélectionnez Ajouter une coupe.</translation>
 <context>
     <name>CutListSummaryHeader</name>
     <message>
-        <location filename="../../vue/qml/WindowsApplication/CutList/CutListSummaryHeader.qml" line="34"/>
+        <location filename="../../vue/qml/WindowsApplication/CutList/CutListSummaryHeader.qml" line="41"/>
         <source>Cut List</source>
         <translation>Liste des coupes</translation>
     </message>
     <message>
-        <location filename="../../vue/qml/WindowsApplication/CutList/CutListSummaryHeader.qml" line="42"/>
-        <location filename="../../vue/qml/WindowsApplication/CutList/CutListSummaryHeader.qml" line="48"/>
+        <location filename="../../vue/qml/WindowsApplication/CutList/CutListSummaryHeader.qml" line="20"/>
+        <location filename="../../vue/qml/WindowsApplication/CutList/CutListSummaryHeader.qml" line="49"/>
+        <location filename="../../vue/qml/WindowsApplication/CutList/CutListSummaryHeader.qml" line="55"/>
         <source>Clear List</source>
         <translation>Effacer la liste</translation>
     </message>
     <message>
-        <location filename="../../vue/qml/WindowsApplication/CutList/CutListSummaryHeader.qml" line="57"/>
+        <location filename="../../vue/qml/WindowsApplication/CutList/CutListSummaryHeader.qml" line="65"/>
         <source>%1 %2 - Total removed: %3</source>
         <translation>%1 %2 - Total supprimé : %3</translation>
     </message>
     <message>
-        <location filename="../../vue/qml/WindowsApplication/CutList/CutListSummaryHeader.qml" line="59"/>
+        <location filename="../../vue/qml/WindowsApplication/CutList/CutListSummaryHeader.qml" line="67"/>
         <source>cut</source>
         <translation>coupe</translation>
     </message>
     <message>
-        <location filename="../../vue/qml/WindowsApplication/CutList/CutListSummaryHeader.qml" line="59"/>
+        <location filename="../../vue/qml/WindowsApplication/CutList/CutListSummaryHeader.qml" line="67"/>
         <source>cuts</source>
         <translation>coupes</translation>
     </message>
@@ -823,17 +899,27 @@ puis sélectionnez Ajouter une coupe.</translation>
 <context>
     <name>CutManagementPanelRoot</name>
     <message>
-        <location filename="../../vue/qml/WindowsApplication/CutList/CutManagementPanelRoot.qml" line="332"/>
+        <location filename="../../vue/qml/WindowsApplication/CutList/CutManagementPanelRoot.qml" line="310"/>
+        <source>Import JSON</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../../vue/qml/WindowsApplication/CutList/CutManagementPanelRoot.qml" line="322"/>
+        <source>Export JSON</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../../vue/qml/WindowsApplication/CutList/CutManagementPanelRoot.qml" line="370"/>
         <source>Are you sure you want to delete all cuts?</source>
         <translation>Voulez-vous vraiment supprimer toutes les coupes ?</translation>
     </message>
     <message>
-        <location filename="../../vue/qml/WindowsApplication/CutList/CutManagementPanelRoot.qml" line="348"/>
+        <location filename="../../vue/qml/WindowsApplication/CutList/CutManagementPanelRoot.qml" line="386"/>
         <source>No</source>
         <translation>Non</translation>
     </message>
     <message>
-        <location filename="../../vue/qml/WindowsApplication/CutList/CutManagementPanelRoot.qml" line="357"/>
+        <location filename="../../vue/qml/WindowsApplication/CutList/CutManagementPanelRoot.qml" line="395"/>
         <source>Yes</source>
         <translation>Oui</translation>
     </message>
@@ -959,7 +1045,7 @@ puis sélectionnez Ajouter une coupe.</translation>
 <context>
     <name>EditableRequestedTime</name>
     <message>
-        <location filename="../../vue/qml/WindowsApplication/CutList/EditableRequestedTime.qml" line="88"/>
+        <location filename="../../vue/qml/WindowsApplication/CutList/EditableRequestedTime.qml" line="86"/>
         <source>Edit time</source>
         <translation>Modifier l&apos;heure</translation>
     </message>

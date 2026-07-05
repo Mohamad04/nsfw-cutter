@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+I18N_DIR="$ROOT_DIR/resources/i18n"
+
+resolve_lrelease() {
+    if command -v pylrelease6 >/dev/null 2>&1; then
+        printf '%s\n' "pylrelease6"
+        return 0
+    fi
+
+    if command -v pyside6-lrelease >/dev/null 2>&1; then
+        printf '%s\n' "pyside6-lrelease"
+        return 0
+    fi
+
+    local candidates=(
+        "$ROOT_DIR/.venv/bin/pylrelease6"
+        "$ROOT_DIR/.venv/bin/pyside6-lrelease"
+        "$ROOT_DIR/.venv/Scripts/pylrelease6.exe"
+        "$ROOT_DIR/.venv/Scripts/pyside6-lrelease.exe"
+    )
+
+    local candidate
+    for candidate in "${candidates[@]}"; do
+        if [[ -x "$candidate" ]]; then
+            printf '%s\n' "$candidate"
+            return 0
+        fi
+    done
+
+    return 1
+}
+
+if [[ ! -d "$I18N_DIR" ]]; then
+    echo "Missing i18n directory: $I18N_DIR" >&2
+    exit 1
+fi
+
+LRELEASE="$(resolve_lrelease)" || {
+    echo "Could not find pylrelease6 or pyside6-lrelease." >&2
+    echo "Install PyQt6/PySide6 or create the project virtualenv first." >&2
+    exit 1
+}
+
+shopt -s nullglob
+ts_files=("$I18N_DIR"/*.ts)
+
+if (( ${#ts_files[@]} == 0 )); then
+    echo "No .ts translation files found in $I18N_DIR" >&2
+    exit 1
+fi
+
+for ts_file in "${ts_files[@]}"; do
+    qm_file="${ts_file%.ts}.qm"
+    echo "Compiling $(basename "$ts_file") -> $(basename "$qm_file")"
+    "$LRELEASE" "$ts_file" -qm "$qm_file"
+done
+
+echo "Compiled ${#ts_files[@]} i18n file(s)."

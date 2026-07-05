@@ -930,6 +930,8 @@ class AppControllerTests(unittest.TestCase):
             {
                 "start": "00:00:10",
                 "end": "00:00:20",
+                "requested_start_seconds": 10.0,
+                "requested_end_seconds": 20.0,
                 "reason": "Manual cut",
                 "tags": "manual",
                 "source": "Manual",
@@ -939,26 +941,49 @@ class AppControllerTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmp_dir:
             output_path = Path(tmp_dir) / "cuts.json"
-            self.controller.exportCutsToPath(cuts, str(output_path))
+            self.controller.exportCutsToPath(cuts, str(output_path), 120.0)
 
             payload = json.loads(output_path.read_text(encoding="utf-8"))
 
         self.assertEqual(payload["version"], 1)
-        self.assertEqual(payload["video"]["name"], "a.mp4")
-        self.assertEqual(payload["cuts"], cuts)
-        self.assertEqual(self.controller.projectStatus, "Exported 1 cut(s) to cuts.json")
+        self.assertEqual(payload["video"]["filename"], "a.mp4")
+        self.assertEqual(payload["video"]["duration"], 120.0)
+        self.assertEqual(payload["cuts"], [{"start": "00:00:10", "end": "00:00:20"}])
+
+    def test_get_cuts_json_text_returns_pretty_json(self):
+        self.controller.loadVideoFile("/tmp/a.mp4")
+        cuts = [
+            {
+                "start": "00:00:10",
+                "end": "00:00:20",
+                "requested_start_seconds": 10.0,
+                "requested_end_seconds": 20.0,
+            }
+        ]
+
+        json_text = self.controller.getCutsJsonText(cuts, 120.0)
+        payload = json.loads(json_text)
+
+        self.assertIn('\n  "video":', json_text)
+        self.assertEqual(payload["version"], 1)
+        self.assertEqual(payload["video"]["filename"], "a.mp4")
+        self.assertEqual(payload["video"]["duration"], 120.0)
+        self.assertEqual(payload["cuts"], [{"start": "00:00:10", "end": "00:00:20"}])
+
+    def test_get_cuts_json_text_reports_no_cuts(self):
+        json_text = self.controller.getCutsJsonText([], 120.0)
+
+        self.assertEqual(json_text, "")
+        self.assertEqual(self.controller.projectStatus, "No cuts to export")
 
     def test_import_cuts_from_json_file_accepts_wrapped_payload(self):
         payload = {
             "version": 1,
+            "video": {"filename": "a.mp4", "duration": 120.0},
             "cuts": [
                 {
-                    "start": "00:00:10",
-                    "end": "00:00:20",
-                    "reason": "Scene",
-                    "tags": "tag",
-                    "source": "AI",
-                    "score": "0.80",
+                    "start": 10.5,
+                    "end": 20.25,
                 }
             ],
         }
@@ -969,17 +994,117 @@ class AppControllerTests(unittest.TestCase):
 
             cuts = self.controller.importCutsFromPath(str(input_path))
 
-        self.assertEqual(cuts, payload["cuts"])
-        self.assertEqual(self.controller.projectStatus, "Imported 1 cut(s) from cuts.json")
+        self.assertEqual(
+            cuts,
+            [
+                {
+                    "start": "00:00:10.500",
+                    "end": "00:00:20.250",
+                    "requestedStartSeconds": 10.5,
+                    "requestedEndSeconds": 20.25,
+                }
+            ],
+        )
+        self.assertEqual(self.controller.projectStatus, "Cuts imported successfully: cuts.json")
 
-    def test_import_cuts_from_json_file_rejects_reversed_range(self):
-        payload = [{"start": "00:00:20", "end": "00:00:10"}]
+    def test_import_cuts_json_text_accepts_wrapped_payload(self):
+        payload = {
+            "version": 1,
+            "video": {"filename": "a.mp4", "duration": 120.0},
+            "cuts": [
+                {
+                    "start": 10.5,
+                    "end": 20.25,
+                }
+            ],
+        }
+
+        result = self.controller.importCutsJsonText(json.dumps(payload), 120.0)
+
+        self.assertTrue(result["accepted"])
+        self.assertEqual(
+            result["cuts"],
+            [
+                {
+                    "start": "00:00:10.500",
+                    "end": "00:00:20.250",
+                    "requestedStartSeconds": 10.5,
+                    "requestedEndSeconds": 20.25,
+                }
+            ],
+        )
+        self.assertEqual(self.controller.projectStatus, "Cuts imported successfully")
+
+    def test_import_cuts_json_text_reports_invalid_json(self):
+        result = self.controller.importCutsJsonText("{bad json", 120.0)
+
+        self.assertFalse(result["accepted"])
+        self.assertEqual(result["cuts"], [])
+        self.assertEqual(result["error"], "Invalid JSON content")
+        self.assertEqual(self.controller.projectStatus, "Invalid JSON content")
+
+    def test_import_cuts_from_json_file_sorts_and_merges_overlaps(self):
+        payload = {
+            "version": 1,
+            "cuts": [
+                {"start": 20.0, "end": 30.0},
+                {"start": 5.0, "end": 10.0},
+                {"start": 9.0, "end": 12.0},
+            ],
+        }
 
         with tempfile.TemporaryDirectory() as tmp_dir:
             input_path = Path(tmp_dir) / "cuts.json"
             input_path.write_text(json.dumps(payload), encoding="utf-8")
 
-            with self.assertRaisesRegex(ValueError, "start before end"):
+            cuts = self.controller.importCutsFromPath(str(input_path))
+
+        self.assertEqual(
+            cuts,
+            [
+                {
+                    "start": "00:00:05",
+                    "end": "00:00:12",
+                    "requestedStartSeconds": 5.0,
+                    "requestedEndSeconds": 12.0,
+                },
+                {
+                    "start": "00:00:20",
+                    "end": "00:00:30",
+                    "requestedStartSeconds": 20.0,
+                    "requestedEndSeconds": 30.0,
+                },
+            ],
+        )
+
+    def test_import_cuts_from_json_file_rejects_end_after_known_duration(self):
+        payload = {"version": 1, "cuts": [{"start": 10.0, "end": 20.0}]}
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            input_path = Path(tmp_dir) / "cuts.json"
+            input_path.write_text(json.dumps(payload), encoding="utf-8")
+
+            with self.assertRaisesRegex(ValueError, "loaded video duration"):
+                self.controller.importCutsFromPath(str(input_path), 15.0)
+
+    def test_import_cuts_from_json_file_rejects_numeric_strings(self):
+        payload = {"version": 1, "cuts": [{"start": "10.0", "end": 20.0}]}
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            input_path = Path(tmp_dir) / "cuts.json"
+            input_path.write_text(json.dumps(payload), encoding="utf-8")
+
+            with self.assertRaisesRegex(ValueError, "numbers"):
+                self.controller.importCutsFromPath(str(input_path))
+
+    def test_import_cuts_from_json_file_rejects_reversed_range(self):
+        payload = {"version": 1, "cuts": [{"start": 20.0, "end": 10.0}]}
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            input_path = Path(tmp_dir) / "cuts.json"
+            input_path.write_text(json.dumps(payload), encoding="utf-8")
+
+            with self.assertRaisesRegex(ValueError, "after start"):
                 self.controller.importCutsFromPath(str(input_path))
 
 

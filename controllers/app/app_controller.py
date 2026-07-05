@@ -3,12 +3,11 @@ import math
 import uuid
 from pathlib import Path
 
-from PySide6.QtCore import QObject, Property, QThreadPool, QUrl, Signal, Slot
-from PySide6.QtWidgets import QFileDialog
+from PySide6.QtCore import QCoreApplication, QObject, Property, QThreadPool, QUrl, Signal, Slot
+from PySide6.QtWidgets import QApplication, QFileDialog
 
 from controllers.app.app_state import AppState
 from controllers.app.cut_normalizer import normalize_cut, parse_hh_mm_ss_to_seconds
-from controllers.app.cuts_io import CutsIo
 from controllers.app.export_preparation_runner import (
     ExportPreparationCallbacks,
     ExportPreparationRunner,
@@ -18,6 +17,7 @@ from controllers.app.video_loader import VideoLoader
 from controllers.common.qt_state import clamp_percent
 from core.job_registry import JobRegistry
 from services.editing.keyframe_service import KeyframeService
+from services.export.cut_json_service import CutJsonError, CutJsonService
 from services.settings_service import SettingsService
 from services.media.import_service import VideoImportService
 from services.subtitles.processing_service import SubtitleService
@@ -129,7 +129,7 @@ class AppController(QObject):
 
         self._state = AppState()
         self._video_loader = VideoLoader(self.video_import_service, self.settings_service)
-        self._cuts_io = CutsIo(normalize_cut)
+        self._cut_json_service = CutJsonService()
         self._lossless_export_runner = LosslessExportRunner(
             self._thread_pool,
             self._job_registry,
@@ -567,61 +567,106 @@ class AppController(QObject):
 
     @Slot("QVariantList")
     def exportCuts(self, cuts):
-        if not cuts:
-            self._set_project_status("No cuts to export")
-            return
+        self.getCutsJsonText(cuts, 0.0)
 
-        default_name = self._default_cuts_json_path()
-        file_path, _selected_filter = QFileDialog.getSaveFileName(
-            None,
-            "Export cuts JSON",
-            default_name,
-            "JSON files (*.json)",
-        )
-        if not file_path:
-            return
+    @Slot("QVariantList", result=str)
+    @Slot("QVariantList", float, result=str)
+    def exportCutsJson(self, cuts, duration_seconds: float = 0.0):
+        return self.getCutsJsonText(cuts, duration_seconds)
+
+    @Slot("QVariantList", result=str)
+    @Slot("QVariantList", float, result=str)
+    def getCutsJsonText(self, cuts, duration_seconds: float = 0.0):
+        if not cuts:
+            self._set_project_status(QCoreApplication.translate("AppController", "No cuts to export"))
+            return ""
 
         try:
-            self.exportCutsToPath(cuts, file_path)
-        except ValueError as exc:
-            self._set_project_status(str(exc))
+            return self._cut_json_service.export_to_text(
+                cuts=cuts,
+                video_filename=Path(self._state.selected_video_path).name or self._state.video_name,
+                video_duration_seconds=duration_seconds,
+            )
+        except CutJsonError as exc:
+            if exc.code == CutJsonService.NO_CUTS:
+                message = QCoreApplication.translate("AppController", "No cuts to export")
+            else:
+                message = QCoreApplication.translate("AppController", "Could not export cuts")
+                logger.info("Unable to export cuts JSON text: %s", exc.detail or exc)
+            self._set_project_status(message)
+            return ""
         except Exception:
-            logger.exception("Unexpected error while exporting cuts")
-            self._set_project_status("Unexpected error while exporting cuts")
+            logger.exception("Unexpected error while generating cuts JSON")
+            self._set_project_status(QCoreApplication.translate("AppController", "Could not export cuts"))
+            return ""
 
     @Slot(result="QVariantList")
     def importCuts(self):
-        file_path, _selected_filter = QFileDialog.getOpenFileName(
-            None,
-            "Import cuts JSON",
-            "",
-            "JSON files (*.json)",
-        )
-        if not file_path:
+        result = self.importCutsJson(0.0)
+        if not result.get("accepted"):
             return []
+        return result.get("cuts", [])
 
+    @Slot(result="QVariantMap")
+    @Slot(float, result="QVariantMap")
+    def importCutsJson(self, duration_seconds: float = 0.0):
+        message = QCoreApplication.translate("AppController", "Could not import cuts")
+        self._set_project_status(message)
+        return {"accepted": False, "cuts": [], "error": message}
+
+    @Slot(str, result="QVariantMap")
+    @Slot(str, float, result="QVariantMap")
+    def importCutsJsonText(self, json_text: str, duration_seconds: float = 0.0):
         try:
-            return self.importCutsFromPath(file_path)
-        except ValueError as exc:
-            self._set_project_status(str(exc))
-            return []
+            cuts = self._cut_json_service.import_from_text(
+                json_text,
+                video_duration_seconds=duration_seconds,
+            )
+            message = QCoreApplication.translate("AppController", "Cuts imported successfully")
+            self._set_project_status(message)
+            return {"accepted": True, "cuts": cuts, "error": ""}
+        except CutJsonError as exc:
+            logger.info("Unable to import cuts JSON text: %s", exc.detail or exc)
+            if exc.code == CutJsonService.INVALID_JSON:
+                message = QCoreApplication.translate("AppController", "Invalid JSON content")
+            else:
+                message = QCoreApplication.translate("AppController", "Could not import cuts")
+            self._set_project_status(message)
+            return {"accepted": False, "cuts": [], "error": message}
         except Exception:
-            logger.exception("Unexpected error while importing cuts")
-            self._set_project_status("Unexpected error while importing cuts")
-            return []
+            logger.exception("Unexpected error while importing cuts JSON text")
+            message = QCoreApplication.translate("AppController", "Could not import cuts")
+            self._set_project_status(message)
+            return {"accepted": False, "cuts": [], "error": message}
 
-    def exportCutsToPath(self, cuts, file_path: str):
-        count, output_path = self._cuts_io.export_to_path(
+    @Slot(str, result=bool)
+    def copyTextToClipboard(self, text: str):
+        if not str(text or "").strip():
+            return False
+
+        clipboard = QApplication.clipboard()
+        if clipboard is None:
+            return False
+
+        clipboard.setText(str(text))
+        return True
+
+    def exportCutsToPath(self, cuts, file_path: str, duration_seconds: float = 0.0):
+        count, output_path = self._cut_json_service.export_to_path(
             cuts=cuts,
             file_path=file_path,
-            video_name=self._state.video_name,
-            selected_video_path=self._state.selected_video_path,
+            video_filename=Path(self._state.selected_video_path).name or self._state.video_name,
+            video_duration_seconds=duration_seconds,
         )
-        self._set_project_status(f"Exported {count} cut(s) to {output_path.name}")
+        return count, output_path
 
-    def importCutsFromPath(self, file_path: str):
-        normalized_cuts, input_path = self._cuts_io.import_from_path(file_path)
-        self._set_project_status(f"Imported {len(normalized_cuts)} cut(s) from {input_path.name}")
+    def importCutsFromPath(self, file_path: str, duration_seconds: float = 0.0):
+        normalized_cuts, input_path = self._cut_json_service.import_from_path(
+            file_path,
+            video_duration_seconds=duration_seconds,
+        )
+        message = QCoreApplication.translate("AppController", "Cuts imported successfully")
+        self._set_project_status(f"{message}: {input_path.name}")
         return normalized_cuts
 
     @Slot(str, int, str)
@@ -1115,12 +1160,6 @@ class AppController(QObject):
     def _default_export_output_path(self, input_path: str) -> str:
         source = Path(input_path)
         return str(source.with_name(f"{source.stem}_export{source.suffix}"))
-
-    def _default_cuts_json_path(self) -> str:
-        if self._state.selected_video_path:
-            source = Path(self._state.selected_video_path)
-            return str(source.with_name(f"{source.stem}_cuts.json"))
-        return "cuts.json"
 
     def _normalize_cut(self, cut):
         return normalize_cut(cut)

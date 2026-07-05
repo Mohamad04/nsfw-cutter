@@ -29,4 +29,4 @@ CODEX_BACKGROUND_JOB_SYSTEM.md
 CODEX_BACKEND_PIPELINE_V1_METADATA_SUBTITLES_EXPORT_JOB.md
 codex_pydantic_settings_qml_refactor.md
 codex_fast_video_cut_no_reencode.md
-/resources/i18n/*.qm
+resources/i18n/*.qm

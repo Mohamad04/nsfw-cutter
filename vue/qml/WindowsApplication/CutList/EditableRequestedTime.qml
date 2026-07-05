@@ -1,7 +1,6 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
-import "../Shared"
 
 FocusScope {
     id: root
@@ -58,7 +57,6 @@ FocusScope {
         if (!canApply) {
             root.invalid = true
             editInput.forceActiveFocus()
-            editInput.selectAll()
             return
         }
 
@@ -110,9 +108,7 @@ FocusScope {
             verticalAlignment: TextInput.AlignVCenter
             selectByMouse: true
             clip: true
-            validator: RegularExpressionValidator {
-                regularExpression: /^\d+:[0-5]\d:[0-5]\d(?:\.\d{0,3})?$/
-            }
+            onTextEdited: root.invalid = false
             onAccepted: root.commitEdit()
             onActiveFocusChanged: {
                 if (!activeFocus && root.editing)

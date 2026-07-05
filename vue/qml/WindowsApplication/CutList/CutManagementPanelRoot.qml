@@ -22,7 +22,10 @@ Rectangle {
     property color safeColor: root.lightMode ? "#15803D" : "#86EFAC"
     property bool requestedEditorActive: false
     property string cutTimingMode: "safe"
+    property bool hasVideo: false
 
+    signal importJsonRequested()
+    signal exportJsonRequested()
     signal cutSelected(int index)
     signal requestedTimeEdited(int index, string fieldName, real seconds)
     signal timingModeSelected(string mode)
@@ -248,17 +251,15 @@ Rectangle {
 
         CutDetailsPanel {
             Layout.fillWidth: true
-            Layout.preferredHeight: root.cutsModel.count > 0 ? 230 : 86
+            Layout.preferredHeight: root.cutsModel.count > 0 ? 168 : 86
             hasCuts: root.cutsModel.count > 0
             hasSelection: root.selectedCut() !== null
             selectedIndex: root.selectedIndex
-            cutTimingMode: root.cutTimingMode
             adjusted: root.isAdjusted(root.selectedCut())
             statusText: root.statusText(root.selectedCut())
             requestedStartText: root.displayTime(root.selectedCut(), "start", "requestedStartSeconds")
             requestedEndText: root.displayTime(root.selectedCut(), "end", "requestedEndSeconds")
             requestedDurationText: root.formatCompact(root.requestedDurationSeconds(root.selectedCut()))
-            requestedDurationEditText: root.formatHms(root.requestedDurationSeconds(root.selectedCut()))
             safeStartText: root.displayTime(root.selectedCut(), "safeStart", "safeStartSeconds")
             safeEndText: root.displayTime(root.selectedCut(), "safeEnd", "safeEndSeconds")
             safeDurationText: root.formatCompact(root.safeDurationSeconds(root.selectedCut()))
@@ -274,9 +275,46 @@ Rectangle {
             canApplyEdit: function(fieldName, seconds) { return root.canApplyRequestedEdit(fieldName, seconds) }
             onEditorDismissRequested: root.dismissRequestedEditor()
             onEditorActiveChanged: function(active) { root.requestedEditorActive = active }
-            onTimingModeSelected: function(mode) { root.timingModeSelected(mode) }
             onRequestedTimeEdited: function(fieldName, seconds) {
                 root.requestedTimeEdited(root.selectedIndex, fieldName, seconds)
+            }
+        }
+
+        Rectangle {
+            Layout.fillWidth: true
+            Layout.preferredHeight: 52
+            radius: 12
+            color: root.lightMode ? "#F8FAFC" : "#07101D"
+            border.color: root.lightMode ? "#E2E8F0" : "#17263E"
+
+            RowLayout {
+                anchors.fill: parent
+                anchors.margins: 8
+                spacing: 8
+
+                AppButton {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 36
+                    text: qsTr("Import JSON")
+                    iconName: "open"
+                    variant: "secondary"
+                    size: "sm"
+                    lightMode: root.lightMode
+                    enabled: root.hasVideo
+                    onClicked: root.importJsonRequested()
+                }
+
+                AppButton {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 36
+                    text: qsTr("Export JSON")
+                    iconName: "export"
+                    variant: "secondary"
+                    size: "sm"
+                    lightMode: root.lightMode
+                    enabled: root.hasVideo && root.cutsModel.count > 0
+                    onClicked: root.exportJsonRequested()
+                }
             }
         }
 

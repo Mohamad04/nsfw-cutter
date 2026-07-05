@@ -2,7 +2,6 @@ import QtQuick
 import QtQuick.Layouts
 
 import "../Shared"
-import "../VideoPlayer"
 
 Rectangle {
     id: root
@@ -11,12 +10,10 @@ Rectangle {
     property bool hasSelection: false
     property bool adjusted: false
     property int selectedIndex: -1
-    property string cutTimingMode: "safe"
     property string statusText: "Safe"
     property string requestedStartText: "--"
     property string requestedEndText: "--"
     property string requestedDurationText: "00:00"
-    property string requestedDurationEditText: "00:00:00"
     property string safeStartText: "--"
     property string safeEndText: "--"
     property string safeDurationText: "00:00"
@@ -31,7 +28,6 @@ Rectangle {
     property color safeColor: root.lightMode ? "#15803D" : "#86EFAC"
     property var canApplyEdit: null
 
-    signal timingModeSelected(string mode)
     signal requestedTimeEdited(string fieldName, real seconds)
     signal editorDismissRequested()
     signal editorActiveChanged(bool active)
@@ -121,19 +117,6 @@ Rectangle {
             }
         }
 
-        CutModeControl {
-            Layout.fillWidth: true
-            Layout.preferredHeight: 44
-            Layout.alignment: Qt.AlignVCenter
-
-            cutTimingMode: root.cutTimingMode
-            lightMode: root.lightMode
-            mutedTextColor: root.mutedTextColor
-
-            onTimingModeSelected: function(mode) {
-                root.timingModeSelected(mode)
-            }
-        }
         GridLayout {
             Layout.fillWidth: true
             columns: 4
@@ -180,31 +163,17 @@ Rectangle {
             Text { text: root.endDeltaText; color: root.textColor; font.pixelSize: 11; horizontalAlignment: Text.AlignRight; Layout.preferredWidth: 54 }
 
             Text { text: qsTr("Duration"); color: root.mutedTextColor; font.pixelSize: 11 }
-            EditableRequestedTime {
-                fieldName: "duration"
-                displayText: root.requestedDurationText
-                editTextOnStart: root.requestedDurationEditText
-                canEdit: root.hasSelection
-                lightMode: root.lightMode
-                textColor: root.textColor
-                requestedColor: root.requestedColor
-                accentColor: root.accentColor
-                canApplyEdit: root.canApplyEdit
-                onEditingChanged: root.editorActiveChanged(editing)
-                onRequestedTimeEdited: function(fieldName, seconds) { root.requestedTimeEdited(fieldName, seconds) }
+            Text {
+                text: root.requestedDurationText
+                color: root.requestedColor
+                font.pixelSize: 11
+                font.weight: Font.DemiBold
+                elide: Text.ElideRight
+                verticalAlignment: Text.AlignVCenter
+                Layout.fillWidth: true
             }
             Text { text: root.safeDurationText; color: root.safeColor; font.pixelSize: 11; font.weight: Font.DemiBold; elide: Text.ElideRight; Layout.fillWidth: true }
             Text { text: root.durationDeltaText; color: root.textColor; font.pixelSize: 11; horizontalAlignment: Text.AlignRight; Layout.preferredWidth: 54 }
-        }
-
-        Text {
-            Layout.fillWidth: true
-            text: root.cutTimingMode === "requested"
-                ? qsTr("Fast mode uses the exact requested range for preview and export.")
-                : qsTr("Smart mode removes the requested range exactly and only re-encodes boundary video chunks.")
-            color: root.mutedTextColor
-            font.pixelSize: 11
-            wrapMode: Text.WordWrap
         }
     }
 }

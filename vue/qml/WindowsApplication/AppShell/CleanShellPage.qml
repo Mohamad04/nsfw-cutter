@@ -1,6 +1,7 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
+import QtQuick.Controls
 import QtQuick.Layouts
 
 import "../CutEditor"
@@ -27,6 +28,10 @@ Item {
     property int selectedCutIndex: -1
     property string outputDir: ""
     property string cutTimingMode: "safe"
+    property string exportJsonText: ""
+    property string exportJsonNotice: ""
+    property string importJsonError: ""
+    readonly property string cutsJsonExample: "{\n  \"version\": 1,\n  \"cuts\": [\n    { \"start\": 12.5, \"end\": 18.75 },\n    { \"start\": 60.0, \"end\": 75.2 }\n  ]\n}"
 
     AppTheme { id: theme }
     ListModel {
@@ -91,6 +96,33 @@ Item {
         )
         if (!info.valid || info.safe_start === null || info.safe_end === null) return null
         return info
+    }
+
+    function isTimeText(value) {
+        var parts = String(value || "").trim().split(":")
+        return parts.length === 3
+            && Number.isFinite(Number(parts[0]))
+            && Number.isFinite(Number(parts[1]))
+            && Number.isFinite(Number(parts[2]))
+    }
+
+    function hasUsableSafeCut(cut) {
+        var safeStart = cut.safeStartSeconds !== undefined ? cut.safeStartSeconds : cut.safe_start_seconds
+        var safeEnd = cut.safeEndSeconds !== undefined ? cut.safeEndSeconds : cut.safe_end_seconds
+        var hasNumericSafe = safeStart !== undefined
+            && safeStart !== null
+            && safeStart !== ""
+            && safeEnd !== undefined
+            && safeEnd !== null
+            && safeEnd !== ""
+            && Number.isFinite(Number(safeStart))
+            && Number.isFinite(Number(safeEnd))
+            && Number(safeStart) < Number(safeEnd)
+        if (hasNumericSafe) return true
+
+        var safeStartText = cut.safeStart || cut.safe_start || ""
+        var safeEndText = cut.safeEnd || cut.safe_end || ""
+        return root.isTimeText(safeStartText) && root.isTimeText(safeEndText)
     }
 
     function clearSafeCut(index) {
@@ -160,28 +192,39 @@ Item {
     }
 
     function appendCut(cut) {
+        var start = cut.start || cut.requestedStart || "00:00:00"
+        var end = cut.end || cut.requestedEnd || "00:00:00"
+        var safeInfo = root.hasUsableSafeCut(cut) ? null : root.computedSafeCut(start, end)
+        var safeAvailable = root.hasUsableSafeCut(cut) || safeInfo !== null
+        var requestedStartSeconds = safeInfo !== null ? safeInfo.requested_start : (cut.requestedStartSeconds !== undefined ? cut.requestedStartSeconds : (cut.requested_start_seconds !== undefined ? cut.requested_start_seconds : ""))
+        var requestedEndSeconds = safeInfo !== null ? safeInfo.requested_end : (cut.requestedEndSeconds !== undefined ? cut.requestedEndSeconds : (cut.requested_end_seconds !== undefined ? cut.requested_end_seconds : ""))
+        var safeStartSeconds = safeInfo !== null ? safeInfo.safe_start : (cut.safeStartSeconds !== undefined ? cut.safeStartSeconds : (cut.safe_start_seconds !== undefined ? cut.safe_start_seconds : ""))
+        var safeEndSeconds = safeInfo !== null ? safeInfo.safe_end : (cut.safeEndSeconds !== undefined ? cut.safeEndSeconds : (cut.safe_end_seconds !== undefined ? cut.safe_end_seconds : ""))
+        var safeStart = safeInfo !== null ? root.formatSeconds(safeInfo.safe_start) : (cut.safeStart || cut.safe_start || root.formatSeconds(safeStartSeconds))
+        var safeEnd = safeInfo !== null ? root.formatSeconds(safeInfo.safe_end) : (cut.safeEnd || cut.safe_end || root.formatSeconds(safeEndSeconds))
+
         cutsModel.append({
-            "start": cut.start || "00:00:00",
-            "end": cut.end || "00:00:00",
-            "safeStart": cut.safeStart || "",
-            "safeEnd": cut.safeEnd || "",
-            "requestedStartSeconds": cut.requestedStartSeconds !== undefined ? cut.requestedStartSeconds : "",
-            "requestedEndSeconds": cut.requestedEndSeconds !== undefined ? cut.requestedEndSeconds : "",
-            "safeStartSeconds": cut.safeStartSeconds !== undefined ? cut.safeStartSeconds : "",
-            "safeEndSeconds": cut.safeEndSeconds !== undefined ? cut.safeEndSeconds : "",
-            "safeAvailable": cut.safeAvailable === true,
-            "previousKeyframeStart": cut.previousKeyframeStart || "",
-            "nextKeyframeStart": cut.nextKeyframeStart || "",
-            "previousKeyframeEnd": cut.previousKeyframeEnd || "",
-            "nextKeyframeEnd": cut.nextKeyframeEnd || "",
-            "extraBefore": cut.extraBefore || "0.0s",
-            "extraAfter": cut.extraAfter || "0.0s",
+            "start": start,
+            "end": end,
+            "safeStart": safeStart,
+            "safeEnd": safeEnd,
+            "requestedStartSeconds": requestedStartSeconds,
+            "requestedEndSeconds": requestedEndSeconds,
+            "safeStartSeconds": safeStartSeconds,
+            "safeEndSeconds": safeEndSeconds,
+            "safeAvailable": safeAvailable,
+            "previousKeyframeStart": safeInfo !== null ? root.formatSeconds(safeInfo.previous_keyframe_start) : (cut.previousKeyframeStart || cut.previous_keyframe_start || ""),
+            "nextKeyframeStart": safeInfo !== null ? root.formatSeconds(safeInfo.next_keyframe_start) : (cut.nextKeyframeStart || cut.next_keyframe_start || ""),
+            "previousKeyframeEnd": safeInfo !== null ? root.formatSeconds(safeInfo.previous_keyframe_end) : (cut.previousKeyframeEnd || cut.previous_keyframe_end || ""),
+            "nextKeyframeEnd": safeInfo !== null ? root.formatSeconds(safeInfo.next_keyframe_end) : (cut.nextKeyframeEnd || cut.next_keyframe_end || ""),
+            "extraBefore": safeInfo !== null ? Number(safeInfo.extra_before || 0).toFixed(1) + "s" : (cut.extraBefore || cut.extra_before || "0.0s"),
+            "extraAfter": safeInfo !== null ? Number(safeInfo.extra_after || 0).toFixed(1) + "s" : (cut.extraAfter || cut.extra_after || "0.0s"),
             "reason": cut.reason || "Manual removal",
             "tags": cut.tags || "manual",
             "source": cut.source || "Manual",
             "score": cut.score || "--",
-            "cutType": cut.cutType || "Remove",
-            "status": cut.status || "Pending"
+            "cutType": cut.cutType || cut.type || "Remove",
+            "status": safeAvailable ? (cut.status || "Pending") : "Safe unavailable"
         })
         root.selectedCutIndex = cutsModel.count - 1
     }
@@ -213,6 +256,78 @@ Item {
             })
         }
         return cuts
+    }
+
+    function videoDurationSeconds() {
+        return videoWorkspace.durationMs > 0 ? videoWorkspace.durationMs / 1000 : 0
+    }
+
+    function applyImportedCuts(importedCuts) {
+        cutsModel.clear()
+        root.selectedCutIndex = -1
+        for (var index = 0; index < importedCuts.length; index += 1) {
+            root.appendCut(importedCuts[index])
+        }
+        root.syncAiPickAddedState()
+    }
+
+    function openImportCutsJsonDialog() {
+        if (appController.selectedVideoPath.length === 0) return
+        root.importJsonError = ""
+        importJsonTextArea.text = ""
+        importCutsJsonDialog.open()
+        importJsonTextArea.forceActiveFocus()
+    }
+
+    function importCutsFromJsonText() {
+        if (String(importJsonTextArea.text || "").trim().length === 0) {
+            root.importJsonError = qsTr("Invalid JSON content")
+            return
+        }
+
+        var result = appController.importCutsJsonText(importJsonTextArea.text, root.videoDurationSeconds())
+        if (!result || result.accepted !== true) {
+            root.importJsonError = result && result.error ? result.error : qsTr("Could not import cuts")
+            return
+        }
+
+        root.applyImportedCuts(result.cuts || [])
+        importCutsJsonDialog.close()
+    }
+
+    function importCutsFromJson() {
+        root.openImportCutsJsonDialog()
+    }
+
+    function openExportCutsJsonDialog() {
+        if (appController.selectedVideoPath.length === 0) return
+
+        root.exportJsonNotice = ""
+        root.exportJsonText = ""
+        if (cutsModel.count === 0) {
+            root.exportJsonNotice = qsTr("No cuts to export")
+        } else {
+            root.exportJsonText = appController.getCutsJsonText(root.cutsToArray(), root.videoDurationSeconds())
+            if (String(root.exportJsonText || "").trim().length === 0)
+                root.exportJsonNotice = qsTr("Could not export cuts")
+        }
+
+        exportCutsJsonDialog.open()
+    }
+
+    function exportCutsToJson() {
+        root.openExportCutsJsonDialog()
+    }
+
+    function copyExportJsonToClipboard() {
+        if (String(root.exportJsonText || "").trim().length === 0) {
+            root.exportJsonNotice = qsTr("No JSON content to copy")
+            return
+        }
+
+        root.exportJsonNotice = appController.copyTextToClipboard(root.exportJsonText)
+            ? qsTr("Cuts copied to clipboard")
+            : qsTr("No JSON content to copy")
     }
 
     function chooseOutputFolder() {
@@ -303,6 +418,7 @@ Item {
                     selectedIndex: root.selectedCutIndex
                     durationMs: videoWorkspace.durationMs
                     cutTimingMode: root.cutTimingMode
+                    hasVideo: appController.selectedVideoPath.length > 0
                     lightMode: root.lightMode
                     panelColor: root.surface
                     strokeColor: root.borderColor
@@ -314,6 +430,8 @@ Item {
                     onRequestedTimeEdited: function(index, fieldName, seconds) {
                         root.updateRequestedCutTime(index, fieldName, seconds)
                     }
+                    onImportJsonRequested: root.openImportCutsJsonDialog()
+                    onExportJsonRequested: root.openExportCutsJsonDialog()
                 }
             }
 
@@ -332,6 +450,205 @@ Item {
                 accentColor: root.darkMode ? theme.darkAccent : theme.lightAccent
                 onChooseFolderRequested: root.chooseOutputFolder()
                 onExportCleanVideoRequested: root.exportCleanVideo()
+            }
+        }
+    }
+
+    Popup {
+        id: importCutsJsonDialog
+
+        modal: true
+        focus: true
+        width: Math.min(640, parent ? parent.width - 48 : 640)
+        height: Math.min(620, parent ? parent.height - 48 : 620)
+        anchors.centerIn: parent
+        padding: 0
+        closePolicy: Popup.CloseOnEscape
+
+        background: Rectangle {
+            radius: 12
+            color: root.lightMode ? "#FFFFFF" : "#0B1324"
+            border.color: root.lightMode ? "#CBD5E1" : "#243244"
+            border.width: 1
+        }
+
+        contentItem: ColumnLayout {
+            anchors.fill: parent
+            anchors.margins: 18
+            spacing: 12
+
+            Text {
+                Layout.fillWidth: true
+                text: qsTr("Import Cuts JSON")
+                color: root.textMain
+                font.pixelSize: 22
+                font.bold: true
+                elide: Text.ElideRight
+            }
+
+            Text {
+                Layout.fillWidth: true
+                text: qsTr("Paste your cuts JSON below.")
+                color: root.textMuted
+                font.pixelSize: 13
+                wrapMode: Text.WordWrap
+            }
+
+            Text {
+                Layout.fillWidth: true
+                text: qsTr("JSON content")
+                color: root.textMain
+                font.pixelSize: 12
+                font.bold: true
+            }
+
+            ScrollView {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                clip: true
+
+                AppTextArea {
+                    id: importJsonTextArea
+
+                    width: Math.max(0, parent.width)
+                    height: Math.max(parent.height, implicitHeight)
+                    lightMode: root.lightMode
+                    placeholderText: root.cutsJsonExample
+                    textFormat: TextEdit.PlainText
+                    selectByMouse: true
+                    font.family: "Consolas"
+                }
+            }
+
+            Text {
+                Layout.fillWidth: true
+                visible: root.importJsonError.length > 0
+                text: root.importJsonError
+                color: root.lightMode ? "#B91C1C" : "#FCA5A5"
+                font.pixelSize: 12
+                wrapMode: Text.WordWrap
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 8
+
+                Item { Layout.fillWidth: true }
+
+                AppButton {
+                    text: qsTr("Cancel")
+                    variant: "ghost"
+                    size: "sm"
+                    lightMode: root.lightMode
+                    Layout.preferredWidth: 96
+                    onClicked: importCutsJsonDialog.close()
+                }
+
+                AppButton {
+                    text: qsTr("Import")
+                    variant: "primary"
+                    size: "sm"
+                    lightMode: root.lightMode
+                    Layout.preferredWidth: 96
+                    onClicked: root.importCutsFromJsonText()
+                }
+            }
+        }
+    }
+
+    Popup {
+        id: exportCutsJsonDialog
+
+        modal: true
+        focus: true
+        width: Math.min(640, parent ? parent.width - 48 : 640)
+        height: Math.min(620, parent ? parent.height - 48 : 620)
+        anchors.centerIn: parent
+        padding: 0
+        closePolicy: Popup.CloseOnEscape
+
+        background: Rectangle {
+            radius: 12
+            color: root.lightMode ? "#FFFFFF" : "#0B1324"
+            border.color: root.lightMode ? "#CBD5E1" : "#243244"
+            border.width: 1
+        }
+
+        contentItem: ColumnLayout {
+            anchors.fill: parent
+            anchors.margins: 18
+            spacing: 12
+
+            Text {
+                Layout.fillWidth: true
+                text: qsTr("Export Cuts JSON")
+                color: root.textMain
+                font.pixelSize: 22
+                font.bold: true
+                elide: Text.ElideRight
+            }
+
+            Text {
+                Layout.fillWidth: true
+                text: qsTr("JSON content")
+                color: root.textMain
+                font.pixelSize: 12
+                font.bold: true
+            }
+
+            ScrollView {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                clip: true
+
+                AppTextArea {
+                    id: exportJsonTextArea
+
+                    width: Math.max(0, parent.width)
+                    height: Math.max(parent.height, implicitHeight)
+                    lightMode: root.lightMode
+                    text: root.exportJsonText
+                    readOnly: true
+                    textFormat: TextEdit.PlainText
+                    selectByMouse: true
+                    font.family: "Consolas"
+                }
+            }
+
+            Text {
+                Layout.fillWidth: true
+                visible: root.exportJsonNotice.length > 0
+                text: root.exportJsonNotice
+                color: root.exportJsonNotice === qsTr("Cuts copied to clipboard")
+                    ? (root.lightMode ? "#15803D" : "#86EFAC")
+                    : (root.lightMode ? "#B91C1C" : "#FCA5A5")
+                font.pixelSize: 12
+                wrapMode: Text.WordWrap
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 8
+
+                Item { Layout.fillWidth: true }
+
+                AppButton {
+                    text: qsTr("Copy")
+                    variant: "primary"
+                    size: "sm"
+                    lightMode: root.lightMode
+                    Layout.preferredWidth: 96
+                    onClicked: root.copyExportJsonToClipboard()
+                }
+
+                AppButton {
+                    text: qsTr("Close")
+                    variant: "ghost"
+                    size: "sm"
+                    lightMode: root.lightMode
+                    Layout.preferredWidth: 96
+                    onClicked: exportCutsJsonDialog.close()
+                }
             }
         }
     }

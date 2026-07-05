@@ -1,6 +1,7 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
+import QtQuick.Controls
 import QtQuick.Layouts
 
 import "../Shared"
@@ -211,6 +212,15 @@ Rectangle {
         root.cutSelected(root.cutsModel.count > 0 ? nextSelected : -1)
     }
 
+    function clearCuts() {
+        if (root.cutsModel.count === 0) return
+
+        root.cutsModel.clear()
+        root.cutSelected(-1)
+        root.requestedEditorActive = false
+        root.forceActiveFocus()
+    }
+
     function dismissRequestedEditor() {
         if (root.requestedEditorActive)
             root.forceActiveFocus()
@@ -226,9 +236,11 @@ Rectangle {
             Layout.preferredHeight: 46
             cutsCount: root.cutsModel.count
             totalRemovedText: root.formatHms(root.totalRemovedSeconds())
+            lightMode: root.lightMode
             textColor: root.textColor
             mutedTextColor: root.mutedTextColor
             accentColor: root.accentColor
+            onClearListRequested: clearCutsConfirmation.open()
         }
 
         CutListItemsView {
@@ -327,6 +339,70 @@ Rectangle {
             lightMode: root.lightMode
             textColor: root.textColor
             mutedTextColor: root.mutedTextColor
+        }
+    }
+
+    Popup {
+        id: clearCutsConfirmation
+
+        modal: true
+        focus: true
+        width: Math.min(390, Math.max(280, root.width - 40))
+        height: clearCutsConfirmationContent.implicitHeight + topPadding + bottomPadding
+        anchors.centerIn: parent
+        padding: 18
+        closePolicy: Popup.CloseOnEscape
+
+        background: Rectangle {
+            radius: 12
+            color: root.lightMode ? "#FFFFFF" : "#0B1324"
+            border.color: root.lightMode ? "#CBD5E1" : "#243244"
+            border.width: 1
+        }
+
+        contentItem: ColumnLayout {
+            id: clearCutsConfirmationContent
+
+            spacing: 18
+
+            Text {
+                Layout.fillWidth: true
+                text: qsTr("Are you sure you want to delete all cuts?")
+                color: root.textColor
+                font.pixelSize: 14
+                font.weight: Font.DemiBold
+                wrapMode: Text.WordWrap
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 8
+
+                Item {
+                    Layout.fillWidth: true
+                }
+
+                AppButton {
+                    text: qsTr("No")
+                    variant: "secondary"
+                    size: "sm"
+                    lightMode: root.lightMode
+                    Layout.preferredWidth: 84
+                    onClicked: clearCutsConfirmation.close()
+                }
+
+                AppButton {
+                    text: qsTr("Yes")
+                    variant: "danger"
+                    size: "sm"
+                    lightMode: root.lightMode
+                    Layout.preferredWidth: 84
+                    onClicked: {
+                        root.clearCuts()
+                        clearCutsConfirmation.close()
+                    }
+                }
+            }
         }
     }
 }

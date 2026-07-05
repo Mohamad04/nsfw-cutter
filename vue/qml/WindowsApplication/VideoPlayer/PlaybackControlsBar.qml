@@ -61,6 +61,14 @@ Rectangle {
             onClicked: root.togglePlaybackRequested()
         }
 
+        BackwardOneSeekButton {
+            lightMode: root.lightMode
+            enabled: root.hasVideo
+            Layout.preferredWidth: 64
+            Layout.preferredHeight: 36
+            onClicked: root.seekByRequested(-1)
+        }
+
         BackwardFiveSeekButton {
             lightMode: root.lightMode
             enabled: root.hasVideo
@@ -75,6 +83,14 @@ Rectangle {
             Layout.preferredWidth: 84
             Layout.preferredHeight: 36
             onClicked: root.seekByRequested(5)
+        }
+
+        ForwardOneSeekButton {
+            lightMode: root.lightMode
+            enabled: root.hasVideo
+            Layout.preferredWidth: 64
+            Layout.preferredHeight: 36
+            onClicked: root.seekByRequested(1)
         }
 
         Text {

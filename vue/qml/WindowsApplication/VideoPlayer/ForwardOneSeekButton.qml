@@ -3,8 +3,8 @@ pragma ComponentBehavior: Bound
 import QtQuick
 
 SeekStepButton {
-    seconds: 5
+    seconds: 1
     direction: "forward"
-    chevronCount: 2
-    accessibilityLabel: qsTr("Seek forward 5 seconds")
+    chevronCount: 1
+    accessibilityLabel: qsTr("Seek forward 1 second")
 }

@@ -45,6 +45,13 @@ Rectangle {
     signal jumpCutRequested(string timeText)
     signal fastExportAllRequested(string outputDir, string exportMode)
 
+    TextMetrics {
+        id: clearListTextMetrics
+        text: qsTr("Clear List")
+        font.pixelSize: 12
+        font.weight: Font.Medium
+    }
+
     radius: 14
     color: root.panelColor
     border.color: root.lightMode ? "#CBD5E1" : "#1F2F4A"
@@ -96,6 +103,13 @@ Rectangle {
 
         root.cutsModel.remove(index)
         root.cutSelected(root.cutsModel.count > 0 ? nextSelected : -1)
+    }
+
+    function clearCuts() {
+        if (root.cutsModel.count === 0) return
+
+        root.cutsModel.clear()
+        root.cutSelected(-1)
     }
 
     Connections {
@@ -154,16 +168,15 @@ Rectangle {
             }
 
             AppButton {
-                text: qsTr("Clear")
-                variant: "ghost"
+                text: qsTr("Clear List")
+                iconName: "trash"
+                variant: "secondary"
                 size: "sm"
                 lightMode: root.lightMode
-                Layout.preferredWidth: 58
+                Layout.preferredWidth: Math.ceil(clearListTextMetrics.width) + 48
+                Layout.minimumWidth: Layout.preferredWidth
                 enabled: root.cutsModel.count > 0
-                onClicked: {
-                    root.cutsModel.clear()
-                    root.cutSelected(-1)
-                }
+                onClicked: clearCutsConfirmation.open()
             }
         }
 
@@ -410,6 +423,70 @@ Rectangle {
 
         function pad(value) { return value < 10 ? "0" + value : "" + value }
         return pad(hours) + ":" + pad(minutes) + ":" + pad(seconds)
+    }
+
+    Popup {
+        id: clearCutsConfirmation
+
+        modal: true
+        focus: true
+        width: Math.min(390, Math.max(280, root.width - 40))
+        height: clearCutsConfirmationContent.implicitHeight + topPadding + bottomPadding
+        anchors.centerIn: parent
+        padding: 18
+        closePolicy: Popup.CloseOnEscape
+
+        background: Rectangle {
+            radius: 12
+            color: root.lightMode ? "#FFFFFF" : "#0B1324"
+            border.color: root.lightMode ? "#CBD5E1" : "#243244"
+            border.width: 1
+        }
+
+        contentItem: ColumnLayout {
+            id: clearCutsConfirmationContent
+
+            spacing: 18
+
+            Text {
+                Layout.fillWidth: true
+                text: qsTr("Are you sure you want to delete all cuts?")
+                color: root.textMain
+                font.pixelSize: 14
+                font.weight: Font.DemiBold
+                wrapMode: Text.WordWrap
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 8
+
+                Item {
+                    Layout.fillWidth: true
+                }
+
+                AppButton {
+                    text: qsTr("No")
+                    variant: "secondary"
+                    size: "sm"
+                    lightMode: root.lightMode
+                    Layout.preferredWidth: 84
+                    onClicked: clearCutsConfirmation.close()
+                }
+
+                AppButton {
+                    text: qsTr("Yes")
+                    variant: "danger"
+                    size: "sm"
+                    lightMode: root.lightMode
+                    Layout.preferredWidth: 84
+                    onClicked: {
+                        root.clearCuts()
+                        clearCutsConfirmation.close()
+                    }
+                }
+            }
+        }
     }
 }
 

@@ -51,6 +51,7 @@ Rectangle {
         spacing: 10
         visible: root.pickCount === 0
 
+
         Text {
             text: qsTr("AI PICKS")
             color: root.accent

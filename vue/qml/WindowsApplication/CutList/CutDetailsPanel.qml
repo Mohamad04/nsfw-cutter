@@ -14,7 +14,6 @@ Rectangle {
     property string requestedStartText: "--"
     property string requestedEndText: "--"
     property string requestedDurationText: "00:00"
-    property string requestedDurationEditText: "00:00:00"
     property string safeStartText: "--"
     property string safeEndText: "--"
     property string safeDurationText: "00:00"
@@ -164,18 +163,14 @@ Rectangle {
             Text { text: root.endDeltaText; color: root.textColor; font.pixelSize: 11; horizontalAlignment: Text.AlignRight; Layout.preferredWidth: 54 }
 
             Text { text: qsTr("Duration"); color: root.mutedTextColor; font.pixelSize: 11 }
-            EditableRequestedTime {
-                fieldName: "duration"
-                displayText: root.requestedDurationText
-                editTextOnStart: root.requestedDurationEditText
-                canEdit: root.hasSelection
-                lightMode: root.lightMode
-                textColor: root.textColor
-                requestedColor: root.requestedColor
-                accentColor: root.accentColor
-                canApplyEdit: root.canApplyEdit
-                onEditingChanged: root.editorActiveChanged(editing)
-                onRequestedTimeEdited: function(fieldName, seconds) { root.requestedTimeEdited(fieldName, seconds) }
+            Text {
+                text: root.requestedDurationText
+                color: root.requestedColor
+                font.pixelSize: 11
+                font.weight: Font.DemiBold
+                elide: Text.ElideRight
+                verticalAlignment: Text.AlignVCenter
+                Layout.fillWidth: true
             }
             Text { text: root.safeDurationText; color: root.safeColor; font.pixelSize: 11; font.weight: Font.DemiBold; elide: Text.ElideRight; Layout.fillWidth: true }
             Text { text: root.durationDeltaText; color: root.textColor; font.pixelSize: 11; horizontalAlignment: Text.AlignRight; Layout.preferredWidth: 54 }

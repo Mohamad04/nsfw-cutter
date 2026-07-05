@@ -260,7 +260,6 @@ Rectangle {
             requestedStartText: root.displayTime(root.selectedCut(), "start", "requestedStartSeconds")
             requestedEndText: root.displayTime(root.selectedCut(), "end", "requestedEndSeconds")
             requestedDurationText: root.formatCompact(root.requestedDurationSeconds(root.selectedCut()))
-            requestedDurationEditText: root.formatHms(root.requestedDurationSeconds(root.selectedCut()))
             safeStartText: root.displayTime(root.selectedCut(), "safeStart", "safeStartSeconds")
             safeEndText: root.displayTime(root.selectedCut(), "safeEnd", "safeEndSeconds")
             safeDurationText: root.formatCompact(root.safeDurationSeconds(root.selectedCut()))

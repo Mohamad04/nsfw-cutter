@@ -98,11 +98,8 @@ def main():
             f"{ffmpeg_error}\n\n"
             "The application cannot start without FFmpeg.\n"
             "Install it with this one command in PowerShell:\n\n"
-            # TODO(revert-before-release): restore "master" once merged.
-            # "irm https://raw.githubusercontent.com/Mohamad04/nsfw-cutter/"
-            # "master/scripts/install_ffmpeg.ps1 | iex",
             "irm https://raw.githubusercontent.com/Mohamad04/nsfw-cutter/"
-            "feat/deployement-and-versioning/scripts/install_ffmpeg.ps1 | iex",
+            "master/scripts/install_ffmpeg.ps1 | iex",
         )
         sys.exit(1)
 

@@ -5,9 +5,7 @@
 # on your PATH for other tools too.
 #
 # Run with (one command, no admin required):
-#   TODO(revert-before-release): restore the master URL once merged.
 #   irm https://raw.githubusercontent.com/Mohamad04/nsfw-cutter/master/scripts/install_ffmpeg.ps1 | iex
-#   irm https://raw.githubusercontent.com/Mohamad04/nsfw-cutter/feat/deployement-and-versioning/scripts/install_ffmpeg.ps1 | iex
 #
 # Installs to : %LOCALAPPDATA%\NSFWCutter\ffmpeg\bin  (ffmpeg.exe + ffprobe.exe)
 # PATH        : adds that folder to the current user's PATH if missing

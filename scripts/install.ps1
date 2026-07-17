@@ -1,9 +1,7 @@
 # NSFW Cutter - User Installer & Updater
 #
 # Run with (one command, no admin required):
-#   TODO(revert-before-release): restore the master URL once merged.
 #   irm https://raw.githubusercontent.com/Mohamad04/nsfw-cutter/master/scripts/install.ps1 | iex
-#   irm https://raw.githubusercontent.com/Mohamad04/nsfw-cutter/feat/deployement-and-versioning/scripts/install.ps1 | iex
 #
 # Installs to : %LOCALAPPDATA%\NSFWCutter\VideoCutter.exe
 # Shortcuts   : Start Menu (always) + Desktop (asked, default yes)

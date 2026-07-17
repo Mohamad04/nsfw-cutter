@@ -29,9 +29,7 @@ logger = logging.getLogger(__name__)
 # GitHub repository that hosts the releases and the installer script.
 GITHUB_REPO = "Mohamad04/nsfw-cutter"
 # Branch that hosts the installer script.
-# TODO(revert-before-release): restore "master" once this is merged.
-# INSTALL_BRANCH = "master"
-INSTALL_BRANCH = "feat/deployement-and-versioning"
+INSTALL_BRANCH = "master"
 RELEASES_API = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
 # The installer doubles as the updater — running it again performs an in-place update.
 INSTALL_SCRIPT_URL = (

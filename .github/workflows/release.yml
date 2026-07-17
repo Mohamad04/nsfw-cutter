@@ -34,6 +34,19 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
 
+      - name: Stamp version from tag
+        shell: pwsh
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          $version = $env:TAG_NAME.TrimStart('v')
+          Set-Content -Path version.py -Encoding UTF8 -Value @(
+            '# This file is the single source of truth for the application version.',
+            '# Patched by the release CI pipeline from the git tag.',
+            "__version__ = `"$version`""
+          )
+          Get-Content version.py
+
       - name: Build Windows app
         shell: pwsh
         run: ./scripts/build_windows.ps1

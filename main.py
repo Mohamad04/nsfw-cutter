@@ -4,16 +4,22 @@ import sys
 from PySide6.QtGui import QFont, QFontDatabase, QIcon
 from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtQuickControls2 import QQuickStyle
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QMessageBox
 
 from controllers.app_controller import AppController
 from controllers.settings_controller import SettingsController
+from controllers.update_controller import UpdateController
 from controllers.video_cut_controller import VideoCutController
 from core.logging_config import configure_logging
 from core.paths import APP_AUTHOR, APP_NAME, get_resource_path
 from database.init_db import init_database
 from services.editing.keyframe_service import KeyframeService
 from services.i18n import TranslationService
+from services.infrastructure.ffmpeg.paths import (
+    FFmpegNotFoundError,
+    get_ffmpeg_path,
+    get_ffprobe_path,
+)
 from services.settings_service import SettingsService
 
 
@@ -58,6 +64,16 @@ def load_windows_ui_font_family() -> str:
     return loaded_family or "Segoe UI"
 
 
+def check_ffmpeg_available() -> str:
+    """Return an error message if ffmpeg/ffprobe cannot be located, else ""."""
+    try:
+        get_ffmpeg_path()
+        get_ffprobe_path()
+    except FFmpegNotFoundError as error:
+        return str(error)
+    return ""
+
+
 def main():
     # Force a deterministic controls style to avoid platform hover artifacts.
     QQuickStyle.setStyle("Basic")
@@ -73,6 +89,22 @@ def main():
     app.setFont(QFont(ui_font_family, 9))
     app_icon = QIcon(str(get_resource_path("assets/icons/app.ico")))
     app.setWindowIcon(app_icon)
+
+    ffmpeg_error = check_ffmpeg_available()
+    if ffmpeg_error:
+        QMessageBox.critical(
+            None,
+            f"{APP_NAME} — FFmpeg not found",
+            f"{ffmpeg_error}\n\n"
+            "The application cannot start without FFmpeg.\n"
+            "Install it with this one command in PowerShell:\n\n"
+            # TODO(revert-before-release): restore "master" once merged.
+            # "irm https://raw.githubusercontent.com/Mohamad04/nsfw-cutter/"
+            # "master/scripts/install_ffmpeg.ps1 | iex",
+            "irm https://raw.githubusercontent.com/Mohamad04/nsfw-cutter/"
+            "feat/deployement-and-versioning/scripts/install_ffmpeg.ps1 | iex",
+        )
+        sys.exit(1)
 
     engine = QQmlApplicationEngine()
 
@@ -106,6 +138,10 @@ def main():
     )
     video_cut_controller.setParent(app)
     engine.rootContext().setContextProperty("videoCutController", video_cut_controller)
+
+    update_controller = UpdateController()
+    update_controller.setParent(app)
+    engine.rootContext().setContextProperty("updateController", update_controller)
 
     controller.restoreLastVideo()
 

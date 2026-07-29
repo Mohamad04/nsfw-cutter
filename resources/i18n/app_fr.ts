@@ -21,6 +21,59 @@
     </message>
 </context>
 <context>
+    <name>AiPicksPopup</name>
+    <message>
+        <location filename="../../vue/qml/WindowsApplication/Discovery/AiPicksPopup.qml" line="153"/>
+        <source>AI Picks</source>
+        <translation>AI Picks</translation>
+    </message>
+    <message>
+        <location filename="../../vue/qml/WindowsApplication/Discovery/AiPicksPopup.qml" line="164"/>
+        <source>Want to update the AI prompt? Go to Settings and add the categories to detect, such as Nudity, Violence, etc.</source>
+        <translation>Vous souhaitez modifier le prompt de l’IA ? Accédez aux paramètres et ajoutez les catégories à détecter, telles que la nudité, la violence, etc.</translation>
+    </message>
+    <message>
+        <location filename="../../vue/qml/WindowsApplication/Discovery/AiPicksPopup.qml" line="178"/>
+        <source>Subtitles</source>
+        <translation>Sous-titres</translation>
+    </message>
+    <message>
+        <location filename="../../vue/qml/WindowsApplication/Discovery/AiPicksPopup.qml" line="187"/>
+        <source>Video Frames</source>
+        <translation>Images vidéo</translation>
+    </message>
+    <message>
+        <location filename="../../vue/qml/WindowsApplication/Discovery/AiPicksPopup.qml" line="196"/>
+        <source>Audio</source>
+        <translation>Audio</translation>
+    </message>
+    <message>
+        <location filename="../../vue/qml/WindowsApplication/Discovery/AiPicksPopup.qml" line="216"/>
+        <source>Analysis in progress</source>
+        <translation>Analyse en cours</translation>
+    </message>
+    <message>
+        <location filename="../../vue/qml/WindowsApplication/Discovery/AiPicksPopup.qml" line="224"/>
+        <source>AI is scanning your video. You can stop it at any time.</source>
+        <translation>L’IA analyse votre vidéo. Vous pouvez l’arrêter à tout moment.</translation>
+    </message>
+    <message>
+        <location filename="../../vue/qml/WindowsApplication/Discovery/AiPicksPopup.qml" line="233"/>
+        <source>Analyzing...</source>
+        <translation>Analyse en cours...</translation>
+    </message>
+    <message>
+        <location filename="../../vue/qml/WindowsApplication/Discovery/AiPicksPopup.qml" line="275"/>
+        <source>Break</source>
+        <translation>Arrêter</translation>
+    </message>
+    <message>
+        <location filename="../../vue/qml/WindowsApplication/Discovery/AiPicksPopup.qml" line="275"/>
+        <source>Confirm</source>
+        <translation>Confirmer</translation>
+    </message>
+</context>
+<context>
     <name>AppHeader</name>
     <message>
         <location filename="../../vue/qml/WindowsApplication/AppShell/AppHeader.qml" line="64"/>
@@ -271,37 +324,35 @@
         <translation>Paramètres</translation>
     </message>
     <message>
-        <location filename="../../vue/qml/WindowsApplication/AppShell/CompactAppHeader.qml" line="722"/>
         <source>Add selected</source>
-        <translation>Ajouter la sélection</translation>
+        <translation type="vanished">Ajouter la sélection</translation>
     </message>
     <message>
-        <location filename="../../vue/qml/WindowsApplication/AppShell/CompactAppHeader.qml" line="732"/>
         <source>Add all</source>
-        <translation>Tout ajouter</translation>
+        <translation type="vanished">Tout ajouter</translation>
     </message>
     <message>
-        <location filename="../../vue/qml/WindowsApplication/AppShell/CompactAppHeader.qml" line="808"/>
+        <location filename="../../vue/qml/WindowsApplication/AppShell/CompactAppHeader.qml" line="515"/>
         <source>Select Video...</source>
         <translation>Sélectionner une vidéo...</translation>
     </message>
     <message>
-        <location filename="../../vue/qml/WindowsApplication/AppShell/CompactAppHeader.qml" line="818"/>
+        <location filename="../../vue/qml/WindowsApplication/AppShell/CompactAppHeader.qml" line="525"/>
         <source>Select Folder...</source>
         <translation>Sélectionner un dossier...</translation>
     </message>
     <message>
-        <location filename="../../vue/qml/WindowsApplication/AppShell/CompactAppHeader.qml" line="829"/>
+        <location filename="../../vue/qml/WindowsApplication/AppShell/CompactAppHeader.qml" line="536"/>
         <source>Recent Videos</source>
         <translation>Vidéos récentes</translation>
     </message>
     <message>
-        <location filename="../../vue/qml/WindowsApplication/AppShell/CompactAppHeader.qml" line="834"/>
+        <location filename="../../vue/qml/WindowsApplication/AppShell/CompactAppHeader.qml" line="541"/>
         <source>No recent videos</source>
         <translation>Aucune vidéo récente</translation>
     </message>
     <message>
-        <location filename="../../vue/qml/WindowsApplication/AppShell/CompactAppHeader.qml" line="862"/>
+        <location filename="../../vue/qml/WindowsApplication/AppShell/CompactAppHeader.qml" line="569"/>
         <source>Clear Recent List</source>
         <translation>Effacer la liste récente</translation>
     </message>

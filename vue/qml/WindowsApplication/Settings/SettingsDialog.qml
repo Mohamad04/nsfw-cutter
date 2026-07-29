@@ -23,6 +23,9 @@ Popup {
     property color textMuted: darkMode ? "#94A3B8" : "#475569"
     property string lastVideoPath: ""
     property var recentVideos: []
+    property string updateStatus: ""
+    property bool updateChecking: false
+    property bool updateAvailable: false
     readonly property var themeOptions: [
         { "code": "dark", "name": qsTr("Dark") },
         { "code": "light", "name": qsTr("Light") },
@@ -64,6 +67,9 @@ Popup {
         confidenceSlider.value = settingsController.getConfidenceThreshold()
         lastVideoPath = settingsController.getLastVideoPath()
         recentVideos = settingsController.getRecentVideos()
+        updateStatus = ""
+        updateAvailable = false
+        updateChecking = false
         open()
     }
 
@@ -315,12 +321,99 @@ Popup {
                     }
                 }
 
+                Rectangle {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: aboutContent.implicitHeight + 24
+                    radius: 10
+                    color: root.sectionBg
+                    border.color: root.stroke
+
+                    ColumnLayout {
+                        id: aboutContent
+                        anchors.fill: parent
+                        anchors.margins: 12
+                        spacing: 8
+
+                        Text { text: qsTr("About & Updates"); color: root.textMain; font.pixelSize: 14; font.bold: true }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 8
+                            Text {
+                                text: qsTr("Version") + " " + updateController.currentVersion
+                                color: root.textMain
+                                font.pixelSize: 12
+                                Layout.fillWidth: true
+                            }
+                            AppButton {
+                                id: checkUpdatesButton
+                                text: root.updateChecking ? qsTr("Checking...") : qsTr("Check for updates")
+                                variant: "secondary"
+                                size: "sm"
+                                lightMode: root.lightMode
+                                enabled: !root.updateChecking
+                                Layout.preferredWidth: 150
+                                onClicked: updateController.checkForUpdates()
+                            }
+                        }
+
+                        Text {
+                            Layout.fillWidth: true
+                            visible: root.updateStatus.length > 0
+                            text: root.updateStatus
+                            color: root.textMuted
+                            font.pixelSize: 11
+                            wrapMode: Text.WordWrap
+                        }
+
+                        AppButton {
+                            text: qsTr("Update now")
+                            variant: "primary"
+                            size: "sm"
+                            lightMode: root.lightMode
+                            visible: root.updateAvailable && updateController.canSelfUpdate
+                            Layout.preferredWidth: 130
+                            onClicked: updateController.applyUpdate()
+                        }
+                    }
+                }
+
                 Text {
                     Layout.fillWidth: true
                     text: qsTr("Settings file:") + " " + settingsController.getSettingsJsonPath()
                     color: root.textMuted
                     font.pixelSize: 10
                     elide: Text.ElideMiddle
+                }
+
+                Connections {
+                    target: updateController
+
+                    function onCheckStarted() {
+                        root.updateChecking = true
+                        root.updateAvailable = false
+                        root.updateStatus = qsTr("Checking for updates...")
+                    }
+
+                    function onCheckFinished(available, latestVersion, releaseNotes, errorMessage) {
+                        root.updateChecking = false
+                        root.updateAvailable = available
+                        if (errorMessage.length > 0) {
+                            root.updateStatus = qsTr("Update check failed:") + " " + errorMessage
+                        } else if (available) {
+                            root.updateStatus = qsTr("A new version is available:") + " " + latestVersion
+                        } else {
+                            root.updateStatus = qsTr("You are on the latest version.")
+                        }
+                    }
+
+                    function onUpdateFailed(errorMessage) {
+                        root.updateStatus = qsTr("Update failed:") + " " + errorMessage
+                    }
+
+                    function onUpdateLaunched() {
+                        root.updateStatus = qsTr("Updating... the app will close and reopen.")
+                    }
                 }
             }
         }

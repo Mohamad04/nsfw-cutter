@@ -21,6 +21,59 @@
     </message>
 </context>
 <context>
+    <name>AiPicksPopup</name>
+    <message>
+        <location filename="../../vue/qml/WindowsApplication/Discovery/AiPicksPopup.qml" line="153"/>
+        <source>AI Picks</source>
+        <translation>اختيارات الذكاء الاصطناعي</translation>
+    </message>
+    <message>
+        <location filename="../../vue/qml/WindowsApplication/Discovery/AiPicksPopup.qml" line="164"/>
+        <source>Want to update the AI prompt? Go to Settings and add the categories to detect, such as Nudity, Violence, etc.</source>
+        <translation>هل تريد تحديث أمر الذكاء الاصطناعي؟ انتقل إلى الإعدادات وأضف الفئات المطلوب اكتشافها، مثل العري والعنف وما إلى ذلك.</translation>
+    </message>
+    <message>
+        <location filename="../../vue/qml/WindowsApplication/Discovery/AiPicksPopup.qml" line="178"/>
+        <source>Subtitles</source>
+        <translation>الترجمات</translation>
+    </message>
+    <message>
+        <location filename="../../vue/qml/WindowsApplication/Discovery/AiPicksPopup.qml" line="187"/>
+        <source>Video Frames</source>
+        <translation>إطارات الفيديو</translation>
+    </message>
+    <message>
+        <location filename="../../vue/qml/WindowsApplication/Discovery/AiPicksPopup.qml" line="196"/>
+        <source>Audio</source>
+        <translation>الصوت</translation>
+    </message>
+    <message>
+        <location filename="../../vue/qml/WindowsApplication/Discovery/AiPicksPopup.qml" line="216"/>
+        <source>Analysis in progress</source>
+        <translation>التحليل جارٍ</translation>
+    </message>
+    <message>
+        <location filename="../../vue/qml/WindowsApplication/Discovery/AiPicksPopup.qml" line="224"/>
+        <source>AI is scanning your video. You can stop it at any time.</source>
+        <translation>يفحص الذكاء الاصطناعي الفيديو الخاص بك. يمكنك إيقافه في أي وقت.</translation>
+    </message>
+    <message>
+        <location filename="../../vue/qml/WindowsApplication/Discovery/AiPicksPopup.qml" line="233"/>
+        <source>Analyzing...</source>
+        <translation>جارٍ التحليل...</translation>
+    </message>
+    <message>
+        <location filename="../../vue/qml/WindowsApplication/Discovery/AiPicksPopup.qml" line="275"/>
+        <source>Break</source>
+        <translation>إيقاف</translation>
+    </message>
+    <message>
+        <location filename="../../vue/qml/WindowsApplication/Discovery/AiPicksPopup.qml" line="275"/>
+        <source>Confirm</source>
+        <translation>تأكيد</translation>
+    </message>
+</context>
+<context>
     <name>AppHeader</name>
     <message>
         <location filename="../../vue/qml/WindowsApplication/AppShell/AppHeader.qml" line="64"/>
@@ -105,75 +158,75 @@
     <message>
         <location filename="../../vue/qml/WindowsApplication/AppShell/CleanShellPage.qml" line="284"/>
         <source>Invalid JSON content</source>
-        <translation type="unfinished"></translation>
+        <translation>محتوى JSON غير صالح</translation>
     </message>
     <message>
         <location filename="../../vue/qml/WindowsApplication/AppShell/CleanShellPage.qml" line="290"/>
         <source>Could not import cuts</source>
-        <translation type="unfinished"></translation>
+        <translation>تعذّر استيراد القصوص</translation>
     </message>
     <message>
         <location filename="../../vue/qml/WindowsApplication/AppShell/CleanShellPage.qml" line="308"/>
         <source>No cuts to export</source>
-        <translation type="unfinished"></translation>
+        <translation>لا توجد قصوص لتصديرها</translation>
     </message>
     <message>
         <location filename="../../vue/qml/WindowsApplication/AppShell/CleanShellPage.qml" line="312"/>
         <source>Could not export cuts</source>
-        <translation type="unfinished"></translation>
+        <translation>تعذّر تصدير القصوص</translation>
     </message>
     <message>
         <location filename="../../vue/qml/WindowsApplication/AppShell/CleanShellPage.qml" line="324"/>
         <location filename="../../vue/qml/WindowsApplication/AppShell/CleanShellPage.qml" line="330"/>
         <source>No JSON content to copy</source>
-        <translation type="unfinished"></translation>
+        <translation>لا يوجد محتوى JSON لنسخه</translation>
     </message>
     <message>
         <location filename="../../vue/qml/WindowsApplication/AppShell/CleanShellPage.qml" line="329"/>
         <location filename="../../vue/qml/WindowsApplication/AppShell/CleanShellPage.qml" line="622"/>
         <source>Cuts copied to clipboard</source>
-        <translation type="unfinished"></translation>
+        <translation>تم نسخ القصوص إلى الحافظة</translation>
     </message>
     <message>
         <location filename="../../vue/qml/WindowsApplication/AppShell/CleanShellPage.qml" line="482"/>
         <source>Import Cuts JSON</source>
-        <translation type="unfinished"></translation>
+        <translation>استيراد بيانات القصوص بصيغة JSON</translation>
     </message>
     <message>
         <location filename="../../vue/qml/WindowsApplication/AppShell/CleanShellPage.qml" line="491"/>
         <source>Paste your cuts JSON below.</source>
-        <translation type="unfinished"></translation>
+        <translation>الصق بيانات القصوص بصيغة JSON أدناه.</translation>
     </message>
     <message>
         <location filename="../../vue/qml/WindowsApplication/AppShell/CleanShellPage.qml" line="499"/>
         <location filename="../../vue/qml/WindowsApplication/AppShell/CleanShellPage.qml" line="593"/>
         <source>JSON content</source>
-        <translation type="unfinished"></translation>
+        <translation>محتوى JSON</translation>
     </message>
     <message>
         <location filename="../../vue/qml/WindowsApplication/AppShell/CleanShellPage.qml" line="539"/>
         <source>Cancel</source>
-        <translation type="unfinished">إلغاء</translation>
+        <translation>إلغاء</translation>
     </message>
     <message>
         <location filename="../../vue/qml/WindowsApplication/AppShell/CleanShellPage.qml" line="548"/>
         <source>Import</source>
-        <translation type="unfinished">استيراد</translation>
+        <translation>استيراد</translation>
     </message>
     <message>
         <location filename="../../vue/qml/WindowsApplication/AppShell/CleanShellPage.qml" line="584"/>
         <source>Export Cuts JSON</source>
-        <translation type="unfinished"></translation>
+        <translation>تصدير بيانات القصوص بصيغة JSON</translation>
     </message>
     <message>
         <location filename="../../vue/qml/WindowsApplication/AppShell/CleanShellPage.qml" line="636"/>
         <source>Copy</source>
-        <translation type="unfinished"></translation>
+        <translation>نسخ</translation>
     </message>
     <message>
         <location filename="../../vue/qml/WindowsApplication/AppShell/CleanShellPage.qml" line="645"/>
         <source>Close</source>
-        <translation type="unfinished"></translation>
+        <translation>إغلاق</translation>
     </message>
 </context>
 <context>
@@ -271,37 +324,35 @@
         <translation>الإعدادات</translation>
     </message>
     <message>
-        <location filename="../../vue/qml/WindowsApplication/AppShell/CompactAppHeader.qml" line="722"/>
         <source>Add selected</source>
-        <translation>إضافة المحدد</translation>
+        <translation type="vanished">إضافة المحدد</translation>
     </message>
     <message>
-        <location filename="../../vue/qml/WindowsApplication/AppShell/CompactAppHeader.qml" line="732"/>
         <source>Add all</source>
-        <translation>إضافة الكل</translation>
+        <translation type="vanished">إضافة الكل</translation>
     </message>
     <message>
-        <location filename="../../vue/qml/WindowsApplication/AppShell/CompactAppHeader.qml" line="808"/>
+        <location filename="../../vue/qml/WindowsApplication/AppShell/CompactAppHeader.qml" line="515"/>
         <source>Select Video...</source>
         <translation>اختر فيديو...</translation>
     </message>
     <message>
-        <location filename="../../vue/qml/WindowsApplication/AppShell/CompactAppHeader.qml" line="818"/>
+        <location filename="../../vue/qml/WindowsApplication/AppShell/CompactAppHeader.qml" line="525"/>
         <source>Select Folder...</source>
         <translation>اختر مجلدًا...</translation>
     </message>
     <message>
-        <location filename="../../vue/qml/WindowsApplication/AppShell/CompactAppHeader.qml" line="829"/>
+        <location filename="../../vue/qml/WindowsApplication/AppShell/CompactAppHeader.qml" line="536"/>
         <source>Recent Videos</source>
         <translation>الفيديوهات الحديثة</translation>
     </message>
     <message>
-        <location filename="../../vue/qml/WindowsApplication/AppShell/CompactAppHeader.qml" line="834"/>
+        <location filename="../../vue/qml/WindowsApplication/AppShell/CompactAppHeader.qml" line="541"/>
         <source>No recent videos</source>
         <translation>لا توجد فيديوهات حديثة</translation>
     </message>
     <message>
-        <location filename="../../vue/qml/WindowsApplication/AppShell/CompactAppHeader.qml" line="862"/>
+        <location filename="../../vue/qml/WindowsApplication/AppShell/CompactAppHeader.qml" line="569"/>
         <source>Clear Recent List</source>
         <translation>مسح القائمة الحديثة</translation>
     </message>
@@ -901,12 +952,12 @@ then select Add Cut.</source>
     <message>
         <location filename="../../vue/qml/WindowsApplication/CutList/CutManagementPanelRoot.qml" line="310"/>
         <source>Import JSON</source>
-        <translation type="unfinished"></translation>
+        <translation>استيراد JSON</translation>
     </message>
     <message>
         <location filename="../../vue/qml/WindowsApplication/CutList/CutManagementPanelRoot.qml" line="322"/>
         <source>Export JSON</source>
-        <translation type="unfinished"></translation>
+        <translation>تصدير JSON</translation>
     </message>
     <message>
         <location filename="../../vue/qml/WindowsApplication/CutList/CutManagementPanelRoot.qml" line="370"/>

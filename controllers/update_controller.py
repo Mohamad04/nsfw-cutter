@@ -1,7 +1,7 @@
 import logging
 import threading
 
-from PySide6.QtCore import Property, QCoreApplication, QObject, Signal, Slot
+from PySide6.QtCore import Property, QObject, Signal, Slot
 
 from services.infrastructure.update import (
     fetch_latest_release,
@@ -70,11 +70,28 @@ class UpdateController(QObject):
 
     @Slot()
     def applyUpdate(self) -> None:
-        ok, error = launch_installer()
-        if not ok:
+        process, error = launch_installer(self._latest_tag)
+        if process is None:
             self.updateFailed.emit(error or "Could not start the updater.")
             return
-
         self.updateLaunched.emit()
-        # Quit so the installer can overwrite the locked application files.
-        QCoreApplication.quit()
+        watcher = threading.Thread(
+            target=self._watch_installer,
+            args=(process,),
+            daemon=True,
+        )
+        watcher.start()
+        # The installer keeps this process running while it downloads and
+        # validates the release, then closes this exact process before swapping.
+
+    def _watch_installer(self, process) -> None:
+        try:
+            exit_code = process.wait()
+        except Exception as exc:  # noqa: BLE001 - report handoff failures to QML
+            logger.exception("Unable to monitor update installer")
+            self.updateFailed.emit(str(exc))
+            return
+        if exit_code != 0:
+            self.updateFailed.emit(
+                f"The installer exited with code {exit_code}. The current app was preserved."
+            )

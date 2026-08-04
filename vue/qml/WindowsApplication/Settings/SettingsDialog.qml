@@ -408,10 +408,12 @@ Popup {
                     }
 
                     function onUpdateFailed(errorMessage) {
+                        root.updateAvailable = true
                         root.updateStatus = qsTr("Update failed:") + " " + errorMessage
                     }
 
                     function onUpdateLaunched() {
+                        root.updateAvailable = false
                         root.updateStatus = qsTr("Updating... the app will close and reopen.")
                     }
                 }

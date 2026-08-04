@@ -3,6 +3,7 @@ name: CI
 on:
   push:
     branches:
+      - main
       - master
   pull_request:
   workflow_dispatch:
@@ -49,8 +50,37 @@ jobs:
         shell: pwsh
         run: ./scripts/prepare_ffmpeg.ps1
 
-      - name: Lint
-        run: ruff check .
+      - name: Validate PowerShell scripts
+        shell: powershell
+        run: |
+          $scripts = @(
+            'scripts/build_windows.ps1',
+            'scripts/install.ps1',
+            'scripts/prepare_ffmpeg.ps1',
+            'scripts/test_release_candidate.ps1',
+            'scripts/uninstall.ps1'
+          )
+          foreach ($script in $scripts) {
+            $tokens = $null
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile(
+              (Resolve-Path $script),
+              [ref]$tokens,
+              [ref]$errors
+            ) | Out-Null
+            if ($errors.Count -gt 0) {
+              throw "$script has PowerShell syntax errors: $($errors -join '; ')"
+            }
+          }
 
-      - name: Test
-        run: pytest -q
+      - name: Lint
+        run: ruff check --isolated --select E4,E7,E9,F .
+
+      - name: Lint QML
+        run: pyside6-qmllint vue/qml/Main.qml
+
+      - name: Unit and integration tests
+        run: pytest -q -m "not e2e"
+
+      - name: Real-media end-to-end tests
+        run: pytest -q -m e2e

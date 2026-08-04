@@ -2,6 +2,9 @@
 param(
     [string]$ProjectRoot = "",
     [string]$AppName = "VideoCutter",
+    [string]$ReleaseTag = "",
+    [int]$MaxInstalledSizeMiB = 1150,
+    [int]$MaxArchiveSizeMiB = 450,
     [switch]$Console
 )
 
@@ -21,10 +24,21 @@ if ([string]::IsNullOrWhiteSpace($ProjectRoot)) {
 $prepareScript = Join-Path $ProjectRoot "scripts\prepare_ffmpeg.ps1"
 $pythonExe = Join-Path $ProjectRoot ".venv\Scripts\python.exe"
 $entryFile = Join-Path $ProjectRoot "main.py"
+$uninstallScript = Join-Path $ProjectRoot "scripts\uninstall.ps1"
+$verificationScript = Join-Path $ProjectRoot "scripts\verify_windows_artifact.py"
 $buildDir = Join-Path $ProjectRoot "build"
 $distDir = Join-Path $ProjectRoot "dist"
 $appDistDir = Join-Path $distDir $AppName
-$zipPath = Join-Path $distDir "$AppName-windows.zip"
+
+if ($ReleaseTag) {
+    if ($ReleaseTag -notmatch '^v\d+\.\d+\.\d+$') {
+        throw "ReleaseTag must use the format vMAJOR.MINOR.PATCH; received: $ReleaseTag"
+    }
+    $zipName = "NSFW-Cutter-$ReleaseTag-windows.zip"
+} else {
+    $zipName = "NSFW-Cutter-windows.zip"
+}
+$zipPath = Join-Path $distDir $zipName
 
 if (-not (Test-Path -LiteralPath $pythonExe -PathType Leaf)) {
     $pythonExe = "python"
@@ -32,6 +46,12 @@ if (-not (Test-Path -LiteralPath $pythonExe -PathType Leaf)) {
 
 if (-not (Test-Path -LiteralPath $entryFile -PathType Leaf)) {
     throw "Entry file not found: $entryFile"
+}
+if (-not (Test-Path -LiteralPath $uninstallScript -PathType Leaf)) {
+    throw "Uninstall script not found: $uninstallScript"
+}
+if (-not (Test-Path -LiteralPath $verificationScript -PathType Leaf)) {
+    throw "Artifact verification script not found: $verificationScript"
 }
 
 Write-Host "Preparing bundled FFmpeg"
@@ -157,6 +177,32 @@ if (-not (Test-Path -LiteralPath $appDistDir -PathType Container)) {
     throw "PyInstaller output folder was not created: $appDistDir"
 }
 
+Push-Location $ProjectRoot
+try {
+    $builtVersion = (& $pythonExe -c "from version import __version__; print(__version__)" | Select-Object -Last 1).Trim()
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($builtVersion)) {
+        throw "Unable to read the packaged application version."
+    }
+}
+finally {
+    Pop-Location
+}
+
+$manifestTag = if ($ReleaseTag) { $ReleaseTag } elseif ($builtVersion -eq 'dev') { 'dev' } else { "v$builtVersion" }
+if ($ReleaseTag -and $builtVersion -ne $ReleaseTag.Substring(1)) {
+    throw "version.py reports $builtVersion but ReleaseTag is $ReleaseTag."
+}
+
+Copy-Item -LiteralPath $uninstallScript -Destination (Join-Path $appDistDir "uninstall.ps1") -Force
+Set-Content -LiteralPath (Join-Path $appDistDir "version.txt") -Value $manifestTag -Encoding ASCII
+$releaseManifest = [ordered]@{
+    schema_version = 1
+    tag = $manifestTag
+    version = $builtVersion
+    entrypoint = "$AppName.exe"
+}
+$releaseManifest | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $appDistDir "release-manifest.json") -Encoding UTF8
+
 $bundledFfmpegCandidates = @(
     (Join-Path $appDistDir "vendor\ffmpeg\bin\ffmpeg.exe"),
     (Join-Path $appDistDir "_internal\vendor\ffmpeg\bin\ffmpeg.exe")
@@ -246,6 +292,18 @@ Compress-Archive -LiteralPath $appDistDir -DestinationPath $zipPath -Compression
 
 if (-not (Test-Path -LiteralPath $zipPath -PathType Leaf)) {
     throw "Build zip was not created: $zipPath"
+}
+
+Write-Host "Verifying packaged Windows artifact"
+& $pythonExe $verificationScript `
+    --project-root $ProjectRoot `
+    --app-dir $appDistDir `
+    --zip-path $zipPath `
+    --release-tag $manifestTag `
+    --max-installed-mib $MaxInstalledSizeMiB `
+    --max-archive-mib $MaxArchiveSizeMiB
+if ($LASTEXITCODE -ne 0) {
+    throw "Packaged Windows artifact verification failed."
 }
 
 Write-Host "Windows build complete: $appDistDir"

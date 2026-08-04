@@ -2,6 +2,7 @@ import ctypes
 import sys
 
 from PySide6.QtGui import QFont, QFontDatabase, QIcon
+from PySide6.QtCore import QTimer
 from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtQuickControls2 import QQuickStyle
 from PySide6.QtWidgets import QApplication, QMessageBox
@@ -75,13 +76,16 @@ def check_ffmpeg_available() -> str:
 
 
 def main():
+    smoke_test = "--smoke-test" in sys.argv
+    qt_arguments = [argument for argument in sys.argv if argument != "--smoke-test"]
+
     # Force a deterministic controls style to avoid platform hover artifacts.
     QQuickStyle.setStyle("Basic")
     set_windows_app_user_model_id()
     configure_logging()
     init_database()
 
-    app = QApplication(sys.argv)
+    app = QApplication(qt_arguments)
     app.setApplicationName(APP_NAME)
     app.setApplicationDisplayName(APP_NAME)
     app.setOrganizationName(APP_AUTHOR)
@@ -97,9 +101,8 @@ def main():
             f"{APP_NAME} — FFmpeg not found",
             f"{ffmpeg_error}\n\n"
             "The application cannot start without FFmpeg.\n"
-            "Install it with this one command in PowerShell:\n\n"
-            "irm https://raw.githubusercontent.com/Mohamad04/nsfw-cutter/"
-            "master/scripts/install_ffmpeg.ps1 | iex",
+            "Reinstall or update NSFW Cutter to restore its bundled FFmpeg.\n\n"
+            "When running from source, run scripts\\prepare_ffmpeg.ps1 first.",
         )
         sys.exit(1)
 
@@ -140,7 +143,8 @@ def main():
     update_controller.setParent(app)
     engine.rootContext().setContextProperty("updateController", update_controller)
 
-    controller.restoreLastVideo()
+    if not smoke_test:
+        controller.restoreLastVideo()
 
     qml_file = get_resource_path("vue/qml/Main.qml")
     engine.load(str(qml_file))
@@ -153,6 +157,11 @@ def main():
         set_icon = getattr(root_object, "setIcon", None)
         if callable(set_icon):
             set_icon(app_icon)
+
+    if smoke_test:
+        # CI uses this mode to prove that the packaged executable can initialize
+        # Qt, load the complete QML tree, and enter the event loop.
+        QTimer.singleShot(250, app.quit)
 
     sys.exit(app.exec())
 

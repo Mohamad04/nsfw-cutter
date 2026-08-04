@@ -13,16 +13,16 @@
 Open **PowerShell** (Win + R → type `powershell` → Enter) and run:
 
 ```powershell
-irm https://raw.githubusercontent.com/Mohamad04/nsfw-cutter/master/scripts/install.ps1 | iex
+irm https://raw.githubusercontent.com/Mohamad04/nsfw-cutter/main/scripts/install.ps1 | iex
 ```
 
 The installer will:
 
-1. Fetch the latest release `.zip` from GitHub Releases.
-2. Install it to `%LOCALAPPDATA%\NSFWCutter\VideoCutter.exe`.
-3. Register it in the user App Paths registry key (no admin needed).
-4. Create a **Start Menu** shortcut (and offer a **Desktop** shortcut).
-5. Launch the app.
+1. Fetch the exact versioned ZIP and SHA-256 file from the latest GitHub Release.
+2. Verify and stage the complete application before changing the current installation.
+3. Install it to `%LOCALAPPDATA%\NSFWCutter\VideoCutter.exe` with rollback protection.
+4. Register it in App Paths and Windows **Installed apps** for the current user.
+5. Create Start Menu shortcuts (and offer a Desktop shortcut), then launch the app.
 
 **Run the exact same command again at any time to update to the latest version.**
 
@@ -31,29 +31,20 @@ The installer will:
 > Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
 > ```
 
-### FFmpeg (usually not needed)
+### FFmpeg
 
-The installed app **bundles FFmpeg**, so it works out of the box. You only need the
-optional FFmpeg installer if you run from source, or want `ffmpeg`/`ffprobe` on your
-PATH for other tools. It installs to `%LOCALAPPDATA%\NSFWCutter\ffmpeg\bin` and adds
-that folder to your user PATH:
-
-```powershell
-irm https://raw.githubusercontent.com/Mohamad04/nsfw-cutter/master/scripts/install_ffmpeg.ps1 | iex
-```
-
-If the app cannot find FFmpeg (bundled, on PATH, or in the folder above) it will show a
-message telling you to run the command above, and will not start until FFmpeg is
-available.
+The installed app **bundles FFmpeg**, so it works out of the box and does not install
+a second FFmpeg copy on the user's machine. If the bundled files are missing, reinstall
+or update NSFW Cutter. Developers running from source can populate `vendor\ffmpeg` with
+`scripts\prepare_ffmpeg.ps1`.
 
 ### Uninstall
 
-```powershell
-Remove-Item "$env:LOCALAPPDATA\NSFWCutter" -Recurse -Force
-Remove-Item "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\NSFW Cutter.lnk" -ErrorAction SilentlyContinue
-Remove-Item "$([Environment]::GetFolderPath('Desktop'))\NSFW Cutter.lnk" -ErrorAction SilentlyContinue
-Remove-Item "HKCU:\Software\Microsoft\Windows\CurrentVersion\App Paths\VideoCutter.exe" -ErrorAction SilentlyContinue
-```
+Open **Windows Settings → Apps → Installed apps**, find **NSFW Cutter**, and choose
+**Uninstall**. You can also use the Start Menu uninstall shortcut. The uninstaller
+removes the application, bundled FFmpeg, old update payloads, shortcuts, and Windows
+registration. Settings, database, cache, and logs are preserved by default; removing
+them requires explicit confirmation. User videos and exports are never removed.
 
 ---
 
@@ -86,8 +77,8 @@ GPU acceleration. Configure this in **Settings → AI Settings**.
 - The app knows its own version (shown in **Settings → About & Updates**). Releases are
   tagged `vMAJOR.MINOR.PATCH`; the version is stamped into the build automatically by CI.
 - Click **Check for updates** in Settings to query GitHub for the latest release.
-- When a newer version exists, click **Update now** — the app closes, the installer runs
-  in place (download → replace → relaunch), and the app reopens on the new version.
+- When a newer version exists, click **Update now** — the installer downloads and validates
+  the release first, then closes the app only for the payload swap and relaunches it.
 - You can always update manually by re-running the one-line install command above.
 
 ---
@@ -95,8 +86,8 @@ GPU acceleration. Configure this in **Settings → AI Settings**.
 ## Requirements
 
 - Windows 10 or 11.
-- FFmpeg — **bundled with the installed app**; only needed separately when running from
-  source (see the FFmpeg installer above).
+- FFmpeg — **bundled with the installed app** and prepared into `vendor\ffmpeg` for
+  source development/builds.
 - Python 3.12+ — *only required to run from source or build the executable.*
 
 ---
@@ -111,11 +102,8 @@ python -m venv .venv
 # 2. Install dependencies
 pip install -r requirements.txt
 
-# 3. Provide FFmpeg for the app (either of these):
-#    a) Bundle it into the project (used by the build):
+# 3. Prepare the FFmpeg copy used by development and production builds:
 .\scripts\prepare_ffmpeg.ps1
-#    b) or install it to your user profile + PATH:
-.\scripts\install_ffmpeg.ps1
 
 # 4. Launch
 python main.py
@@ -126,14 +114,29 @@ python main.py
 ## Building a standalone executable
 
 ```powershell
-# Builds dist\VideoCutter\ and dist\VideoCutter-windows.zip
+# Builds dist\VideoCutter\ and dist\NSFW-Cutter-windows.zip
 .\scripts\build_windows.ps1
 ```
 
 `build_windows.ps1` prepares bundled FFmpeg, compiles translations, and runs PyInstaller
-(onedir). The output `.zip` is exactly what the release workflow publishes and what the
-installer consumes. A portable `VideoCutter.spec` is also provided for manual
-`pyinstaller VideoCutter.spec` builds.
+(onedir). Tagged CI builds produce `NSFW-Cutter-vMAJOR.MINOR.PATCH-windows.zip`, verify
+the package, generate its `.sha256` file, and publish both through GitHub Releases.
+The FFmpeg input is pinned to an immutable retained release and verified before extraction.
+
+To publish a production build, push a strict semantic-version tag such as `v1.3.0`.
+The release workflow stamps that version, runs Python/QML/PowerShell checks, verifies the
+extracted package and its size budgets, smoke-launches it, then creates the GitHub Release
+with generated release notes.
+
+Before tagging, run the complete release-candidate gate:
+
+```powershell
+.\scripts\test_release_candidate.ps1
+```
+
+It includes real FFmpeg end-to-end coverage for embedded/external subtitles, Quick Cutting,
+and Smart Cutting before building and verifying the Windows package. See the
+[release checklist](docs/RELEASE_CHECKLIST.md) for the remaining manual product checks.
 
 ---
 
@@ -142,9 +145,11 @@ installer consumes. A portable `VideoCutter.spec` is also provided for manual
 | Script                        | Audience   | What it does                                                                 |
 |-------------------------------|------------|------------------------------------------------------------------------------|
 | `scripts/install.ps1`         | Users      | Install / update the app to `%LOCALAPPDATA%\NSFWCutter` + shortcuts. No admin. |
-| `scripts/install_ffmpeg.ps1`  | Users      | *Optional.* Install FFmpeg to the user profile and add it to PATH.           |
-| `scripts/prepare_ffmpeg.ps1`  | Developers | Download FFmpeg into `vendor\ffmpeg` so the build can bundle it.             |
+| `scripts/uninstall.ps1`       | Users      | Registered uninstaller; preserves app data unless explicitly removed.        |
+| `scripts/prepare_ffmpeg.ps1`  | Developers | Download and checksum the pinned FFmpeg build into `vendor\ffmpeg`.          |
 | `scripts/build_windows.ps1`   | Developers | Build the Windows onedir app and release zip.                               |
+| `scripts/test_release_candidate.ps1` | Developers | Run the complete pre-tag quality gate.                         |
+| `scripts/verify_windows_artifact.py` | CI/build | Verify runtime files, paths, and size budgets.                         |
 
 `install.ps1` accepts `-Force` (reinstall), `-NoLaunch`, and `-NoDesktop` when invoked
 via `-File`.
@@ -179,7 +184,8 @@ nsfw-cutter/
 │   │   └── update/            # GitHub-release version check + installer launcher
 │   ├── editing/ · export/ · media/ · subtitles/ · i18n/
 ├── vue/qml/                    # QML UI
-├── scripts/                    # install.ps1, install_ffmpeg.ps1, prepare_ffmpeg.ps1, build_windows.ps1
+├── scripts/                    # install, uninstall, build, verification, and FFmpeg preparation
+├── tests/e2e/                  # Generated-media Quick/Smart/subtitle release checks
 ├── vendor/ffmpeg/              # Bundled FFmpeg (populated by prepare_ffmpeg.ps1)
 └── .github/workflows/          # CI (test), Build Windows, Release
 ```

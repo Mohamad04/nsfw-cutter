@@ -2,17 +2,19 @@
 Self-update logic against GitHub Releases.
 
 The application is distributed as a PyInstaller *onedir* build zipped into a
-GitHub release asset (``VideoCutter-windows.zip``). Because a onedir build is a
+versioned GitHub release asset (``NSFW-Cutter-vX.Y.Z-windows.zip``). Because a onedir build is a
 whole folder rather than a single exe, updating in place is delegated to the
 same PowerShell installer used for the first install: it downloads the latest
-release, mirrors it over the install directory and relaunches the app. This
-module only decides *whether* an update exists and *launches* that installer.
+release, validates and transactionally swaps the payload, then relaunches the
+app. This module only decides *whether* an update exists and *launches* that installer.
 
 All functions here are pure / non-UI so they can run in a background thread.
 """
 
 import json
 import logging
+import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -28,8 +30,8 @@ logger = logging.getLogger(__name__)
 
 # GitHub repository that hosts the releases and the installer script.
 GITHUB_REPO = "Mohamad04/nsfw-cutter"
-# Branch that hosts the installer script.
-INSTALL_BRANCH = "master"
+# Branch that hosts the stable installer script.
+INSTALL_BRANCH = "main"
 RELEASES_API = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
 # The installer doubles as the updater — running it again performs an in-place update.
 INSTALL_SCRIPT_URL = (
@@ -40,6 +42,7 @@ _HEADERS = {
     "Accept": "application/vnd.github+json",
     "User-Agent": "NSFWCutter-App",
 }
+_RELEASE_TAG_PATTERN = re.compile(r"^v\d+\.\d+\.\d+$")
 
 
 @dataclass
@@ -48,6 +51,8 @@ class ReleaseInfo:
     version_str: str    # e.g. "1.2.0"
     name: str           # human release title
     download_url: str   # direct URL to the .zip asset
+    checksum_url: str   # direct URL to the .zip.sha256 asset
+    asset_name: str     # exact version-derived release asset name
     release_notes: str
 
 
@@ -83,18 +88,33 @@ def fetch_latest_release() -> Tuple[Optional[ReleaseInfo], Optional[str]]:
         with urlopen(Request(RELEASES_API, headers=_HEADERS), timeout=10) as resp:
             data = json.loads(resp.read().decode())
 
-        asset = next(
-            (a for a in data.get("assets", []) if a["name"].lower().endswith(".zip")),
-            None,
-        )
-        if not asset:
-            return None, "No .zip asset found in the latest release."
+        tag = data.get("tag_name", "")
+        if not _RELEASE_TAG_PATTERN.fullmatch(tag):
+            return None, f"Unsupported release tag: {tag or '<missing>'}"
+
+        asset_name = f"NSFW-Cutter-{tag}-windows.zip"
+        checksum_name = f"{asset_name}.sha256"
+        assets = data.get("assets", [])
+        matching_assets = [asset for asset in assets if asset.get("name") == asset_name]
+        matching_checksums = [
+            asset for asset in assets if asset.get("name") == checksum_name
+        ]
+        if len(matching_assets) != 1 or len(matching_checksums) != 1:
+            return (
+                None,
+                f"Release {tag} must contain exactly {asset_name} and {checksum_name}.",
+            )
+
+        asset = matching_assets[0]
+        checksum_asset = matching_checksums[0]
 
         return ReleaseInfo(
-            tag=data["tag_name"],
-            version_str=data["tag_name"].lstrip("v"),
-            name=data.get("name", data["tag_name"]),
+            tag=tag,
+            version_str=tag.lstrip("v"),
+            name=data.get("name", tag),
             download_url=asset["browser_download_url"],
+            checksum_url=checksum_asset["browser_download_url"],
+            asset_name=asset_name,
             release_notes=(data.get("body") or "").strip(),
         ), None
 
@@ -111,27 +131,45 @@ def is_frozen() -> bool:
     return bool(getattr(sys, "frozen", False))
 
 
-def launch_installer() -> Tuple[bool, Optional[str]]:
+def _powershell_literal(value: str) -> str:
+    return "'" + value.replace("'", "''") + "'"
+
+
+def launch_installer(
+    expected_tag: str = "",
+) -> Tuple[Optional[subprocess.Popen], Optional[str]]:
     """
     Launch the PowerShell installer in a new, visible window to perform the
-    update, then return so the caller can quit the app (freeing the locked
-    files). Returns (True, None) on successful launch or (False, error).
+    update. Returns (process, None) on successful launch or (None, error).
 
-    The installer waits briefly for this process to exit, mirrors the latest
-    release over the install directory and relaunches the app.
+    The installer downloads and validates the complete release while this
+    process stays open, then closes this exact executable before swapping the
+    payload and relaunching the app.
     """
     if not is_frozen():
         return (
-            False,
+            None,
             "Self-update is only available in the packaged app. Pull the latest "
             "source instead when running from a checkout.",
         )
+    if expected_tag and not _RELEASE_TAG_PATTERN.fullmatch(expected_tag):
+        return None, f"Invalid release tag: {expected_tag}"
 
     powershell = _resolve_powershell()
-    # -NoExit is intentionally omitted: the window closes when the update ends.
+    installer_url = _powershell_literal(INSTALL_SCRIPT_URL)
+    expected_tag_argument = (
+        f" -ExpectedTag {_powershell_literal(expected_tag)}" if expected_tag else ""
+    )
+    executable_argument = _powershell_literal(str(Path(sys.executable).resolve()))
+    # Download the same public installer used for a first install, but pass the
+    # checked tag and current process identity to make the handoff deterministic.
     command = (
         "$ErrorActionPreference='Stop'; "
-        f"irm {INSTALL_SCRIPT_URL} | iex"
+        f"$installer = irm -Uri {installer_url}; "
+        "& ([ScriptBlock]::Create($installer))"
+        f"{expected_tag_argument}"
+        f" -WaitForProcessId {os.getpid()}"
+        f" -ExpectedExecutable {executable_argument}"
     )
     args = [
         powershell,
@@ -144,7 +182,7 @@ def launch_installer() -> Tuple[bool, Optional[str]]:
 
     creationflags = getattr(subprocess, "CREATE_NEW_CONSOLE", 0)
     try:
-        subprocess.Popen(
+        process = subprocess.Popen(
             args,
             creationflags=creationflags,
             close_fds=True,
@@ -152,10 +190,10 @@ def launch_installer() -> Tuple[bool, Optional[str]]:
         )
     except Exception as exc:  # noqa: BLE001
         logger.exception("Failed to launch updater")
-        return False, str(exc)
+        return None, str(exc)
 
-    logger.info("Update installer launched; the app will now exit to unlock files.")
-    return True, None
+    logger.info("Update installer launched; it will close the app after staging.")
+    return process, None
 
 
 def _resolve_powershell() -> str:

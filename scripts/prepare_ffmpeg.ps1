@@ -1,8 +1,9 @@
 [CmdletBinding()]
 param(
     [string]$ProjectRoot = "",
-    [string]$FfmpegZipUrl = "",
-    [string]$ReleaseApiUrl = "https://api.github.com/repos/BtbN/FFmpeg-Builds/releases/latest"
+    [string]$FfmpegZipUrl = "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-07-31-14-10/ffmpeg-n8.1.2-34-g9b6c8969e0-win64-gpl-8.1.zip",
+    [string]$FfmpegZipSha256 = "cc4156d51387566ea8ba653fc3a04897bdf812fddf652428d9030bbf7ae24835",
+    [switch]$Force
 )
 
 $ErrorActionPreference = "Stop"
@@ -46,29 +47,6 @@ function Invoke-VersionCheck {
     Write-Host ($output | Select-Object -First 1)
 }
 
-function Resolve-FfmpegZipUrl {
-    if (-not [string]::IsNullOrWhiteSpace($FfmpegZipUrl)) {
-        return $FfmpegZipUrl
-    }
-
-    Write-Host "Resolving latest Windows FFmpeg release from $ReleaseApiUrl"
-    $release = Invoke-RestMethod -Uri $ReleaseApiUrl -Headers @{ "User-Agent" = "VideoCutter-build" }
-    $asset = $release.assets |
-        Where-Object {
-            $_.name -match "win64-gpl.*\.zip$" -and
-            $_.name -notmatch "shared" -and
-            $_.browser_download_url
-        } |
-        Sort-Object name |
-        Select-Object -First 1
-
-    if ($null -eq $asset) {
-        throw "Unable to find a static Windows win64 GPL FFmpeg zip in the latest release metadata."
-    }
-
-    return $asset.browser_download_url
-}
-
 function Save-RemoteFile {
     param(
         [Parameter(Mandatory = $true)]
@@ -92,11 +70,18 @@ function Save-RemoteFile {
 
 New-Item -ItemType Directory -Force -Path $vendorBinDir | Out-Null
 
-if (Test-PreparedFfmpeg) {
+if ((Test-PreparedFfmpeg) -and -not $Force) {
     Write-Host "FFmpeg binaries already exist in $vendorBinDir. Skipping download."
     Invoke-VersionCheck -ExecutablePath $ffmpegExe
     Invoke-VersionCheck -ExecutablePath $ffprobeExe
     exit 0
+}
+
+if ([string]::IsNullOrWhiteSpace($FfmpegZipUrl)) {
+    throw "FfmpegZipUrl cannot be empty."
+}
+if ($FfmpegZipSha256 -notmatch '^[A-Fa-f0-9]{64}$') {
+    throw "FfmpegZipSha256 must be a 64-character SHA-256 digest."
 }
 
 if (Test-Path -LiteralPath $downloadRoot) {
@@ -105,9 +90,14 @@ if (Test-Path -LiteralPath $downloadRoot) {
 
 New-Item -ItemType Directory -Force -Path $extractRoot | Out-Null
 
-$resolvedZipUrl = Resolve-FfmpegZipUrl
-Write-Host "Downloading FFmpeg from $resolvedZipUrl"
-Save-RemoteFile -Uri $resolvedZipUrl -OutputPath $zipPath
+Write-Host "Downloading pinned FFmpeg from $FfmpegZipUrl"
+Save-RemoteFile -Uri $FfmpegZipUrl -OutputPath $zipPath
+
+$actualArchiveHash = (Get-FileHash -LiteralPath $zipPath -Algorithm SHA256).Hash
+if ($actualArchiveHash -ine $FfmpegZipSha256) {
+    throw "FFmpeg archive checksum mismatch. Expected $FfmpegZipSha256, received $actualArchiveHash."
+}
+Write-Host "FFmpeg archive checksum verified"
 
 Write-Host "Extracting FFmpeg archive"
 Expand-Archive -LiteralPath $zipPath -DestinationPath $extractRoot -Force

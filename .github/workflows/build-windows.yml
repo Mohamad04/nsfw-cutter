@@ -3,6 +3,7 @@ name: Build Windows
 on:
   push:
     branches:
+      - main
       - master
   workflow_dispatch:
 
@@ -42,7 +43,7 @@ jobs:
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v4
         with:
-          name: VideoCutter-windows
-          path: dist/VideoCutter-windows.zip
+          name: NSFW-Cutter-windows
+          path: dist/NSFW-Cutter-windows.zip
           if-no-files-found: error
           retention-days: 14

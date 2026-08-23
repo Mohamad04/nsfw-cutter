@@ -32,4 +32,10 @@ class AppState:
     current_export_job_id: str = ""
     current_export_job_json_path: str = ""
     ai_analysis_state: str = "idle"
+    ai_analysis_progress: int = 0
+    ai_analysis_status: str = "No analysis running"
+    ai_analysis_error: str = ""
+    ai_analysis_details: dict = field(default_factory=dict)
+    ai_analysis_active_job_token: str = ""
+    ai_analysis_media_path: str = ""
     ai_suggestions: list = field(default_factory=list)

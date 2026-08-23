@@ -110,6 +110,18 @@ class FakeSubtitleWorker:
         self.signals = WorkerSignals()
 
 
+class FakeAnalysisWorker:
+    def __init__(self, job_token, request, cancellation):
+        self.job_token = job_token
+        self.request = request
+        self.input_path = str(request.video_path)
+        self.cancellation = cancellation
+        self.signals = WorkerSignals()
+
+    def cancel(self):
+        self.cancellation.cancel()
+
+
 class FakeSettingsService:
     def __init__(self, last_video=None):
         self.last_video = last_video
@@ -176,6 +188,7 @@ class AppControllerTests(unittest.TestCase):
             settings_service=self.settings_service,
             keyframe_worker_factory=FakeKeyframeWorker,
             subtitle_worker_factory=FakeSubtitleWorker,
+            analysis_worker_factory=FakeAnalysisWorker,
         )
 
     def _workers_of_type(self, worker_type):
@@ -244,6 +257,107 @@ class AppControllerTests(unittest.TestCase):
                 }
             ],
         )
+
+    def test_video_analysis_reports_progress_cancels_and_stays_review_only(self):
+        self.controller.loadVideoFile("/tmp/a.mp4")
+
+        started = self.controller.analyzeVideo()
+        worker = self._workers_of_type(FakeAnalysisWorker)[0]
+        worker.signals.progress.emit(worker.job_token, 47, "Reviewing visual batches")
+        worker.signals.analysisEvent.emit(
+            worker.job_token,
+            {
+                "stage": "vlm_review",
+                "overall_percent": 47,
+                "candidate_count": 3,
+                "completed_units": 1,
+                "total_units": 4,
+                "device": "GPU bitsandbytes-nf4",
+            },
+        )
+
+        self.assertTrue(started)
+        self.assertEqual(self.controller.aiAnalysisState, "running")
+        self.assertEqual(self.controller.aiAnalysisProgress, 47)
+        self.assertEqual(self.controller.aiAnalysisStatus, "Reviewing visual batches")
+        self.assertEqual(self.controller.aiAnalysisDetails["candidate_count"], 3)
+        self.assertEqual(self.controller.aiAnalysisDetails["device"], "GPU bitsandbytes-nf4")
+        self.assertEqual(worker.request.video_path, Path("/tmp/a.mp4"))
+
+        cancelled = self.controller.cancelVideoAnalysis()
+
+        self.assertTrue(cancelled)
+        self.assertTrue(worker.cancellation.is_cancelled)
+        self.assertEqual(self.controller.aiAnalysisState, "cancelling")
+
+    def test_completed_analysis_publishes_pending_editable_suggestions(self):
+        self.controller.loadVideoFile("/tmp/a.mp4")
+        self.assertTrue(self.controller.analyzeVideo())
+        worker = self._workers_of_type(FakeAnalysisWorker)[0]
+
+        worker.signals.finished.emit(
+            worker.job_token,
+            {
+                "status": "completed",
+                "suggestions": [
+                    {
+                        "id": "suggestion-1",
+                        "start_seconds": 12.25,
+                        "end_seconds": 18.5,
+                        "category": "sexual_context",
+                        "visual_confidence": 0.82,
+                        "text_confidence": 0.21,
+                        "final_confidence": 0.86,
+                        "evidence_timestamps": [12.5, 17.75],
+                        "reason": "Visual context requiring manual review",
+                        "needs_review": True,
+                    }
+                ],
+            },
+        )
+
+        self.assertEqual(self.controller.aiAnalysisState, "ready")
+        self.assertEqual(self.controller.aiAnalysisProgress, 100)
+        self.assertEqual(len(self.controller.aiSuggestions), 1)
+        suggestion = self.controller.aiSuggestions[0]
+        self.assertEqual(suggestion["id"], "suggestion-1")
+        self.assertEqual(suggestion["category"], "sexual_context")
+        self.assertEqual(suggestion["review_state"], "pending")
+        self.assertTrue(suggestion["needs_review"])
+
+        self.assertTrue(
+            self.controller.reviewAiSuggestionWithEdits(
+                "suggestion-1",
+                "accepted",
+                "00:00:13.000",
+                "00:00:19.250",
+                "Edited review reason",
+            )
+        )
+        reviewed = self.controller.aiSuggestions[0]
+        self.assertEqual(reviewed["review_state"], "accepted")
+        self.assertEqual(reviewed["start"], "00:00:13.000")
+        self.assertEqual(reviewed["end"], "00:00:19.250")
+        self.assertEqual(reviewed["start_seconds"], 13.0)
+        self.assertEqual(reviewed["end_seconds"], 19.25)
+        self.assertEqual(reviewed["reason"], "Edited review reason")
+
+    def test_analysis_thread_pool_failure_returns_controller_to_error_state(self):
+        class FailingThreadPool(FakeThreadPool):
+            def start(self, _worker):
+                raise RuntimeError("thread pool unavailable")
+
+        controller = AppController(
+            video_import_service=FakeVideoImportService(),
+            thread_pool=FailingThreadPool(),
+            settings_service=FakeSettingsService(),
+            analysis_worker_factory=FakeAnalysisWorker,
+        )
+        controller._state.selected_video_path = "/tmp/a.mp4"
+
+        self.assertFalse(controller.analyzeVideo())
+        self.assertEqual(controller.aiAnalysisState, "error")
+        self.assertIn("thread pool unavailable", controller.aiAnalysisError)
 
     def test_load_folder_populates_available_videos(self):
         self.controller.loadFolder("folder")

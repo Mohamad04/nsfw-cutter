@@ -1,0 +1,33 @@
+# Optional local VLM analysis stack. Install in addition to requirements.txt.
+# This file contains Python packages only; model weights are downloaded separately
+# into the per-user model cache after explicit opt-in.
+
+# CPU-only Stage-1 ONNX image safety classifier.
+onnxruntime == 1.28.0
+huggingface_hub == 1.26.0
+numpy == 2.5.1
+
+# Fixed local orchestration
+langgraph == 1.2.10
+
+# Qwen/Qwen2.5-VL-3B-Instruct inference
+torch == 2.13.0
+# Required by Qwen2.5-VL's image/video processor. Keep it paired with torch 2.13.
+torchvision == 0.28.0
+transformers == 5.14.1
+accelerate == 1.14.0
+qwen-vl-utils == 0.0.14
+# Grammar-constrained JSON for local Transformers generation.
+lm-format-enforcer == 0.11.3
+# NF4 all-GPU loading on supported CUDA systems; automatic mode falls back to
+# FP16 Accelerate placement when this backend cannot initialize.
+bitsandbytes == 0.50.0
+
+# Lightweight first-pass NSFW image classifier (Marqo ViT-tiny checkpoint).
+timm == 1.0.28
+
+# Timestamped transcription; its `vad_filter` uses the bundled Silero VAD model.
+faster-whisper == 1.2.1
+
+# Optional developer-only metadata tracing; the application works without it.
+langsmith == 0.10.15

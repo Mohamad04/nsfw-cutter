@@ -73,11 +73,28 @@ you don't want to keep:
 - **Keeps audio and subtitles in sync** through the cuts.
 - **Multi-language UI** and light / dark / system themes.
 
-### AI providers
+### Local movie analysis
 
-The AI picks feature can run against a **Local** model, **OpenAI**, or a **Custom**
-provider, with a configurable model name, batch size, confidence threshold, and optional
-GPU acceleration. Configure this in **Settings → AI Settings**.
+AI Picks uses a local, coarse-to-fine movie pipeline. Coarse interval and scene-change
+frames first pass through the pinned, approximately 23 MB
+`Marqo/nsfw-image-detection-384` classifier. Only candidate windows are sampled densely
+and sent to the pinned `Qwen/Qwen2.5-VL-3B-Instruct` VLM as timestamped contact sheets.
+Text/subtitle evidence may request visual inspection, but it cannot create a suggestion
+without visual evidence.
+
+**Balanced** is the default mode; Fast samples less densely and Thorough increases
+sampling inside candidates. On NVIDIA GPUs, automatic placement tries 4-bit NF4 Qwen
+fully on the GPU, then falls back to FP16 GPU/CPU offload when required. Compact JSON is
+grammar-constrained, receives one text-only repair attempt, and has a 75-second soft
+per-batch deadline. Completed batches are checkpointed and resumed after cancellation or
+failure.
+
+Suggestions are review-only: analysis never cuts, exports, deletes, or uploads media
+automatically. Model downloads are disabled by default and model weights are not bundled
+in releases. Generic Local/OpenAI/Custom settings belong to the older AI settings flow;
+this movie-analysis pipeline currently uses its pinned local models. See
+[Local VLM Movie Analysis](docs/vlm_analysis_mvp.md) for exact source commands, modes,
+cache/resume paths, privacy, monitoring, limitations, and the manual performance checklist.
 
 ---
 
@@ -104,12 +121,18 @@ GPU acceleration. Configure this in **Settings → AI Settings**.
 ## Running from source
 
 ```powershell
-# 1. Create and activate a virtual environment
+# 1. Create a virtual environment
 python -m venv .venv
-.\.venv\Scripts\Activate.ps1
 
 # 2. Install dependencies
-pip install -r requirements.txt
+.\.venv\Scripts\python.exe -m pip install --upgrade pip
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+
+# Optional NVIDIA CUDA build used by local movie analysis
+.\.venv\Scripts\python.exe -m pip install torch==2.13.0+cu130 torchvision==0.28.0+cu130 --index-url https://download.pytorch.org/whl/cu130
+
+# Optional local movie-analysis stack (Python packages, no model weights)
+.\.venv\Scripts\python.exe -m pip install -r requirements-ai.txt
 
 # 3. Provide FFmpeg for the app (either of these):
 #    a) Bundle it into the project (used by the build):
@@ -118,8 +141,19 @@ pip install -r requirements.txt
 .\scripts\install_ffmpeg.ps1
 
 # 4. Launch
-python main.py
+.\.venv\Scripts\python.exe main.py
 ```
+
+AI model downloads remain disabled until explicitly enabled for a first run:
+
+```powershell
+$env:NSFW_CUTTER_AI_ALLOW_MODEL_DOWNLOAD = "1"
+.\.venv\Scripts\python.exe main.py
+```
+
+After the required models are cached, remove the opt-in and launch normally. See the
+[full VLM guide](docs/vlm_analysis_mvp.md#install-and-run-from-source) for CUDA
+verification and model-cache configuration.
 
 ---
 
@@ -160,8 +194,19 @@ specific machine:
 Settings : %LOCALAPPDATA%\MohamadElHajj\NSFW Cutter\settings\settings.json
 Database : %LOCALAPPDATA%\MohamadElHajj\NSFW Cutter\data\nsfw_app.db
 Cache    : %LOCALAPPDATA%\MohamadElHajj\NSFW Cutter\Cache
+VLM data : %LOCALAPPDATA%\MohamadElHajj\NSFW Cutter\Cache\vlm-analysis
+AI models: %LOCALAPPDATA%\MohamadElHajj\NSFW Cutter\Cache\models
 Logs     : %LOCALAPPDATA%\MohamadElHajj\NSFW Cutter\logs
 ```
+
+Set `NSFW_CUTTER_MODEL_CACHE` to override only the AI model location. Final analysis
+records and resumable per-batch checkpoints stay under `vlm-analysis`; neither stores the
+source path or full transcript. Checkpoints can contain bounded raw/repaired Qwen output,
+which remains local but may describe sensitive content. Temporary sampled frames,
+contact sheets, and audio live under `vlm-analysis\work` only while a run is active
+(except work left by a process crash). Optional LangSmith tracing is disabled by default
+and sends only allowlisted, redacted metadata when explicitly enabled—not media, paths,
+prompts, transcripts, or raw model output.
 
 ---
 

@@ -92,6 +92,22 @@ class SettingsController(QObject):
     def setBatchSize(self, batch_size: int) -> None:
         self._update_from(self._ai.set_batch_size, batch_size)
 
+    @Slot(result=str)
+    def getAnalysisMode(self) -> str:
+        return self._ai.get_analysis_mode()
+
+    @Slot(str)
+    def setAnalysisMode(self, mode: str) -> None:
+        self._update_from(self._ai.set_analysis_mode, mode)
+
+    @Slot(result=int)
+    def getAnalysisBatchSize(self) -> int:
+        return self._ai.get_analysis_batch_size()
+
+    @Slot(int)
+    def setAnalysisBatchSize(self, batch_size: int) -> None:
+        self._update_from(self._ai.set_analysis_batch_size, batch_size)
+
     @Slot(result=bool)
     def getEnableGpu(self) -> bool:
         return self._ai.get_enable_gpu()

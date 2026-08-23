@@ -380,9 +380,18 @@ Item {
                 mutedTextColor: root.textMuted
                 accentColor: root.darkMode ? theme.darkAccent : theme.lightAccent
                 onSettingsRequested: root.settingsRequested()
-                onAiPickAddRequested: function(index, startTime, endTime, confidence, reason) {
-                    if (videoWorkspace.addCutFromSuggestion(startTime, endTime, confidence, reason))
-                        appHeader.markAiPickAdded(index)
+                onAiPickAcceptRequested: function(suggestionId, startTime, endTime, confidence, reason) {
+                    if (!videoWorkspace.addCutFromSuggestion(startTime, endTime, confidence, reason)) return
+                    appController.reviewAiSuggestionWithEdits(
+                        suggestionId,
+                        "accepted",
+                        startTime,
+                        endTime,
+                        reason
+                    )
+                }
+                onAiPickRejectRequested: function(suggestionId) {
+                    appController.reviewAiSuggestion(suggestionId, "rejected")
                 }
             }
 

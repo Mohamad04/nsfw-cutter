@@ -44,13 +44,16 @@ jobs:
           } else {
             python -m pip install pytest ruff
           }
+          # Exercise the fixed graph and structured-output adapter without installing
+          # Torch, faster-whisper, bitsandbytes, timm, or any model weights.
+          python -m pip install langgraph==1.2.10 transformers==5.14.1 qwen-vl-utils==0.0.14 lm-format-enforcer==0.11.3
 
       - name: Prepare FFmpeg
         shell: pwsh
         run: ./scripts/prepare_ffmpeg.ps1
 
       - name: Lint
-        run: ruff check .
+        run: ruff check . --select E4,E7,E9,F
 
       - name: Test
         run: pytest -q

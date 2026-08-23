@@ -41,6 +41,11 @@ Popup {
         { "code": "openai", "name": qsTr("OpenAI") },
         { "code": "custom", "name": qsTr("Custom") }
     ]
+    readonly property var analysisModeOptions: [
+        { "code": "fast", "name": qsTr("Fast") },
+        { "code": "balanced", "name": qsTr("Balanced") },
+        { "code": "thorough", "name": qsTr("Thorough") }
+    ]
 
     function modelIndex(model, value, roleName) {
         if (!model) return 0
@@ -63,7 +68,8 @@ Popup {
         promptArea.text = settingsController.getUserPrompt()
         modelNameField.text = settingsController.getAIModelName()
         gpuCheckbox.checked = settingsController.getEnableGpu()
-        batchSizeSpin.value = settingsController.getBatchSize()
+        analysisModeCombo.currentIndex = modelIndex(root.analysisModeOptions, settingsController.getAnalysisMode(), "code")
+        batchSizeSpin.value = settingsController.getAnalysisBatchSize()
         confidenceSlider.value = settingsController.getConfidenceThreshold()
         lastVideoPath = settingsController.getLastVideoPath()
         recentVideos = settingsController.getRecentVideos()
@@ -308,8 +314,21 @@ Popup {
                         RowLayout {
                             Layout.fillWidth: true
                             spacing: 8
-                            Text { text: qsTr("Batch size"); color: root.textMuted; Layout.preferredWidth: 84 }
-                            SpinBox { id: batchSizeSpin; from: 1; to: 64; value: 8 }
+                            Text { text: qsTr("Analysis mode"); color: root.textMuted; Layout.preferredWidth: 84 }
+                            ComboBox {
+                                id: analysisModeCombo
+                                Layout.fillWidth: true
+                                model: root.analysisModeOptions
+                                textRole: "name"
+                                valueRole: "code"
+                            }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 8
+                            Text { text: qsTr("VLM batch size"); color: root.textMuted; Layout.preferredWidth: 84 }
+                            SpinBox { id: batchSizeSpin; from: 1; to: 8; value: 4 }
                         }
 
                         ColumnLayout {
@@ -443,7 +462,8 @@ Popup {
                     settingsController.setAIProvider(providerCombo.currentValue)
                     settingsController.setAIModelName(modelNameField.text)
                     settingsController.setEnableGpu(gpuCheckbox.checked)
-                    settingsController.setBatchSize(batchSizeSpin.value)
+                    settingsController.setAnalysisMode(analysisModeCombo.currentValue)
+                    settingsController.setAnalysisBatchSize(batchSizeSpin.value)
                     settingsController.setConfidenceThreshold(confidenceSlider.value)
                     root.close()
                 }

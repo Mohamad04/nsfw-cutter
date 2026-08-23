@@ -1,0 +1,3 @@
+# Optional resource monitoring for preprocessing and Stage-1 benchmark scripts.
+-r requirements.txt
+psutil == 7.2.2

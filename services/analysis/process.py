@@ -5,12 +5,19 @@ import queue
 import subprocess
 import tempfile
 import threading
+import time
 from collections import deque
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from services.analysis.cancellation import AnalysisCancelled, CancellationToken
+
+if TYPE_CHECKING:
+    from services.analysis.preprocessing_instrumentation import (
+        PreprocessingInstrumentation,
+    )
 
 
 @dataclass(frozen=True)
@@ -20,12 +27,46 @@ class ProcessResult:
     stderr: str
 
 
+class _MeasuredBinaryQueue(queue.Queue[bytes | object]):
+    """Bounded queue that records exact occupancy while holding Queue's mutex."""
+
+    def __init__(
+        self,
+        instrumentation: PreprocessingInstrumentation,
+        *,
+        maxsize: int,
+    ) -> None:
+        super().__init__(maxsize=maxsize)
+        self.instrumentation = instrumentation
+        self.queued_bytes = 0
+        self.queued_items = 0
+
+    def _put(self, item: bytes | object) -> None:
+        super()._put(item)
+        if isinstance(item, bytes):
+            self.queued_bytes += len(item)
+            self.queued_items += 1
+            self.instrumentation.update_peak("stdout_queue_bytes", self.queued_bytes)
+            self.instrumentation.update_peak("stdout_queue_items", self.queued_items)
+
+    def _get(self) -> bytes | object:
+        item = super()._get()
+        if isinstance(item, bytes):
+            self.queued_bytes = max(0, self.queued_bytes - len(item))
+            self.queued_items = max(0, self.queued_items - 1)
+        return item
+
+
 class CancellableProcessRunner:
     """Run a child process without a shell and terminate it cooperatively."""
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        instrumentation: PreprocessingInstrumentation | None = None,
+    ) -> None:
         self._active_processes: set[subprocess.Popen] = set()
         self._active_processes_lock = threading.Lock()
+        self.instrumentation = instrumentation
 
     @property
     def active_process_count(self) -> int:
@@ -95,6 +136,9 @@ class CancellableProcessRunner:
 
         normalized_command = [str(part) for part in command]
         creation_flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+        process_started_at = (
+            time.perf_counter() if self.instrumentation is not None else 0.0
+        )
         process = subprocess.Popen(
             normalized_command,
             stdin=subprocess.DEVNULL,
@@ -104,8 +148,20 @@ class CancellableProcessRunner:
             bufsize=0,
         )
         self._register_process(process)
+        if self.instrumentation is not None:
+            process_launched_at = time.perf_counter()
+            self.instrumentation.process_started(
+                process.pid,
+                process_launched_at - process_started_at,
+            )
 
-        stdout_queue: queue.Queue[bytes | object] = queue.Queue(maxsize=8)
+        if self.instrumentation is None:
+            stdout_queue: queue.Queue[bytes | object] = queue.Queue(maxsize=8)
+        else:
+            stdout_queue = _MeasuredBinaryQueue(
+                self.instrumentation,
+                maxsize=8,
+            )
         reader_errors: queue.Queue[BaseException] = queue.Queue()
         stderr_tail: deque[str] = deque(maxlen=100)
         stop_readers = threading.Event()
@@ -120,12 +176,24 @@ class CancellableProcessRunner:
                     continue
 
         def read_stdout() -> None:
+            first_stdout = True
             try:
                 assert process.stdout is not None
                 while not stop_readers.is_set():
                     value = process.stdout.read(chunk_size)
                     if not value:
                         break
+                    if self.instrumentation is not None:
+                        if first_stdout:
+                            self.instrumentation.process_first_stdout(
+                                time.perf_counter() - process_started_at
+                            )
+                            first_stdout = False
+                        self.instrumentation.increment(
+                            "raw_rgb_bytes_received",
+                            len(value),
+                        )
+                        self.instrumentation.increment("stdout_blocks_received")
                     put_stdout(value)
             except BaseException as exc:  # pragma: no cover - OS pipe failure
                 reader_errors.put(exc)
@@ -198,6 +266,11 @@ class CancellableProcessRunner:
             stdout_thread.join(timeout=2.0)
             stderr_thread.join(timeout=2.0)
             self._unregister_process(process)
+            if self.instrumentation is not None:
+                self.instrumentation.process_finished(
+                    process.pid,
+                    time.perf_counter() - process_started_at,
+                )
 
     def _register_process(self, process: subprocess.Popen) -> None:
         with self._active_processes_lock:

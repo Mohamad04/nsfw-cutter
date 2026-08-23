@@ -25,7 +25,8 @@ Item {
     readonly property color elevatedBorder: root.lightMode ? "#CBD5E1" : "#2B4260"
 
     signal settingsRequested()
-    signal aiPickAddRequested(int index, string startTime, string endTime, string confidence, string reason)
+    signal aiPickAcceptRequested(string suggestionId, string startTime, string endTime, string confidence, string reason)
+    signal aiPickRejectRequested(string suggestionId)
 
     implicitHeight: 76
 
@@ -112,33 +113,14 @@ Item {
         return typeof recentVideo === "string" ? recentVideo : ""
     }
 
-    function requestAiPick(index) {
-        if (index < 0 || index >= aiPicksModel.count) return
-        var pick = aiPicksModel.get(index)
-        if (pick.added) return
-        root.aiPickAddRequested(index, pick.start, pick.end, pick.confidence, pick.reason)
-    }
-
-    function requestSelectedAiPicks() {
+    function markAiPickAdded(suggestionId) {
         for (var index = 0; index < aiPicksModel.count; index += 1) {
             var pick = aiPicksModel.get(index)
-            if (pick.selected && !pick.added)
-                root.aiPickAddRequested(index, pick.start, pick.end, pick.confidence, pick.reason)
+            if (pick.suggestionId !== suggestionId) continue
+            aiPicksModel.setProperty(index, "added", true)
+            aiPicksModel.setProperty(index, "selected", false)
+            return
         }
-    }
-
-    function requestAllAiPicks() {
-        for (var index = 0; index < aiPicksModel.count; index += 1) {
-            var pick = aiPicksModel.get(index)
-            if (!pick.added)
-                root.aiPickAddRequested(index, pick.start, pick.end, pick.confidence, pick.reason)
-        }
-    }
-
-    function markAiPickAdded(index) {
-        if (index < 0 || index >= aiPicksModel.count) return
-        aiPicksModel.setProperty(index, "added", true)
-        aiPicksModel.setProperty(index, "selected", false)
     }
 
     function normalizedAiTime(value) {
@@ -174,7 +156,45 @@ Item {
         return value === undefined || value === null ? (fallback || "") : String(value)
     }
 
+    function stableAiSuggestionId(suggestion, startTime, endTime, category, reason) {
+        var suggestionId = root.aiSuggestionValue(suggestion, "id", "").trim()
+        if (suggestionId.length > 0) return suggestionId
+        return "legacy:" + [startTime, endTime, category, reason].join("|")
+    }
+
+    function aiSuggestionConfidence(suggestion) {
+        if (suggestion) {
+            var finalConfidence = suggestion["final_confidence"]
+            if (finalConfidence !== undefined && finalConfidence !== null && finalConfidence !== "") {
+                var numericConfidence = Number(finalConfidence)
+                if (Number.isFinite(numericConfidence)) {
+                    var percent = numericConfidence >= 0 && numericConfidence <= 1
+                        ? numericConfidence * 100
+                        : numericConfidence
+                    return Math.round(percent) + "%"
+                }
+            }
+        }
+        return root.aiSuggestionValue(suggestion, "confidence", qsTr("Medium"))
+    }
+
+    function aiSuggestionReviewState(suggestion) {
+        var reviewState = root.aiSuggestionValue(suggestion, "review_state", "pending").toLowerCase()
+        return reviewState === "accepted" || reviewState === "rejected" ? reviewState : "pending"
+    }
+
     function rebuildAiPicksModel() {
+        var previousEdits = []
+        for (var previousIndex = 0; previousIndex < aiPicksModel.count; previousIndex += 1) {
+            var previousPick = aiPicksModel.get(previousIndex)
+            previousEdits.push({
+                "suggestionId": previousPick.suggestionId,
+                "start": previousPick.start,
+                "end": previousPick.end,
+                "reason": previousPick.reason,
+                "reviewState": previousPick.reviewState
+            })
+        }
         aiPicksModel.clear()
 
         var suggestions = appController.aiSuggestions
@@ -184,13 +204,39 @@ Item {
             var endTime = root.aiSuggestionValue(suggestion, "end", "")
             if (startTime.length === 0 || endTime.length === 0) continue
 
+            var category = root.aiSuggestionValue(suggestion, "category", "uncertain")
+            var reason = root.aiSuggestionValue(suggestion, "reason", "")
+            var suggestionId = root.stableAiSuggestionId(
+                suggestion,
+                startTime,
+                endTime,
+                category,
+                reason
+            )
+            var reviewState = root.aiSuggestionReviewState(suggestion)
+
+            for (var editIndex = 0; editIndex < previousEdits.length; editIndex += 1) {
+                var previousEdit = previousEdits[editIndex]
+                if (previousEdit.suggestionId !== suggestionId
+                        || previousEdit.reviewState !== "pending"
+                        || reviewState !== "pending") continue
+                startTime = previousEdit.start
+                endTime = previousEdit.end
+                reason = previousEdit.reason
+                break
+            }
+
             aiPicksModel.append({
+                "suggestionId": suggestionId,
                 "start": startTime,
                 "end": endTime,
-                "confidence": root.aiSuggestionValue(suggestion, "confidence", "Medium"),
-                "reason": root.aiSuggestionValue(suggestion, "reason", ""),
+                "category": category,
+                "confidence": root.aiSuggestionConfidence(suggestion),
+                "reason": reason,
+                "reviewState": reviewState,
+                "needsReview": suggestion["needs_review"] !== false,
                 "selected": false,
-                "added": false
+                "added": reviewState === "accepted"
             })
         }
     }
@@ -201,14 +247,16 @@ Item {
 
     function aiPicksTitle() {
         if (appController.selectedVideoPath.length === 0) return qsTr("AI Picks unavailable")
-        if (appController.aiAnalysisState === "running") return qsTr("Analyzing video...")
+        if (appController.aiAnalysisState === "running"
+                || appController.aiAnalysisState === "cancelling") return qsTr("Analyzing video...")
         if (aiPicksModel.count === 0) return qsTr("No AI picks yet")
         return qsTr("AI Picks")
     }
 
     function aiPicksSubtitle() {
         if (appController.selectedVideoPath.length === 0) return qsTr("Open a video first.")
-        if (appController.aiAnalysisState === "running") return qsTr("Please wait while analysis runs.")
+        if (appController.aiAnalysisState === "running"
+                || appController.aiAnalysisState === "cancelling") return qsTr("Please wait while analysis runs.")
         if (aiPicksModel.count === 0) return qsTr("Run analysis to generate suggestions.")
         return qsTr("Suggested cuts detected")
     }
@@ -447,6 +495,13 @@ Item {
         textColor: root.textColor
         mutedTextColor: root.mutedTextColor
         accentColor: root.accentColor
+        picksModel: aiPicksModel
+        onAcceptRequested: function(suggestionId, startTime, endTime, confidence, reason) {
+            root.aiPickAcceptRequested(suggestionId, startTime, endTime, confidence, reason)
+        }
+        onRejectRequested: function(suggestionId) {
+            root.aiPickRejectRequested(suggestionId)
+        }
     }
 
     Popup {

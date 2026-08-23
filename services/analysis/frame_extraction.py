@@ -6,9 +6,10 @@ import time
 from collections import deque
 from collections.abc import Iterator
 from dataclasses import dataclass
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import ROUND_HALF_UP, Decimal
 from fractions import Fraction
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from services.analysis.cancellation import CancellationToken
 from services.analysis.preprocessing_contracts import (
@@ -19,6 +20,11 @@ from services.analysis.preprocessing_contracts import (
 )
 from services.analysis.process import CancellableProcessRunner
 from services.infrastructure.ffmpeg.runner import FFmpegService
+
+if TYPE_CHECKING:
+    from services.analysis.preprocessing_instrumentation import (
+        PreprocessingInstrumentation,
+    )
 
 
 _SHOWINFO_CONFIG_PATTERN = re.compile(
@@ -68,9 +74,13 @@ class FFmpegHybridFrameExtractor:
         *,
         ffmpeg_service: FFmpegService | None = None,
         process_runner: CancellableProcessRunner | None = None,
+        instrumentation: PreprocessingInstrumentation | None = None,
     ) -> None:
         self.ffmpeg_service = ffmpeg_service or FFmpegService()
-        self.process_runner = process_runner or CancellableProcessRunner()
+        self.instrumentation = instrumentation
+        self.process_runner = process_runner or CancellableProcessRunner(
+            instrumentation=instrumentation
+        )
 
     def extract(
         self,
@@ -90,11 +100,40 @@ class FFmpegHybridFrameExtractor:
             cancellation=cancellation,
             stderr_callback=collector.accept_line,
         )
+        byte_iterator = iter(byte_stream)
         try:
-            for block in byte_stream:
+            while True:
+                wait_started_at = (
+                    time.perf_counter() if self.instrumentation is not None else 0.0
+                )
+                try:
+                    block = next(byte_iterator)
+                except StopIteration:
+                    if self.instrumentation is not None:
+                        self.instrumentation.add_duration(
+                            "extractor_stream_wait_seconds",
+                            time.perf_counter() - wait_started_at,
+                        )
+                    break
+                if self.instrumentation is not None:
+                    self.instrumentation.add_duration(
+                        "extractor_stream_wait_seconds",
+                        time.perf_counter() - wait_started_at,
+                    )
                 cancellation.raise_if_cancelled()
+                assembly_started_at = (
+                    time.perf_counter() if self.instrumentation is not None else 0.0
+                )
                 raw_buffer.extend(block)
+                if self.instrumentation is not None:
+                    self.instrumentation.add_duration(
+                        "frame_assembly_seconds",
+                        time.perf_counter() - assembly_started_at,
+                    )
                 while len(raw_buffer) >= frame_size:
+                    assembly_started_at = (
+                        time.perf_counter() if self.instrumentation is not None else 0.0
+                    )
                     rgb_bytes = bytes(raw_buffer[:frame_size])
                     del raw_buffer[:frame_size]
                     metadata = collector.next_metadata(cancellation)
@@ -104,7 +143,7 @@ class FFmpegHybridFrameExtractor:
                         metadata.content_width,
                         metadata.content_height,
                     )
-                    yield ExtractedFrame(
+                    frame = ExtractedFrame(
                         timestamp_us=metadata.timestamp_us,
                         source_pts=metadata.source_pts,
                         source_time_base=metadata.source_time_base,
@@ -116,6 +155,13 @@ class FFmpegHybridFrameExtractor:
                         scene_score=metadata.scene_score,
                         rgb_bytes=rgb_bytes,
                     )
+                    if self.instrumentation is not None:
+                        self.instrumentation.add_duration(
+                            "frame_assembly_seconds",
+                            time.perf_counter() - assembly_started_at,
+                        )
+                        self.instrumentation.increment("frames_extracted")
+                    yield frame
         finally:
             byte_stream.close()
 

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from PIL import Image, ImageStat
 
@@ -11,6 +13,11 @@ from services.analysis.preprocessing_contracts import (
     PreprocessingConfig,
     SampleReason,
 )
+
+if TYPE_CHECKING:
+    from services.analysis.preprocessing_instrumentation import (
+        PreprocessingInstrumentation,
+    )
 
 
 _COLOR_DISTANCE_THRESHOLD = 12.0
@@ -30,12 +37,30 @@ class _RepresentativeFeatures:
 class SequentialFrameFilter:
     """Conservative, stateful frame reduction for a globally ordered stream."""
 
-    def __init__(self, config: PreprocessingConfig) -> None:
+    def __init__(
+        self,
+        config: PreprocessingConfig,
+        instrumentation: PreprocessingInstrumentation | None = None,
+    ) -> None:
         self.config = config
+        self.instrumentation = instrumentation
         self._last_representative: _RepresentativeFeatures | None = None
 
     def process(self, frame: ExtractedFrame, owning_chunk_index: int) -> FrameSample:
+        process_started_at = (
+            time.perf_counter() if self.instrumentation is not None else 0.0
+        )
+        if self.instrumentation is not None:
+            self.instrumentation.increment(
+                "python_rgb_bytes_processed",
+                len(frame.rgb_bytes),
+            )
+
+        stage_started_at = time.perf_counter() if self.instrumentation is not None else 0.0
         content = _content_image(frame)
+        self._record_duration("frame_preparation_seconds", stage_started_at)
+
+        stage_started_at = time.perf_counter() if self.instrumentation is not None else 0.0
         black_fraction, mean_luma = _black_features(
             content,
             self.config.black_pixel_luma_threshold,
@@ -45,11 +70,15 @@ class SequentialFrameFilter:
             black_fraction >= self.config.black_frame_ratio_threshold
             and mean_luma <= self.config.black_mean_luma_threshold
         )
+        self._record_duration("black_filter_seconds", stage_started_at)
         if is_black:
             # A black gap is a content boundary. Do not allow an earlier image to
             # suppress a visually identical image that reappears after the gap.
             self._last_representative = None
-            return _sample(
+            stage_started_at = (
+                time.perf_counter() if self.instrumentation is not None else 0.0
+            )
+            sample = _sample(
                 frame,
                 owning_chunk_index,
                 disposition=FrameDisposition.BLACK,
@@ -57,7 +86,11 @@ class SequentialFrameFilter:
                 mean_luma=mean_luma,
                 mean_rgb=mean_rgb,
             )
+            self._record_duration("result_materialization_seconds", stage_started_at)
+            self._record_duration("python_filter_total_seconds", process_started_at)
+            return sample
 
+        stage_started_at = time.perf_counter() if self.instrumentation is not None else 0.0
         global_hash = _dhash(content)
         regions = _spatial_regions(content)
         regional_hashes = tuple(_dhash(region) for region in regions)
@@ -65,6 +98,9 @@ class SequentialFrameFilter:
             tuple(float(value) for value in ImageStat.Stat(region).mean[:3])
             for region in regions
         )
+        self._record_duration("perceptual_hash_seconds", stage_started_at)
+
+        stage_started_at = time.perf_counter() if self.instrumentation is not None else 0.0
         previous = self._last_representative
         scene_boundary = SampleReason.SCENE_TRANSITION in frame.sample_reasons
         disposition = FrameDisposition.REPRESENTATIVE
@@ -104,8 +140,13 @@ class SequentialFrameFilter:
                 mean_rgb=mean_rgb,
                 regional_mean_rgb=regional_mean_rgb,
             )
+        self._record_duration(
+            "duplicate_static_reduction_seconds",
+            stage_started_at,
+        )
 
-        return _sample(
+        stage_started_at = time.perf_counter() if self.instrumentation is not None else 0.0
+        sample = _sample(
             frame,
             owning_chunk_index,
             disposition=disposition,
@@ -117,10 +158,17 @@ class SequentialFrameFilter:
             regional_mean_rgb=regional_mean_rgb,
             duplicate_of_timestamp_us=duplicate_of_timestamp_us,
         )
+        self._record_duration("result_materialization_seconds", stage_started_at)
+        self._record_duration("python_filter_total_seconds", process_started_at)
+        return sample
 
     def finish(self) -> tuple[FrameSample, ...]:
         """Explicit EOF hook; representatives are retained eagerly, so none are pending."""
         return ()
+
+    def _record_duration(self, name: str, started_at: float) -> None:
+        if self.instrumentation is not None:
+            self.instrumentation.add_duration(name, time.perf_counter() - started_at)
 
 
 def _sample(

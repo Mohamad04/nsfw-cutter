@@ -8,6 +8,7 @@ from services.analysis.cancellation import CancellationToken
 from services.analysis.chunking import owning_chunk_index, plan_processing_chunks
 from services.analysis.frame_extraction import FFmpegHybridFrameExtractor
 from services.analysis.preprocessing import MoviePreprocessingService
+from services.analysis.preprocessing_benchmark import run_benchmark_suite
 from services.analysis.preprocessing_contracts import (
     FrameDisposition,
     PreprocessingConfig,
@@ -201,6 +202,28 @@ class GeneratedVideoPreprocessingTests(unittest.TestCase):
                 Fraction(frame.source_pts * numerator, denominator) * 1_000_000
             )
             self.assertEqual(frame.timestamp_us, expected)
+
+    def test_benchmark_runs_the_production_pipeline_and_serializes_measurements(self):
+        suite = run_benchmark_suite(
+            self.video_path,
+            [self.config],
+            runs=1,
+            monitor_resources=False,
+            ffmpeg_service=self.ffmpeg_service,
+        )
+
+        run = suite.cases[0].runs[0]
+        payload = suite.model_dump(mode="json")
+
+        self.assertTrue(suite.valid)
+        self.assertTrue(run.correctness.valid)
+        self.assertEqual(run.counts.chunks, 3)
+        self.assertEqual(run.counts.ffmpeg_process_launches, 3)
+        self.assertGreater(run.data_volume.raw_rgb_bytes_received, 0)
+        self.assertGreater(run.timings.ffmpeg_process_lifetime_seconds, 0.0)
+        self.assertGreater(run.timings.python_filter_total_seconds, 0.0)
+        self.assertIn("cases", payload)
+        self.assertIn("valid", payload)
 
 
 def _generate_fixture(ffmpeg_path: Path, output_path: Path) -> None:

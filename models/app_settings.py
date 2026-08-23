@@ -44,6 +44,17 @@ class AppSettings(BaseModel):
     enable_gpu: bool = True
     batch_size: int = Field(default=8, ge=1, le=64)
     confidence_threshold: float = Field(default=0.5, ge=0.0, le=1.0)
+    ai_analysis_mode: str = Field(
+        default="balanced",
+        pattern="^(fast|balanced|thorough)$",
+    )
+    ai_quantization_mode: str = Field(default="auto", pattern="^(auto|4bit|none)$")
+    ai_sample_rate_fps: float = Field(default=1.0, gt=0.0, le=5.0)
+    ai_scene_threshold: float = Field(default=0.35, ge=0.05, le=0.95)
+    ai_visual_batch_size: int = Field(default=4, ge=1, le=8)
+    ai_merge_gap_seconds: float = Field(default=1.5, ge=0.0, le=30.0)
+    ai_context_padding_seconds: float = Field(default=0.75, ge=0.0, le=30.0)
+    ai_whisper_model_name: str = Field(default="small", min_length=1)
 
     @field_validator("recent_videos")
     @classmethod

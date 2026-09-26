@@ -22,9 +22,26 @@ Rectangle {
     readonly property int cutProgressPercent: Math.max(0, Math.min(100, Math.round(videoCutController.cutProgressValue)))
     readonly property int cutRemainingPercent: Math.max(0, 100 - root.cutProgressPercent)
     readonly property string cuttingModeLabel: root.cutTimingMode === "requested" ? qsTr("Fast cutting") : qsTr("Smart cutting")
+    readonly property string outputPathsText: root.joinOutputPaths(videoCutController.cutOutputPaths)
+    readonly property bool exportFailed: !videoCutController.cutBusy && videoCutController.cutError.length > 0
+    readonly property bool exportCompleted: !videoCutController.cutBusy && root.outputPathsText.length > 0
+    readonly property bool hasExportResult: root.exportFailed || root.exportCompleted
+
+    implicitHeight: 66 + (root.hasExportResult ? exportResultPanel.implicitHeight + 8 : 0)
 
     signal chooseFolderRequested()
     signal exportCleanVideoRequested()
+
+    function joinOutputPaths(paths) {
+        var values = []
+        for (var index = 0; paths && index < paths.length; index += 1)
+            values.push(String(paths[index]))
+        return values.join(" • ")
+    }
+
+    function singleLine(value) {
+        return String(value || "").replace(/\s*\n\s*/g, " • ")
+    }
 
     radius: 14
     color: root.lightMode ? root.panelColor : "#081321"
@@ -41,9 +58,13 @@ Rectangle {
     }
 
     RowLayout {
-        anchors.fill: parent
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: parent.top
         anchors.leftMargin: 12
         anchors.rightMargin: 12
+        anchors.topMargin: 12
+        height: 42
         spacing: 10
 
         Text {
@@ -191,6 +212,126 @@ Rectangle {
             Layout.preferredWidth: 196
             Layout.preferredHeight: 40
             onClicked: root.exportCleanVideoRequested()
+        }
+    }
+
+    Rectangle {
+        id: exportResultPanel
+        objectName: "exportResultPanel"
+
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        anchors.leftMargin: 12
+        anchors.rightMargin: 12
+        anchors.bottomMargin: 8
+        implicitHeight: exportResultColumn.implicitHeight + 12
+        visible: root.hasExportResult
+        radius: 9
+        color: root.exportFailed
+            ? (root.lightMode ? "#FEF2F2" : "#2A1115")
+            : (root.lightMode ? "#F0FDF4" : "#0D2418")
+        border.color: root.exportFailed
+            ? (root.lightMode ? "#FCA5A5" : "#7F1D1D")
+            : (root.lightMode ? "#86EFAC" : "#166534")
+
+        ColumnLayout {
+            id: exportResultColumn
+
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.verticalCenter: parent.verticalCenter
+            anchors.leftMargin: 10
+            anchors.rightMargin: 10
+            spacing: 2
+
+            Text {
+                objectName: "exportResultStatusText"
+                Layout.fillWidth: true
+                text: root.exportFailed ? qsTr("Export failed") : qsTr("Export completed")
+                color: root.exportFailed
+                    ? (root.lightMode ? "#B91C1C" : "#FCA5A5")
+                    : (root.lightMode ? "#166534" : "#86EFAC")
+                font.pixelSize: 12
+                font.weight: Font.DemiBold
+                elide: Text.ElideRight
+            }
+
+            Text {
+                objectName: "exportOutputPathText"
+                Layout.fillWidth: true
+                text: qsTr("Output: %1").arg(root.outputPathsText)
+                color: root.textColor
+                font.pixelSize: 11
+                elide: Text.ElideMiddle
+                visible: root.exportCompleted
+                ToolTip.visible: outputPathMouse.containsMouse
+                ToolTip.text: root.outputPathsText
+
+                MouseArea {
+                    id: outputPathMouse
+                    anchors.fill: parent
+                    acceptedButtons: Qt.NoButton
+                    hoverEnabled: true
+                }
+            }
+
+            Text {
+                objectName: "exportWarningText"
+                Layout.fillWidth: true
+                text: qsTr("Warning: %1").arg(root.singleLine(videoCutController.cutWarning))
+                color: root.lightMode ? "#9A3412" : "#FDBA74"
+                font.pixelSize: 11
+                elide: Text.ElideRight
+                visible: root.exportCompleted && videoCutController.cutWarning.length > 0
+                ToolTip.visible: warningMouse.containsMouse
+                ToolTip.text: videoCutController.cutWarning
+
+                MouseArea {
+                    id: warningMouse
+                    anchors.fill: parent
+                    acceptedButtons: Qt.NoButton
+                    hoverEnabled: true
+                }
+            }
+
+            Text {
+                objectName: "exportErrorText"
+                Layout.fillWidth: true
+                text: videoCutController.cutError
+                color: root.lightMode ? "#B91C1C" : "#FCA5A5"
+                font.pixelSize: 11
+                elide: Text.ElideRight
+                visible: root.exportFailed
+                ToolTip.visible: errorMouse.containsMouse
+                ToolTip.text: videoCutController.cutError
+
+                MouseArea {
+                    id: errorMouse
+                    anchors.fill: parent
+                    acceptedButtons: Qt.NoButton
+                    hoverEnabled: true
+                }
+            }
+
+            Text {
+                objectName: "exportDetailsText"
+                Layout.fillWidth: true
+                text: qsTr("Details: %1").arg(root.singleLine(videoCutController.cutDetails))
+                color: root.mutedTextColor
+                font.pixelSize: 10
+                elide: Text.ElideRight
+                visible: root.exportCompleted && videoCutController.cutDetails.length > 0
+                ToolTip.visible: detailsMouse.containsMouse
+                ToolTip.text: videoCutController.cutDetails
+
+                MouseArea {
+                    id: detailsMouse
+                    anchors.fill: parent
+                    acceptedButtons: Qt.NoButton
+                    hoverEnabled: true
+                }
+            }
         }
     }
 }

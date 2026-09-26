@@ -26,6 +26,8 @@ Item {
     property color textMain: root.darkMode ? theme.darkTextPrimary : theme.lightTextPrimary
     property color textMuted: root.darkMode ? theme.darkTextMuted : theme.lightTextMuted
     property int selectedCutIndex: -1
+    property string cutsVideoPath: ""
+    property string exportVideoPath: ""
     property string outputDir: ""
     property string cutTimingMode: "safe"
     property string exportJsonText: ""
@@ -41,7 +43,31 @@ Item {
         onCountChanged: root.syncAiPickAddedState()
     }
 
-    Component.onCompleted: root.outputDir = settingsController.getExportDir()
+    Component.onCompleted: {
+        root.outputDir = settingsController.getExportDir()
+        root.cutsVideoPath = String(appController.selectedVideoPath || "")
+    }
+
+    function resetVideoScopedState(nextVideoPath) {
+        var normalizedPath = String(nextVideoPath || "")
+        if (normalizedPath === root.cutsVideoPath) return
+
+        root.cutsVideoPath = normalizedPath
+        cutsModel.clear()
+        root.selectedCutIndex = -1
+        root.syncAiPickAddedState()
+        if (!videoCutController.cutBusy) {
+            videoCutController.clearExportResult()
+            root.exportVideoPath = ""
+        }
+    }
+
+    function clearFinishedExportForInactiveVideo() {
+        if (root.exportVideoPath.length === 0
+                || root.exportVideoPath === String(appController.selectedVideoPath || "")) return
+        videoCutController.clearExportResult()
+        root.exportVideoPath = ""
+    }
 
     function syncAiPickAddedState() {
         appHeader.syncAiPickAddedState(cutsModel)
@@ -339,6 +365,7 @@ Item {
 
     function exportCleanVideo() {
         if (appController.selectedVideoPath.length === 0 || cutsModel.count === 0) return
+        root.exportVideoPath = String(appController.selectedVideoPath)
         videoCutController.exportSegments(
             appController.selectedVideoPath,
             root.cutsToArray(),
@@ -446,7 +473,7 @@ Item {
 
             ExportActionBar {
                 Layout.fillWidth: true
-                Layout.preferredHeight: 72
+                Layout.preferredHeight: implicitHeight
                 outputDir: root.outputDir
                 lightMode: root.lightMode
                 hasVideo: appController.selectedVideoPath.length > 0
@@ -665,8 +692,24 @@ Item {
     Connections {
         target: appController
 
+        function onSelectedVideoPathChanged() {
+            root.resetVideoScopedState(appController.selectedVideoPath)
+        }
+
         function onAiSuggestionsChanged() {
             Qt.callLater(root.syncAiPickAddedState)
+        }
+    }
+
+    Connections {
+        target: videoCutController
+
+        function onCutFinished() {
+            root.clearFinishedExportForInactiveVideo()
+        }
+
+        function onCutFailed() {
+            root.clearFinishedExportForInactiveVideo()
         }
     }
 }

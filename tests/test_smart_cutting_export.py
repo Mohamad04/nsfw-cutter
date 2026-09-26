@@ -1,5 +1,6 @@
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 
 from services.export.audio_rebuild_service import AudioRebuildService
 from services.export.export_router_service import (
@@ -12,7 +13,9 @@ from services.export.smart_cut_planner import (
     COPY_SEGMENT,
     DELETE_SEGMENT,
     REENCODE_SEGMENT,
+    SmartCutPlan,
     SmartCutPlanner,
+    SmartCutPlanSegment,
 )
 from services.export.subtitle_rebuild_service import (
     EmbeddedSubtitleExtractService,
@@ -88,6 +91,30 @@ class SmartCutCommandTests(unittest.TestCase):
         self.assertIn("-an", command)
         self.assertIn("-sn", command)
         self.assertEqual(command[command.index("-c:v") + 1], "copy")
+
+    def test_renderer_excludes_successful_ffmpeg_output_with_no_video_frames(self):
+        def command_runner(command, **_kwargs):
+            stderr = "Output file is empty, nothing was encoded" if "chunk_0002" in command[-1] else ""
+            return SimpleNamespace(returncode=0, stderr=stderr)
+
+        renderer = VideoSegmentRenderer(
+            ffmpeg_service=_FakeFFmpegService(),
+            command_runner=command_runner,
+        )
+        plan = SmartCutPlan(
+            duration_seconds=2.0,
+            keyframes=[0.0, 2.0],
+            delete_intervals=[],
+            segments=[
+                SmartCutPlanSegment(COPY_SEGMENT, 0.0, 1.0),
+                SmartCutPlanSegment(REENCODE_SEGMENT, 1.0, 1.023, 0.0),
+            ],
+        )
+
+        chunks = renderer.render_plan("in.mp4", plan, "chunks")
+
+        self.assertEqual(len(renderer.commands), 2)
+        self.assertEqual([chunk.index for chunk in chunks], [1])
 
     def test_audio_rebuild_uses_kept_ranges_and_concat_filter(self):
         service = AudioRebuildService(ffmpeg_service=_FakeFFmpegService())

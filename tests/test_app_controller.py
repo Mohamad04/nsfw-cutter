@@ -342,6 +342,28 @@ class AppControllerTests(unittest.TestCase):
         self.assertEqual(reviewed["end_seconds"], 19.25)
         self.assertEqual(reviewed["reason"], "Edited review reason")
 
+    def test_loading_new_video_clears_ai_review_state(self):
+        self.controller.loadVideoFile("/tmp/a.mp4")
+        self.controller.setAiSuggestions(
+            [
+                {
+                    "id": "suggestion-1",
+                    "start": "00:00:12",
+                    "end": "00:00:18",
+                    "confidence": "high",
+                    "reason": "scene candidate",
+                }
+            ]
+        )
+        self.assertTrue(self.controller.reviewAiSuggestion("suggestion-1", "accepted"))
+        self.assertEqual(self.controller.aiSuggestions[0]["review_state"], "accepted")
+
+        self.controller.loadVideoFile("/tmp/b.mkv")
+
+        self.assertEqual(self.controller.selectedVideoPath, "/tmp/b.mkv")
+        self.assertEqual(self.controller.aiSuggestions, [])
+        self.assertEqual(self.controller.aiAnalysisState, "idle")
+
     def test_analysis_thread_pool_failure_returns_controller_to_error_state(self):
         class FailingThreadPool(FakeThreadPool):
             def start(self, _worker):

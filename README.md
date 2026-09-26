@@ -155,6 +155,47 @@ After the required models are cached, remove the opt-in and launch normally. See
 [full VLM guide](docs/vlm_analysis_mvp.md#install-and-run-from-source) for CUDA
 verification and model-cache configuration.
 
+### Reviewer demo path
+
+For the current AI-assisted demo, source execution is the verified path. Use Windows
+10/11, Python 3.12 or newer, the dependencies above, and resolvable `ffmpeg` and
+`ffprobe`. The application checks the bundled `vendor\ffmpeg` directory, the user-level
+NSFW Cutter FFmpeg installation, and `PATH`. Keep the pinned Marqo and Qwen model
+snapshots in the configured cache when running with downloads disabled.
+
+Launch from the repository root:
+
+```powershell
+.\.venv\Scripts\python.exe main.py
+```
+
+Demo flow:
+
+1. Load a local video.
+2. Select **AI Picks**, then **Analyze video**.
+3. Inspect the timestamped suggestions; accept at least one and reject another.
+4. Confirm only accepted suggestions appear in the cut list.
+5. Select **Export Clean Video** and wait for the completion panel and output path.
+6. Reopen the exported file and confirm video playback and audio.
+
+The verified Smart Cutting demo input is a local MP4 or MKV with one H.264/yuv420p
+video stream and conventional audio such as AAC. Smart Cutting currently supports only
+removing selected intervals; use representative local media with readable duration and
+keyframes. The production AI path is the pinned `Marqo/nsfw-image-detection-384`
+prefilter followed by pinned `Qwen/Qwen2.5-VL-3B-Instruct` review.
+
+Current demo limitations:
+
+- Whisper first attempts CUDA and may fall back to slower CPU transcription.
+- An occasional invalid VLM structured response can cause that individual candidate
+  batch to be skipped; other valid batches still complete.
+- AI review decisions and the cut list are session-local and are not restored after the
+  application exits or a different video is loaded.
+- Smart Cutting compatibility is intentionally narrow: MP4/MKV, one H.264/yuv420p
+  video stream, available keyframes, and remove-intervals export.
+- **Preview Cuts** is not implemented/enabled; validate the completed export by reopening
+  it.
+
 ---
 
 ## Building a standalone executable
@@ -166,8 +207,16 @@ verification and model-cache configuration.
 
 `build_windows.ps1` prepares bundled FFmpeg, compiles translations, and runs PyInstaller
 (onedir). The output `.zip` is exactly what the release workflow publishes and what the
-installer consumes. A portable `VideoCutter.spec` is also provided for manual
-`pyinstaller VideoCutter.spec` builds.
+installer consumes. PyInstaller generates its temporary `.spec` file during the build;
+generated spec files are ignored by Git.
+
+The existing build script verifies that `ffmpeg.exe`, `ffprobe.exe`, Qt Multimedia
+plugins, and the QML runtime are present in the onedir output. The Windows workflow,
+however, installs only `requirements.txt`; it does not install or explicitly collect
+`requirements-ai.txt`, and model weights are intentionally not bundled. Therefore the
+source launch above is currently the reliable AI-demo path. Treat packaged AI analysis
+as unverified until a build produced with the optional AI stack passes the same vertical
+smoke.
 
 ---
 

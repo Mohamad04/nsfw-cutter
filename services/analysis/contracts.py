@@ -21,6 +21,8 @@ DEFAULT_QWEN_MODEL_ID = "Qwen/Qwen2.5-VL-3B-Instruct"
 DEFAULT_QWEN_MODEL_REVISION = "66285546d2b821cf421d4f5eb2576359d3770cd3"
 DEFAULT_PREFILTER_MODEL_ID = "Marqo/nsfw-image-detection-384"
 DEFAULT_PREFILTER_MODEL_REVISION = "0c26ec22111b83f106d72a55f611ec35962bcb65"
+DEFAULT_WHISPER_MODEL_ID = "Systran/faster-whisper-small"
+DEFAULT_WHISPER_MODEL_REVISION = "536b0662742c02347bc0e980a01041f333bce120"
 
 
 class AnalysisMode(str, Enum):
@@ -86,7 +88,8 @@ class AnalysisSettings(BaseModel):
     model_id: str = DEFAULT_QWEN_MODEL_ID
     model_revision: str = DEFAULT_QWEN_MODEL_REVISION
     quantization_mode: Literal["auto", "4bit", "none"] = "auto"
-    whisper_model_id: str = "small"
+    whisper_model_id: str = DEFAULT_WHISPER_MODEL_ID
+    whisper_model_revision: str = DEFAULT_WHISPER_MODEL_REVISION
     use_gpu: bool = True
     # Explicit values are advanced overrides. Normal app runs use the selected
     # versioned mode profile so old 1 FPS settings cannot accidentally make a
@@ -117,13 +120,34 @@ class AnalysisSettings(BaseModel):
         "model_revision",
         "prefilter_model_id",
         "prefilter_model_revision",
-        "whisper_model_id",
     )
     @classmethod
     def non_empty_identifier(cls, value: str) -> str:
         normalized = str(value).strip()
         if not normalized:
             raise ValueError("model identifiers cannot be empty")
+        return normalized
+
+    @field_validator("whisper_model_id", mode="before")
+    @classmethod
+    def approved_whisper_model_id(cls, value: object) -> str:
+        normalized = str(value).strip()
+        if normalized == "small":
+            return DEFAULT_WHISPER_MODEL_ID
+        if normalized != DEFAULT_WHISPER_MODEL_ID:
+            raise ValueError(
+                "whisper_model_id must be the approved production Whisper model"
+            )
+        return normalized
+
+    @field_validator("whisper_model_revision", mode="before")
+    @classmethod
+    def approved_whisper_model_revision(cls, value: object) -> str:
+        normalized = str(value).strip()
+        if normalized != DEFAULT_WHISPER_MODEL_REVISION:
+            raise ValueError(
+                "whisper_model_revision must be the approved immutable production revision"
+            )
         return normalized
 
     @model_validator(mode="after")

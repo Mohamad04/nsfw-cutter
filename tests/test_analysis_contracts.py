@@ -6,6 +6,9 @@ from pathlib import Path
 from pydantic import ValidationError
 
 from services.analysis.contracts import (
+    DEFAULT_WHISPER_MODEL_ID,
+    DEFAULT_WHISPER_MODEL_REVISION,
+    AnalysisSettings,
     NSFWCategory,
     SampledFrame,
     VisualBatch,
@@ -27,6 +30,48 @@ class VLMReviewResponseTests(unittest.TestCase):
             "reason": "Brief visual evidence",
             "needs_review": True,
         }
+
+    def test_whisper_defaults_use_the_approved_immutable_model(self):
+        settings = AnalysisSettings()
+
+        self.assertEqual(settings.whisper_model_id, DEFAULT_WHISPER_MODEL_ID)
+        self.assertEqual(settings.whisper_model_revision, DEFAULT_WHISPER_MODEL_REVISION)
+        self.assertNotIn(settings.whisper_model_revision, {"main", "", None})
+
+    def test_whisper_legacy_small_alias_normalizes_to_the_canonical_repository(self):
+        settings = AnalysisSettings(whisper_model_id="small")
+
+        self.assertEqual(settings.whisper_model_id, DEFAULT_WHISPER_MODEL_ID)
+
+    def test_whisper_canonical_identity_is_accepted(self):
+        settings = AnalysisSettings(
+            whisper_model_id=DEFAULT_WHISPER_MODEL_ID,
+            whisper_model_revision=DEFAULT_WHISPER_MODEL_REVISION,
+        )
+
+        self.assertEqual(settings.whisper_model_id, DEFAULT_WHISPER_MODEL_ID)
+        self.assertEqual(settings.whisper_model_revision, DEFAULT_WHISPER_MODEL_REVISION)
+
+    def test_whisper_custom_repositories_are_rejected(self):
+        for model_id in (
+            "Systran/faster-whisper-medium",
+            "experiment/custom-whisper",
+            "small.en",
+            None,
+        ):
+            with self.subTest(model_id=model_id), self.assertRaises(ValidationError):
+                AnalysisSettings(whisper_model_id=model_id)
+
+    def test_whisper_mutable_or_unapproved_revisions_are_rejected(self):
+        for revision in (
+            "main",
+            "master",
+            "v1.0.0",
+            "1111111111111111111111111111111111111111",
+            None,
+        ):
+            with self.subTest(revision=revision), self.assertRaises(ValidationError):
+                AnalysisSettings(whisper_model_revision=revision)
 
     def test_valid_json_is_accepted_and_evidence_timestamps_are_normalized(self):
         response = VLMReviewResponse.model_validate_json(

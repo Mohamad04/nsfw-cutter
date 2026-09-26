@@ -7,7 +7,12 @@ from pathlib import Path
 from unittest.mock import patch
 
 from services.analysis.cancellation import CancellationToken
-from services.analysis.contracts import AnalysisSettings, TranscriptSegment
+from services.analysis.contracts import (
+    DEFAULT_WHISPER_MODEL_ID,
+    DEFAULT_WHISPER_MODEL_REVISION,
+    AnalysisSettings,
+    TranscriptSegment,
+)
 from services.analysis.text_evidence import (
     FasterWhisperTranscriber,
     TextEvidenceService,
@@ -142,8 +147,12 @@ class TextEvidenceServiceTests(unittest.TestCase):
                 CancellationToken(),
             )
 
-        self.assertEqual(constructor_calls[0][0], "small")
+        self.assertEqual(constructor_calls[0][0], DEFAULT_WHISPER_MODEL_ID)
         self.assertTrue(constructor_calls[0][1]["local_files_only"])
+        self.assertEqual(
+            constructor_calls[0][1]["revision"], DEFAULT_WHISPER_MODEL_REVISION
+        )
+        self.assertIs(constructor_calls[0][1]["use_auth_token"], False)
         self.assertTrue(transcribe_calls[0][1]["vad_filter"])
         self.assertEqual(
             transcribe_calls[0][1]["vad_parameters"],
@@ -156,9 +165,9 @@ class TextEvidenceServiceTests(unittest.TestCase):
         constructor_calls = []
 
         class FakeWhisperModel:
-            def __init__(self, _model_id, **kwargs):
+            def __init__(self, model_id, **kwargs):
                 self.device = kwargs["device"]
-                constructor_calls.append(kwargs)
+                constructor_calls.append((model_id, kwargs))
 
             def transcribe(self, _audio_path, **_kwargs):
                 if self.device == "cuda":
@@ -188,9 +197,63 @@ class TextEvidenceServiceTests(unittest.TestCase):
                 CancellationToken(),
             )
 
-        self.assertEqual([call["device"] for call in constructor_calls], ["cuda", "cpu"])
+        self.assertEqual(
+            [kwargs["device"] for _model_id, kwargs in constructor_calls],
+            ["cuda", "cpu"],
+        )
+        self.assertTrue(
+            all(
+                model_id == DEFAULT_WHISPER_MODEL_ID
+                and kwargs["revision"] == DEFAULT_WHISPER_MODEL_REVISION
+                for model_id, kwargs in constructor_calls
+            )
+        )
         self.assertEqual(len(segments), 1)
         self.assertTrue(any("CUDA Whisper inference failed" in warning for warning in warnings))
+
+    def test_faster_whisper_cpu_initialization_retry_keeps_pinned_snapshot(self):
+        constructor_calls = []
+
+        class FakeWhisperModel:
+            def __init__(self, model_id, **kwargs):
+                constructor_calls.append((model_id, kwargs))
+                if kwargs["device"] == "cuda":
+                    raise RuntimeError("CUDA initialization failed")
+
+            def transcribe(self, _audio_path, **_kwargs):
+                segment = types.SimpleNamespace(start=1.0, end=2.0, text="intimate")
+                return iter([segment]), types.SimpleNamespace()
+
+        fake_whisper = types.SimpleNamespace(WhisperModel=FakeWhisperModel)
+        fake_ctranslate = types.SimpleNamespace(get_cuda_device_count=lambda: 1)
+        with (
+            tempfile.TemporaryDirectory() as temp_dir,
+            patch.dict(
+                sys.modules,
+                {
+                    "faster_whisper": fake_whisper,
+                    "ctranslate2": fake_ctranslate,
+                },
+            ),
+        ):
+            segments, _warnings = FasterWhisperTranscriber(temp_dir).transcribe(
+                Path(temp_dir) / "audio.wav",
+                AnalysisSettings(use_gpu=True),
+                CancellationToken(),
+            )
+
+        self.assertEqual(
+            [kwargs["device"] for _model_id, kwargs in constructor_calls],
+            ["cuda", "cpu"],
+        )
+        self.assertTrue(
+            all(
+                model_id == DEFAULT_WHISPER_MODEL_ID
+                and kwargs["revision"] == DEFAULT_WHISPER_MODEL_REVISION
+                for model_id, kwargs in constructor_calls
+            )
+        )
+        self.assertEqual(len(segments), 1)
 
 
 if __name__ == "__main__":

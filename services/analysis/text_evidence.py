@@ -79,6 +79,8 @@ class FasterWhisperTranscriber:
             "compute_type": compute_type,
             "download_root": str(self.model_cache_dir),
             "local_files_only": not allow_download,
+            "revision": settings.whisper_model_revision,
+            "use_auth_token": False,
         }
         try:
             model = WhisperModel(settings.whisper_model_id, **model_kwargs)
@@ -117,6 +119,8 @@ class FasterWhisperTranscriber:
                     compute_type="int8",
                     download_root=str(self.model_cache_dir),
                     local_files_only=not allow_download,
+                    revision=settings.whisper_model_revision,
+                    use_auth_token=False,
                 )
                 return _transcribe_with_model(cpu_model, audio_path, cancellation), warnings
             except AnalysisCancelled:

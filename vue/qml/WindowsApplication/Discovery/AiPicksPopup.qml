@@ -14,6 +14,7 @@ Popup {
     property color accentColor: "#2F7BFF"
     property var picksModel: null
     property var anchorTarget: null
+    property bool retryModelSetupRequested: false
 
     readonly property int menuWidth: 560
     readonly property bool hasSelectedVideo: String(appController.selectedVideoPath || "").length > 0
@@ -26,6 +27,25 @@ Popup {
     readonly property var analysisDetails: appController.aiAnalysisDetails || ({})
     readonly property bool analysisDiagnosticIsError: root.analysisState === "error"
     readonly property int suggestionCount: root.picksModel ? root.picksModel.count : 0
+    readonly property bool aiModelsReady: Boolean(appController.aiModelsReady)
+    readonly property string modelSetupState: String(appController.aiModelSetupState || "idle")
+    readonly property int modelSetupProgress: Math.max(0, Number(appController.aiModelSetupProgress || 0))
+    readonly property int modelSetupTotal: Math.max(1, Number(appController.aiModelSetupTotal || 3))
+    readonly property string modelSetupStatus: String(appController.aiModelSetupStatus || "")
+    readonly property string modelSetupError: String(appController.aiModelSetupError || "")
+    readonly property string modelSetupComponent: String(appController.aiModelSetupComponent || "")
+    readonly property bool modelSetupActive: root.modelSetupState === "checking"
+        || root.modelSetupState === "downloading"
+        || root.modelSetupState === "cancelling"
+    readonly property bool showModelSetup: !root.aiModelsReady
+    readonly property bool showModelDownloadAction: root.modelSetupState === "required"
+        || root.modelSetupState === "idle"
+    readonly property bool showModelSetupProgress: root.modelSetupState === "downloading"
+        || root.modelSetupState === "cancelling"
+    readonly property bool showModelSetupRetry: root.modelSetupState === "error"
+        || root.modelSetupState === "cancelled"
+    readonly property bool analyzeActionEnabled: root.analysisState === "running"
+        || (root.aiModelsReady && !root.analysisRunning && root.hasSelectedVideo)
 
     signal acceptRequested(string suggestionId, string startTime, string endTime, string confidence, string reason)
     signal rejectRequested(string suggestionId)
@@ -132,7 +152,10 @@ Popup {
     onSuggestionCountChanged: {
         if (root.opened) Qt.callLater(root.reposition)
     }
-    onOpened: root.reposition()
+    onOpened: {
+        root.reposition()
+        appController.refreshAiModelStatus()
+    }
 
     background: Item {}
 
@@ -154,6 +177,77 @@ Popup {
 
         function onWidthChanged() { Qt.callLater(root.reposition) }
         function onHeightChanged() { Qt.callLater(root.reposition) }
+    }
+
+    Popup {
+        id: modelDownloadConfirmation
+        objectName: "aiModelDownloadConfirmation"
+
+        parent: root.parent
+        anchors.centerIn: parent
+        width: Math.min(470, parent ? Math.max(300, parent.width - 40) : 470)
+        modal: true
+        focus: true
+        padding: 18
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+
+        background: Rectangle {
+            radius: theme.panelRadius
+            color: root.lightMode ? theme.lightSurface : theme.darkAppBg
+            border.color: root.lightMode ? theme.lightBorder : theme.darkBorder
+            border.width: 1
+        }
+
+        contentItem: Column {
+            spacing: 12
+
+            Text {
+                width: parent.width
+                text: qsTr("Download AI models?")
+                color: root.textColor
+                font.pixelSize: 16
+                font.weight: Font.DemiBold
+            }
+
+            Text {
+                width: parent.width
+                text: qsTr("Setup downloads approximately 7.5 GiB and needs additional temporary free space. A network connection is required during setup. The models remain in your local application cache for later offline analysis.")
+                color: root.mutedTextColor
+                font.pixelSize: 12
+                lineHeight: 1.25
+                wrapMode: Text.WordWrap
+            }
+
+            Row {
+                width: parent.width
+                spacing: 10
+
+                AppButton {
+                    width: (parent.width - 10) / 2
+                    text: qsTr("Not now")
+                    variant: "secondary"
+                    size: "md"
+                    lightMode: root.lightMode
+                    onClicked: modelDownloadConfirmation.close()
+                }
+
+                AppButton {
+                    objectName: "confirmAiModelDownloadButton"
+                    width: (parent.width - 10) / 2
+                    text: qsTr("Download 7.5 GiB")
+                    variant: "primary"
+                    size: "md"
+                    lightMode: root.lightMode
+                    onClicked: {
+                        modelDownloadConfirmation.close()
+                        if (root.retryModelSetupRequested)
+                            appController.retryAiModelDownload()
+                        else
+                            appController.downloadAiModels()
+                    }
+                }
+            }
+        }
     }
 
     contentItem: Item {
@@ -219,6 +313,188 @@ Popup {
                 font.pixelSize: 12
                 lineHeight: 1.25
                 wrapMode: Text.WordWrap
+            }
+
+            Rectangle {
+                id: modelSetupPanel
+                objectName: "aiModelSetupPanel"
+
+                width: parent.width
+                height: modelSetupColumn.implicitHeight + 24
+                radius: theme.innerRadius
+                visible: root.showModelSetup
+                color: root.lightMode ? "#EFF6FF" : "#0B1D38"
+                border.color: root.modelSetupState === "error"
+                    ? (root.lightMode ? "#FCA5A5" : "#7A3144")
+                    : (root.lightMode ? "#93C5FD" : "#245391")
+
+                Column {
+                    id: modelSetupColumn
+
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.top: parent.top
+                    anchors.margins: 12
+                    spacing: 8
+
+                    Text {
+                        width: parent.width
+                        text: root.modelSetupState === "checking"
+                            ? qsTr("Checking AI setup")
+                            : (root.modelSetupState === "downloading"
+                                ? qsTr("Downloading AI models")
+                                : (root.modelSetupState === "cancelling"
+                                    ? qsTr("Cancelling AI setup")
+                                    : (root.modelSetupState === "error"
+                                        ? qsTr("AI setup needs attention")
+                                        : (root.modelSetupState === "cancelled"
+                                            ? qsTr("AI setup paused")
+                                            : qsTr("AI setup required")))))
+                        color: root.textColor
+                        font.pixelSize: 13
+                        font.weight: Font.DemiBold
+                    }
+
+                    Text {
+                        objectName: "aiModelSetupExplanation"
+                        width: parent.width
+                        visible: root.showModelDownloadAction
+                        text: qsTr("AI models are not installed yet. Setup downloads approximately 7.5 GiB to the local application cache. Afterward analysis runs locally and works offline. Normal editing and export do not require AI setup.")
+                        color: root.mutedTextColor
+                        font.pixelSize: 12
+                        lineHeight: 1.25
+                        wrapMode: Text.WordWrap
+                    }
+
+                    Text {
+                        objectName: "aiModelSetupComponentText"
+                        width: parent.width
+                        visible: root.modelSetupActive && root.modelSetupComponent.length > 0
+                        text: root.modelSetupComponent
+                        color: root.accentColor
+                        font.pixelSize: 12
+                        font.weight: Font.DemiBold
+                    }
+
+                    Text {
+                        objectName: "aiModelSetupStatusText"
+                        width: parent.width
+                        visible: root.modelSetupStatus.length > 0
+                        text: root.modelSetupState === "cancelling"
+                            ? qsTr("Cancelling after the current model transfer…")
+                            : root.modelSetupStatus
+                        color: root.mutedTextColor
+                        font.pixelSize: 12
+                        lineHeight: 1.2
+                        wrapMode: Text.WordWrap
+                    }
+
+                    Text {
+                        objectName: "aiModelSetupProgressText"
+                        width: parent.width
+                        visible: root.showModelSetupProgress
+                        text: qsTr("%1 / %2 models ready").arg(root.modelSetupProgress).arg(root.modelSetupTotal)
+                        color: root.accentColor
+                        font.pixelSize: 12
+                        font.weight: Font.DemiBold
+                    }
+
+                    ProgressBar {
+                        id: modelSetupProgressBar
+                        objectName: "aiModelSetupProgressBar"
+
+                        width: parent.width
+                        height: 8
+                        visible: root.showModelSetupProgress
+                        padding: 0
+                        from: 0
+                        to: root.modelSetupTotal
+                        value: root.modelSetupProgress
+
+                        background: Rectangle {
+                            implicitWidth: modelSetupProgressBar.width
+                            implicitHeight: 8
+                            radius: 4
+                            color: root.lightMode ? theme.lightBorderSoft : theme.darkBorderSoft
+                        }
+
+                        contentItem: Item {
+                            implicitWidth: modelSetupProgressBar.width
+                            implicitHeight: 8
+
+                            Rectangle {
+                                width: modelSetupProgressBar.visualPosition * parent.width
+                                height: parent.height
+                                radius: 4
+                                color: root.accentColor
+                            }
+                        }
+                    }
+
+                    Text {
+                        objectName: "aiModelSetupErrorText"
+                        width: parent.width
+                        visible: root.modelSetupError.length > 0
+                        text: root.modelSetupError
+                        color: root.lightMode ? "#B91C1C" : "#FCA5A5"
+                        font.pixelSize: 12
+                        wrapMode: Text.WordWrap
+                    }
+
+                    AppButton {
+                        objectName: "downloadAiModelsButton"
+                        width: parent.width
+                        height: 38
+                        visible: root.showModelDownloadAction
+                        text: qsTr("Download AI Models")
+                        variant: "primary"
+                        size: "md"
+                        lightMode: root.lightMode
+                        onClicked: {
+                            root.retryModelSetupRequested = false
+                            modelDownloadConfirmation.open()
+                        }
+                    }
+
+                    AppButton {
+                        objectName: "cancelAiModelDownloadButton"
+                        width: parent.width
+                        height: 38
+                        visible: root.showModelSetupProgress
+                        enabled: root.modelSetupState === "downloading"
+                        text: root.modelSetupState === "cancelling"
+                            ? qsTr("Cancellation requested")
+                            : qsTr("Cancel download")
+                        variant: "danger"
+                        size: "md"
+                        lightMode: root.lightMode
+                        onClicked: appController.cancelAiModelDownload()
+                    }
+
+                    AppButton {
+                        objectName: "retryAiModelDownloadButton"
+                        width: parent.width
+                        height: 38
+                        visible: root.showModelSetupRetry
+                        text: qsTr("Retry AI Model Setup")
+                        variant: "primary"
+                        size: "md"
+                        lightMode: root.lightMode
+                        onClicked: {
+                            root.retryModelSetupRequested = true
+                            modelDownloadConfirmation.open()
+                        }
+                    }
+
+                    Text {
+                        width: parent.width
+                        visible: root.modelSetupState === "cancelled"
+                        text: qsTr("Retry can reuse model data already downloaded to the local cache.")
+                        color: root.mutedTextColor
+                        font.pixelSize: 11
+                        wrapMode: Text.WordWrap
+                    }
+                }
             }
 
             Rectangle {
@@ -352,12 +628,11 @@ Popup {
                 variant: root.analysisRunning ? "danger" : "primary"
                 size: "md"
                 lightMode: root.lightMode
-                enabled: root.analysisState === "running"
-                    || (!root.analysisRunning && root.hasSelectedVideo)
+                enabled: root.analyzeActionEnabled
                 onClicked: {
                     if (root.analysisState === "running")
                         appController.cancelVideoAnalysis()
-                    else if (!root.analysisRunning && root.hasSelectedVideo)
+                    else if (root.aiModelsReady && !root.analysisRunning && root.hasSelectedVideo)
                         appController.analyzeVideo()
                 }
             }

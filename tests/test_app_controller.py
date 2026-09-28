@@ -8,6 +8,13 @@ from pathlib import Path
 from PySide6.QtCore import QCoreApplication, QThreadPool
 
 from controllers.app_controller import AppController
+from services.analysis.model_provisioning import (
+    PRODUCTION_MODELS,
+    ModelReadiness,
+    ProvisioningProgress,
+    ProvisioningState,
+    ReadinessState,
+)
 from services.editing.keyframe_service import KeyframeService
 from services.subtitles.processing_service import SubtitleService
 from workers.worker_signals import WorkerSignals
@@ -122,6 +129,39 @@ class FakeAnalysisWorker:
         self.cancellation.cancel()
 
 
+def model_readiness(state=ReadinessState.READY):
+    return tuple(
+        ModelReadiness(
+            spec=spec,
+            state=state,
+            reason=f"{spec.repo_id}: {state.value}",
+        )
+        for spec in PRODUCTION_MODELS
+    )
+
+
+class FakeModelProvisioner:
+    def __init__(self, readiness=None):
+        self.readiness = readiness or model_readiness()
+        self.check_calls = 0
+
+    def check_all_models(self):
+        self.check_calls += 1
+        return self.readiness
+
+
+class FakeModelProvisioningWorker:
+    def __init__(self, job_token, operation, cancellation, provisioner):
+        self.job_token = job_token
+        self.operation = operation
+        self.cancellation = cancellation
+        self.provisioner = provisioner
+        self.signals = WorkerSignals()
+
+    def cancel(self):
+        self.cancellation.cancel()
+
+
 class FakeSettingsService:
     def __init__(self, last_video=None):
         self.last_video = last_video
@@ -180,6 +220,7 @@ class AppControllerTests(unittest.TestCase):
     def setUp(self):
         self.thread_pool = FakeThreadPool()
         self.settings_service = FakeSettingsService()
+        self.model_provisioner = FakeModelProvisioner()
         self.controller = AppController(
             video_import_service=FakeVideoImportService(),
             thread_pool=self.thread_pool,
@@ -189,10 +230,15 @@ class AppControllerTests(unittest.TestCase):
             keyframe_worker_factory=FakeKeyframeWorker,
             subtitle_worker_factory=FakeSubtitleWorker,
             analysis_worker_factory=FakeAnalysisWorker,
+            model_provisioner=self.model_provisioner,
+            model_provisioning_worker_factory=FakeModelProvisioningWorker,
         )
 
     def _workers_of_type(self, worker_type):
         return [worker for worker in self.thread_pool.workers if isinstance(worker, worker_type)]
+
+    def _model_workers(self):
+        return self._workers_of_type(FakeModelProvisioningWorker)
 
     def test_controller_configures_default_thread_limit(self):
         self.assertEqual(self.thread_pool.max_thread_count, AppController.DEFAULT_MAX_THREAD_COUNT)
@@ -209,6 +255,141 @@ class AppControllerTests(unittest.TestCase):
         )
 
         self.assertEqual(thread_pool.max_thread_count, 4)
+
+    def test_ai_model_readiness_check_maps_ready_state(self):
+        self.assertTrue(self.controller.refreshAiModelStatus())
+        worker = self._model_workers()[-1]
+
+        worker.signals.finished.emit(worker.job_token, model_readiness())
+
+        self.assertTrue(self.controller.aiModelsReady)
+        self.assertEqual(self.controller.aiModelSetupState, "ready")
+        self.assertEqual(self.controller.aiModelSetupProgress, 3)
+
+    def test_ai_model_readiness_check_maps_unready_states_to_required(self):
+        for state in (
+            ReadinessState.MISSING,
+            ReadinessState.INCOMPLETE,
+            ReadinessState.INVALID,
+        ):
+            with self.subTest(state=state):
+                self.assertTrue(self.controller.refreshAiModelStatus())
+                worker = self._model_workers()[-1]
+                worker.signals.finished.emit(worker.job_token, model_readiness(state))
+                self.assertFalse(self.controller.aiModelsReady)
+                self.assertEqual(self.controller.aiModelSetupState, "required")
+                self.assertIn(state.value, self.controller.aiModelSetupStatus)
+
+    def test_ai_model_provisioning_prevents_duplicate_workers(self):
+        self.assertTrue(self.controller.downloadAiModels())
+
+        self.assertFalse(self.controller.downloadAiModels())
+        self.assertFalse(self.controller.refreshAiModelStatus())
+        self.assertEqual(len(self._model_workers()), 1)
+
+    def test_ai_model_progress_maps_component_and_component_count(self):
+        self.assertTrue(self.controller.downloadAiModels())
+        worker = self._model_workers()[-1]
+        event = ProvisioningProgress(
+            component=PRODUCTION_MODELS[1].component,
+            state=ProvisioningState.VALIDATING,
+            message="Validating visual review model",
+            completed_components=1,
+            total_components=3,
+            overall_fraction=1 / 3,
+        )
+
+        worker.signals.modelProvisioningEvent.emit(worker.job_token, event)
+
+        self.assertEqual(self.controller.aiModelSetupState, "downloading")
+        self.assertEqual(self.controller.aiModelSetupComponent, "Visual review")
+        self.assertEqual(self.controller.aiModelSetupProgress, 1)
+        self.assertEqual(self.controller.aiModelSetupTotal, 3)
+        self.assertEqual(
+            self.controller.aiModelSetupStatus,
+            "Validating visual review model",
+        )
+
+    def test_ai_model_success_revalidates_without_starting_analysis(self):
+        self.assertTrue(self.controller.downloadAiModels())
+        worker = self._model_workers()[-1]
+        analysis_count = len(self._workers_of_type(FakeAnalysisWorker))
+
+        worker.signals.finished.emit(worker.job_token, model_readiness())
+
+        self.assertTrue(self.controller.aiModelsReady)
+        self.assertEqual(self.controller.aiModelSetupState, "ready")
+        self.assertEqual(len(self._workers_of_type(FakeAnalysisWorker)), analysis_count)
+
+    def test_ai_model_download_error_allows_retry_with_new_worker(self):
+        self.assertTrue(self.controller.downloadAiModels())
+        first_worker = self._model_workers()[-1]
+        first_worker.signals.error.emit(first_worker.job_token, "network unavailable")
+
+        self.assertEqual(self.controller.aiModelSetupState, "error")
+        self.assertIn("network unavailable", self.controller.aiModelSetupError)
+        self.assertTrue(self.controller.retryAiModelDownload())
+        second_worker = self._model_workers()[-1]
+        self.assertNotEqual(first_worker.job_token, second_worker.job_token)
+        self.assertEqual(self.controller.aiModelSetupState, "downloading")
+
+    def test_ai_model_cancellation_waits_for_worker_confirmation(self):
+        self.assertTrue(self.controller.downloadAiModels())
+        worker = self._model_workers()[-1]
+
+        self.assertTrue(self.controller.cancelAiModelDownload())
+        self.assertTrue(worker.cancellation.is_cancelled)
+        self.assertEqual(self.controller.aiModelSetupState, "cancelling")
+
+        worker.signals.cancelled.emit(worker.job_token, "cancelled between components")
+
+        self.assertFalse(self.controller.aiModelsReady)
+        self.assertEqual(self.controller.aiModelSetupState, "cancelled")
+        self.assertIn("kept", self.controller.aiModelSetupStatus)
+
+    def test_late_finished_after_ai_model_cancellation_cannot_publish_ready(self):
+        self.assertTrue(self.controller.downloadAiModels())
+        worker = self._model_workers()[-1]
+        self.assertTrue(self.controller.cancelAiModelDownload())
+
+        worker.signals.finished.emit(worker.job_token, model_readiness())
+
+        self.assertFalse(self.controller.aiModelsReady)
+        self.assertEqual(self.controller.aiModelSetupState, "cancelled")
+
+    def test_stale_ai_model_callbacks_do_not_corrupt_new_attempt(self):
+        self.assertTrue(self.controller.downloadAiModels())
+        first_worker = self._model_workers()[-1]
+        first_worker.signals.error.emit(first_worker.job_token, "first failed")
+        self.assertTrue(self.controller.retryAiModelDownload())
+        second_worker = self._model_workers()[-1]
+
+        self.controller._on_ai_model_setup_finished(
+            first_worker.job_token,
+            model_readiness(),
+        )
+
+        self.assertEqual(self.controller.aiModelSetupState, "downloading")
+        self.assertFalse(self.controller.aiModelsReady)
+        self.assertNotEqual(first_worker.job_token, second_worker.job_token)
+
+    def test_analysis_is_blocked_when_production_models_are_not_ready(self):
+        self.model_provisioner.readiness = model_readiness(ReadinessState.MISSING)
+        self.controller.loadVideoFile("/tmp/a.mp4")
+
+        self.assertFalse(self.controller.analyzeVideo())
+        self.assertEqual(self.controller.aiModelSetupState, "required")
+        self.assertFalse(self.controller.aiModelsReady)
+        self.assertEqual(self._workers_of_type(FakeAnalysisWorker), [])
+
+    def test_analysis_proceeds_when_production_models_are_ready(self):
+        self.controller.loadVideoFile("/tmp/a.mp4")
+
+        self.assertTrue(self.controller.analyzeVideo())
+
+        self.assertTrue(self.controller.aiModelsReady)
+        self.assertEqual(self.controller.aiModelSetupState, "ready")
+        self.assertEqual(len(self._workers_of_type(FakeAnalysisWorker)), 1)
 
     def test_ai_suggestions_normalize_formatted_times(self):
         self.controller.setAiSuggestions(
@@ -374,6 +555,8 @@ class AppControllerTests(unittest.TestCase):
             thread_pool=FailingThreadPool(),
             settings_service=FakeSettingsService(),
             analysis_worker_factory=FakeAnalysisWorker,
+            model_provisioner=FakeModelProvisioner(),
+            model_provisioning_worker_factory=FakeModelProvisioningWorker,
         )
         controller._state.selected_video_path = "/tmp/a.mp4"
 

@@ -26,6 +26,13 @@ from controllers.common.qt_state import clamp_percent
 from core.job_registry import JobRegistry
 from services.analysis.cancellation import CancellationToken
 from services.analysis.contracts import AnalysisRunRequest, AnalysisSettings
+from services.analysis.model_provisioning import (
+    PRODUCTION_MODELS,
+    ModelComponent,
+    ModelReadiness,
+    ProductionModelProvisioner,
+    ProvisioningProgress,
+)
 from services.editing.keyframe_service import KeyframeService
 from services.export.cut_json_service import CutJsonError, CutJsonService
 from services.media.import_service import VideoImportService
@@ -47,11 +54,24 @@ from services.subtitles.subtitle_loader_service import (
 )
 from workers.analysis_worker import AnalysisWorker
 from workers.keyframe_index_worker import KeyframeIndexWorker
+from workers.model_provisioning_worker import ModelProvisioningWorker
 from workers.prepare_export_job_worker import PrepareExportJobWorker
 from workers.subtitle_discovery_worker import SubtitleDiscoveryWorker
 from workers.video_export_worker import VideoExportWorker
 
 logger = logging.getLogger(__name__)
+
+_MODEL_COMPONENT_LABELS = {
+    ModelComponent.NSFW_PREFILTER: "Safety prefilter",
+    ModelComponent.VISUAL_REVIEW: "Visual review",
+    ModelComponent.SPEECH_TRANSCRIPTION: "Speech transcription",
+}
+
+
+def _model_component_label(component: ModelComponent | None) -> str:
+    if component is None:
+        return ""
+    return _MODEL_COMPONENT_LABELS.get(component, str(component.value))
 
 
 def _path_exists(path_text: str) -> bool:
@@ -107,6 +127,12 @@ class AppController(QObject):
     aiAnalysisErrorChanged = Signal()
     aiAnalysisDetailsChanged = Signal()
     aiSuggestionsChanged = Signal()
+    aiModelsReadyChanged = Signal()
+    aiModelSetupStateChanged = Signal()
+    aiModelSetupProgressChanged = Signal()
+    aiModelSetupStatusChanged = Signal()
+    aiModelSetupErrorChanged = Signal()
+    aiModelSetupComponentChanged = Signal()
 
     def __init__(
         self,
@@ -122,6 +148,8 @@ class AppController(QObject):
         subtitle_service=None,
         subtitle_worker_factory=None,
         analysis_worker_factory=None,
+        model_provisioner=None,
+        model_provisioning_worker_factory=None,
     ):
         super().__init__()
         self.video_import_service = video_import_service or VideoImportService()
@@ -146,8 +174,14 @@ class AppController(QObject):
         self._subtitle_workers = {}
         self._analysis_worker_factory = analysis_worker_factory or AnalysisWorker
         self._analysis_workers = {}
+        self._model_provisioner = model_provisioner or ProductionModelProvisioner()
+        self._model_provisioning_worker_factory = (
+            model_provisioning_worker_factory or ModelProvisioningWorker
+        )
+        self._model_setup_workers = {}
 
         self._state = AppState()
+        self._state.ai_model_setup_total = len(PRODUCTION_MODELS)
         self._video_loader = VideoLoader(self.video_import_service, self.settings_service)
         self._cut_json_service = CutJsonService()
         self._lossless_export_runner = LosslessExportRunner(
@@ -304,6 +338,34 @@ class AppController(QObject):
     @Property("QVariantList", notify=aiSuggestionsChanged)
     def aiSuggestions(self):
         return list(self._state.ai_suggestions)
+
+    @Property(bool, notify=aiModelsReadyChanged)
+    def aiModelsReady(self):
+        return self._state.ai_models_ready
+
+    @Property(str, notify=aiModelSetupStateChanged)
+    def aiModelSetupState(self):
+        return self._state.ai_model_setup_state
+
+    @Property(int, notify=aiModelSetupProgressChanged)
+    def aiModelSetupProgress(self):
+        return self._state.ai_model_setup_progress
+
+    @Property(int, notify=aiModelSetupProgressChanged)
+    def aiModelSetupTotal(self):
+        return self._state.ai_model_setup_total
+
+    @Property(str, notify=aiModelSetupStatusChanged)
+    def aiModelSetupStatus(self):
+        return self._state.ai_model_setup_status
+
+    @Property(str, notify=aiModelSetupErrorChanged)
+    def aiModelSetupError(self):
+        return self._state.ai_model_setup_error
+
+    @Property(str, notify=aiModelSetupComponentChanged)
+    def aiModelSetupComponent(self):
+        return self._state.ai_model_setup_component
 
     @Slot()
     def browseFolder(self):
@@ -1042,6 +1104,214 @@ class AppController(QObject):
         self._state.analysis_subtitle_auto_selected = False
 
     @Slot(result=bool)
+    def refreshAiModelStatus(self) -> bool:
+        if self._state.ai_model_setup_active_job_token:
+            return False
+        return self._start_model_setup_worker(ModelProvisioningWorker.CHECK)
+
+    @Slot(result=bool)
+    def downloadAiModels(self) -> bool:
+        if self._state.ai_model_setup_active_job_token or self._state.ai_models_ready:
+            return False
+        return self._start_model_setup_worker(ModelProvisioningWorker.PROVISION)
+
+    @Slot(result=bool)
+    def retryAiModelDownload(self) -> bool:
+        return self.downloadAiModels()
+
+    @Slot(result=bool)
+    def cancelAiModelDownload(self) -> bool:
+        job_token = self._state.ai_model_setup_active_job_token
+        worker = self._model_setup_workers.get(job_token)
+        if (
+            not job_token
+            or worker is None
+            or getattr(worker, "operation", "") != ModelProvisioningWorker.PROVISION
+            or self._state.ai_model_setup_state == "cancelling"
+        ):
+            return False
+        worker.cancel()
+        self._state.ai_model_setup_state = "cancelling"
+        self._state.ai_model_setup_status = (
+            "Cancelling after the current model transfer completes..."
+        )
+        self._state.ai_model_setup_error = ""
+        self._emit_ai_model_setup_changed()
+        return True
+
+    def _start_model_setup_worker(self, operation: str) -> bool:
+        job_token = uuid.uuid4().hex
+        cancellation = CancellationToken()
+        try:
+            worker = self._model_provisioning_worker_factory(
+                job_token=job_token,
+                operation=operation,
+                cancellation=cancellation,
+                provisioner=self._model_provisioner,
+            )
+            self._model_setup_workers[job_token] = worker
+            worker.signals.modelProvisioningEvent.connect(
+                self._on_ai_model_setup_progress
+            )
+            worker.signals.finished.connect(self._on_ai_model_setup_finished)
+            worker.signals.cancelled.connect(self._on_ai_model_setup_cancelled)
+            worker.signals.error.connect(self._on_ai_model_setup_error)
+        except Exception as exc:
+            logger.exception("Unable to prepare production model setup worker")
+            self._set_ai_model_setup_error(str(exc))
+            return False
+
+        self._state.ai_model_setup_active_job_token = job_token
+        self._state.ai_models_ready = False
+        self._state.ai_model_setup_state = (
+            "checking" if operation == ModelProvisioningWorker.CHECK else "downloading"
+        )
+        self._state.ai_model_setup_progress = 0
+        self._state.ai_model_setup_status = (
+            "Checking the local production AI model cache..."
+            if operation == ModelProvisioningWorker.CHECK
+            else "Starting production AI model setup..."
+        )
+        self._state.ai_model_setup_error = ""
+        self._state.ai_model_setup_component = ""
+        self._emit_ai_model_setup_changed()
+        try:
+            self._thread_pool.start(worker)
+        except Exception as exc:
+            self._model_setup_workers.pop(job_token, None)
+            self._state.ai_model_setup_active_job_token = ""
+            self._set_ai_model_setup_error(str(exc))
+            logger.exception("Unable to start production model setup worker")
+            return False
+        return True
+
+    @Slot(str, object)
+    def _on_ai_model_setup_progress(self, job_token: str, event) -> None:
+        if job_token != self._state.ai_model_setup_active_job_token:
+            return
+        if not isinstance(event, ProvisioningProgress):
+            return
+
+        total = max(1, int(event.total_components))
+        self._state.ai_model_setup_total = total
+        self._state.ai_model_setup_progress = max(
+            0,
+            min(total, int(event.completed_components)),
+        )
+        self._state.ai_model_setup_component = _model_component_label(event.component)
+        if self._state.ai_model_setup_state != "cancelling":
+            self._state.ai_model_setup_state = "downloading"
+            self._state.ai_model_setup_status = str(event.message)
+        self._emit_ai_model_setup_changed()
+
+    @Slot(str, object)
+    def _on_ai_model_setup_finished(self, job_token: str, result) -> None:
+        worker = self._model_setup_workers.pop(job_token, None)
+        if job_token != self._state.ai_model_setup_active_job_token:
+            logger.info("Ignoring stale AI model setup result: job=%s", job_token)
+            return
+        cancellation = getattr(worker, "cancellation", None)
+        if self._state.ai_model_setup_state == "cancelling" or (
+            cancellation is not None and cancellation.is_cancelled
+        ):
+            self._on_ai_model_setup_cancelled(
+                job_token,
+                "Model provisioning was cancelled after backend control returned.",
+            )
+            return
+        self._state.ai_model_setup_active_job_token = ""
+        operation = getattr(worker, "operation", "") if worker is not None else ""
+        self._apply_ai_model_readiness(result, operation=operation)
+
+    @Slot(str, str)
+    def _on_ai_model_setup_cancelled(self, job_token: str, _message: str) -> None:
+        self._model_setup_workers.pop(job_token, None)
+        if job_token != self._state.ai_model_setup_active_job_token:
+            return
+        self._state.ai_model_setup_active_job_token = ""
+        self._state.ai_models_ready = False
+        self._state.ai_model_setup_state = "cancelled"
+        self._state.ai_model_setup_status = (
+            "AI model setup was cancelled. Downloaded data was kept and can be reused."
+        )
+        self._state.ai_model_setup_error = ""
+        self._state.ai_model_setup_component = ""
+        self._emit_ai_model_setup_changed()
+
+    @Slot(str, str)
+    def _on_ai_model_setup_error(self, job_token: str, error_message: str) -> None:
+        self._model_setup_workers.pop(job_token, None)
+        if job_token != self._state.ai_model_setup_active_job_token:
+            return
+        self._state.ai_model_setup_active_job_token = ""
+        self._set_ai_model_setup_error(error_message)
+
+    def _apply_ai_model_readiness(self, readiness, *, operation: str) -> bool:
+        models = tuple(readiness) if readiness is not None else ()
+        ready = len(models) == len(PRODUCTION_MODELS) and all(
+            isinstance(item, ModelReadiness) and item.ready for item in models
+        )
+        self._state.ai_models_ready = ready
+        self._state.ai_model_setup_component = ""
+        self._state.ai_model_setup_error = ""
+        if ready:
+            self._state.ai_model_setup_state = "ready"
+            self._state.ai_model_setup_progress = len(PRODUCTION_MODELS)
+            self._state.ai_model_setup_total = len(PRODUCTION_MODELS)
+            self._state.ai_model_setup_status = (
+                "All production AI models are ready for local, offline analysis."
+            )
+        else:
+            first_unready = next(
+                (item for item in models if isinstance(item, ModelReadiness) and not item.ready),
+                None,
+            )
+            self._state.ai_model_setup_state = "required"
+            self._state.ai_model_setup_progress = sum(
+                1 for item in models if isinstance(item, ModelReadiness) and item.ready
+            )
+            self._state.ai_model_setup_total = len(PRODUCTION_MODELS)
+            self._state.ai_model_setup_status = (
+                first_unready.reason
+                if first_unready is not None
+                else "Production AI model setup is required before analysis."
+            )
+            if operation == ModelProvisioningWorker.PROVISION:
+                self._state.ai_model_setup_error = (
+                    "Model setup finished without a complete, valid production model cache. "
+                    "Retry setup to reuse downloaded data."
+                )
+        self._emit_ai_model_setup_changed()
+        return ready
+
+    def _set_ai_model_setup_error(self, error_message: str) -> None:
+        self._state.ai_models_ready = False
+        self._state.ai_model_setup_state = "error"
+        self._state.ai_model_setup_status = "Production AI model setup failed."
+        self._state.ai_model_setup_error = str(error_message)
+        self._state.ai_model_setup_component = ""
+        self._emit_ai_model_setup_changed()
+
+    def _emit_ai_model_setup_changed(self) -> None:
+        self.aiModelsReadyChanged.emit()
+        self.aiModelSetupStateChanged.emit()
+        self.aiModelSetupProgressChanged.emit()
+        self.aiModelSetupStatusChanged.emit()
+        self.aiModelSetupErrorChanged.emit()
+        self.aiModelSetupComponentChanged.emit()
+
+    def _production_models_ready_for_analysis(self) -> bool:
+        if self._state.ai_model_setup_state in {"downloading", "cancelling"}:
+            return False
+        try:
+            readiness = self._model_provisioner.check_all_models()
+        except Exception as exc:
+            logger.exception("Unable to validate production models before analysis")
+            self._set_ai_model_setup_error(str(exc))
+            return False
+        return self._apply_ai_model_readiness(readiness, operation="check")
+
+    @Slot(result=bool)
     def analyzeVideo(self) -> bool:
         if self._state.ai_analysis_state in {"running", "cancelling"}:
             return False
@@ -1050,6 +1320,8 @@ class AppController(QObject):
             self._state.ai_analysis_error = "Select a video before running analysis."
             self._state.ai_analysis_status = self._state.ai_analysis_error
             self._emit_ai_analysis_changed()
+            return False
+        if not self._production_models_ready_for_analysis():
             return False
 
         job_token = uuid.uuid4().hex

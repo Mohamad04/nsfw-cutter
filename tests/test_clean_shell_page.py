@@ -5,7 +5,7 @@ from pathlib import Path
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 os.environ.setdefault("QT_QUICK_BACKEND", "software")
 
-from PySide6.QtCore import Property, QObject, QUrl, Signal, Slot
+from PySide6.QtCore import Property, QMetaObject, QObject, QUrl, Signal, Slot
 from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtWidgets import QApplication
 
@@ -14,10 +14,26 @@ class FakeAppController(QObject):
     selectedVideoPathChanged = Signal()
     aiSuggestionsChanged = Signal()
     subtitleCandidatesChanged = Signal()
+    aiModelsReadyChanged = Signal()
+    aiModelSetupStateChanged = Signal()
+    aiModelSetupProgressChanged = Signal()
+    aiModelSetupStatusChanged = Signal()
+    aiModelSetupErrorChanged = Signal()
+    aiModelSetupComponentChanged = Signal()
 
     def __init__(self):
         super().__init__()
         self._selected_video_path = ""
+        self._ai_models_ready = True
+        self._ai_model_setup_state = "ready"
+        self._ai_model_setup_progress = 3
+        self._ai_model_setup_status = "AI models are ready"
+        self._ai_model_setup_error = ""
+        self._ai_model_setup_component = ""
+        self.model_status_refreshes = 0
+        self.model_downloads = 0
+        self.model_retries = 0
+        self.model_cancellations = 0
 
     @Property(str, notify=selectedVideoPathChanged)
     def selectedVideoPath(self):
@@ -90,6 +106,85 @@ class FakeAppController(QObject):
     @Property("QVariantMap", constant=True)
     def aiAnalysisDetails(self):
         return {}
+
+    @Property(bool, notify=aiModelsReadyChanged)
+    def aiModelsReady(self):
+        return self._ai_models_ready
+
+    @Property(str, notify=aiModelSetupStateChanged)
+    def aiModelSetupState(self):
+        return self._ai_model_setup_state
+
+    @Property(int, notify=aiModelSetupProgressChanged)
+    def aiModelSetupProgress(self):
+        return self._ai_model_setup_progress
+
+    @Property(int, constant=True)
+    def aiModelSetupTotal(self):
+        return 3
+
+    @Property(str, notify=aiModelSetupStatusChanged)
+    def aiModelSetupStatus(self):
+        return self._ai_model_setup_status
+
+    @Property(str, notify=aiModelSetupErrorChanged)
+    def aiModelSetupError(self):
+        return self._ai_model_setup_error
+
+    @Property(str, notify=aiModelSetupComponentChanged)
+    def aiModelSetupComponent(self):
+        return self._ai_model_setup_component
+
+    @Slot(result=bool)
+    def refreshAiModelStatus(self):
+        self.model_status_refreshes += 1
+        return True
+
+    @Slot(result=bool)
+    def downloadAiModels(self):
+        self.model_downloads += 1
+        return True
+
+    @Slot(result=bool)
+    def retryAiModelDownload(self):
+        self.model_retries += 1
+        return True
+
+    @Slot(result=bool)
+    def cancelAiModelDownload(self):
+        self.model_cancellations += 1
+        return True
+
+    @Slot(result=bool)
+    def analyzeVideo(self):
+        return self._ai_models_ready
+
+    @Slot(result=bool)
+    def cancelVideoAnalysis(self):
+        return True
+
+    def set_ai_model_setup(
+        self,
+        state,
+        *,
+        ready=False,
+        progress=0,
+        status="",
+        error="",
+        component="",
+    ):
+        self._ai_models_ready = ready
+        self._ai_model_setup_state = state
+        self._ai_model_setup_progress = progress
+        self._ai_model_setup_status = status
+        self._ai_model_setup_error = error
+        self._ai_model_setup_component = component
+        self.aiModelsReadyChanged.emit()
+        self.aiModelSetupStateChanged.emit()
+        self.aiModelSetupProgressChanged.emit()
+        self.aiModelSetupStatusChanged.emit()
+        self.aiModelSetupErrorChanged.emit()
+        self.aiModelSetupComponentChanged.emit()
 
     def activate_video(self, video_path: str):
         self._selected_video_path = video_path
@@ -241,6 +336,55 @@ class CleanShellPageTests(unittest.TestCase):
         page = engine.rootObjects()[0]
         return engine, page, app_controller, video_cut_controller
 
+    def _load_windowed_page(self):
+        app_controller = FakeAppController()
+        settings_controller = FakeSettingsController()
+        video_cut_controller = FakeVideoCutController()
+        engine = QQmlApplicationEngine()
+        context = engine.rootContext()
+        context.setContextProperty("appController", app_controller)
+        context.setContextProperty("settingsController", settings_controller)
+        context.setContextProperty("videoCutController", video_cut_controller)
+        app_shell_dir = (
+            Path(__file__).resolve().parents[1]
+            / "vue"
+            / "qml"
+            / "WindowsApplication"
+            / "AppShell"
+        )
+        qml = f'''import QtQuick
+import QtQuick.Controls
+import "{app_shell_dir.as_uri()}" as AppShell
+
+ApplicationWindow {{
+    visible: true
+    width: 1200
+    height: 800
+    AppShell.CleanShellPage {{
+        objectName: "windowedCleanShellPage"
+        anchors.fill: parent
+    }}
+}}
+'''
+        engine.loadData(
+            qml.encode("utf-8"),
+            QUrl.fromLocalFile(str(Path(__file__).resolve())),
+        )
+        self.assertTrue(engine.rootObjects())
+        window = engine.rootObjects()[0]
+        engine._test_window = window
+        page = window.findChild(QObject, "windowedCleanShellPage")
+        self.assertIsNotNone(page)
+        return engine, page, app_controller, video_cut_controller
+
+    def _open_ai_picks(self, page):
+        popup = page.findChild(QObject, "aiPicksPopup")
+        self.assertIsNotNone(popup)
+        self.assertTrue(QMetaObject.invokeMethod(popup, "open"))
+        self.app.processEvents()
+        self.assertTrue(popup.property("opened"))
+        return popup
+
     def test_switching_video_clears_page_local_cuts(self):
         engine, page, app_controller, _video_cut_controller = self._load_page()
         cuts_model = page.findChild(QObject, "cutsModel")
@@ -321,6 +465,129 @@ class CleanShellPageTests(unittest.TestCase):
 
         self.assertFalse(panel.property("visible"))
         self.assertEqual(video_cut_controller.cutOutputPaths, [])
+        self.assertIsNotNone(engine)
+
+    def test_ai_picks_requires_explicit_model_download_confirmation(self):
+        engine, page, app_controller, _video_cut_controller = self._load_windowed_page()
+        popup = self._open_ai_picks(page)
+        app_controller.set_ai_model_setup(
+            "required",
+            status="Production AI model setup is required.",
+        )
+        self.app.processEvents()
+
+        explanation = popup.findChild(QObject, "aiModelSetupExplanation")
+        download_button = popup.findChild(QObject, "downloadAiModelsButton")
+        analyze_button = popup.findChild(QObject, "aiPicksActionButton")
+        confirmation = popup.findChild(QObject, "aiModelDownloadConfirmation")
+        confirm_button = popup.findChild(QObject, "confirmAiModelDownloadButton")
+        self.assertTrue(popup.property("showModelSetup"))
+        self.assertTrue(popup.property("showModelDownloadAction"))
+        self.assertTrue(explanation.property("visible"))
+        self.assertTrue(download_button.property("visible"))
+        self.assertIn("7.5 GiB", explanation.property("text"))
+        self.assertFalse(popup.property("analyzeActionEnabled"))
+        self.assertFalse(analyze_button.property("enabled"))
+
+        self.assertTrue(QMetaObject.invokeMethod(download_button, "click"))
+        self.app.processEvents()
+        self.assertTrue(confirmation.property("opened"))
+        self.assertEqual(app_controller.model_downloads, 0)
+
+        self.assertTrue(QMetaObject.invokeMethod(confirm_button, "click"))
+        self.app.processEvents()
+        self.assertEqual(app_controller.model_downloads, 1)
+        self.assertFalse(confirmation.property("opened"))
+        self.assertGreaterEqual(app_controller.model_status_refreshes, 1)
+        self.assertIsNotNone(engine)
+
+    def test_ai_picks_shows_truthful_downloading_and_cancelling_states(self):
+        engine, page, app_controller, _video_cut_controller = self._load_windowed_page()
+        popup = self._open_ai_picks(page)
+        app_controller.set_ai_model_setup(
+            "downloading",
+            progress=1,
+            status="Downloading pinned visual review model",
+            component="Visual review",
+        )
+        self.app.processEvents()
+
+        progress = popup.findChild(QObject, "aiModelSetupProgressText")
+        component = popup.findChild(QObject, "aiModelSetupComponentText")
+        cancel_button = popup.findChild(QObject, "cancelAiModelDownloadButton")
+        self.assertTrue(popup.property("showModelSetupProgress"))
+        self.assertTrue(progress.property("visible"))
+        self.assertEqual(progress.property("text"), "1 / 3 models ready")
+        self.assertEqual(component.property("text"), "Visual review")
+        self.assertTrue(cancel_button.property("visible"))
+        self.assertTrue(cancel_button.property("enabled"))
+
+        self.assertTrue(QMetaObject.invokeMethod(cancel_button, "click"))
+        self.assertEqual(app_controller.model_cancellations, 1)
+        app_controller.set_ai_model_setup(
+            "cancelling",
+            progress=1,
+            status="waiting",
+            component="Visual review",
+        )
+        self.app.processEvents()
+        status = popup.findChild(QObject, "aiModelSetupStatusText")
+        self.assertIn("current model transfer", status.property("text"))
+        self.assertFalse(cancel_button.property("enabled"))
+        self.assertIsNotNone(engine)
+
+    def test_ai_picks_error_and_cancelled_states_offer_retry(self):
+        engine, page, app_controller, _video_cut_controller = self._load_windowed_page()
+        popup = self._open_ai_picks(page)
+        retry_button = popup.findChild(QObject, "retryAiModelDownloadButton")
+        error_text = popup.findChild(QObject, "aiModelSetupErrorText")
+
+        app_controller.set_ai_model_setup(
+            "error",
+            status="Production AI model setup failed.",
+            error="Network connection was interrupted.",
+        )
+        self.app.processEvents()
+        self.assertTrue(popup.property("showModelSetupRetry"))
+        self.assertTrue(retry_button.property("visible"))
+        self.assertTrue(error_text.property("visible"))
+        self.assertIn("interrupted", error_text.property("text"))
+        confirmation = popup.findChild(QObject, "aiModelDownloadConfirmation")
+        confirm_button = popup.findChild(QObject, "confirmAiModelDownloadButton")
+        self.assertTrue(QMetaObject.invokeMethod(retry_button, "click"))
+        self.app.processEvents()
+        self.assertTrue(confirmation.property("opened"))
+        self.assertEqual(app_controller.model_retries, 0)
+        self.assertTrue(QMetaObject.invokeMethod(confirm_button, "click"))
+        self.app.processEvents()
+        self.assertEqual(app_controller.model_retries, 1)
+
+        app_controller.set_ai_model_setup(
+            "cancelled",
+            status="Downloaded data was kept for retry.",
+        )
+        self.app.processEvents()
+        self.assertTrue(popup.property("showModelSetupRetry"))
+        self.assertIsNotNone(engine)
+
+    def test_ai_picks_hides_setup_and_restores_analyze_when_ready(self):
+        engine, page, app_controller, _video_cut_controller = self._load_windowed_page()
+        app_controller.activate_video("C:/videos/a.mp4")
+        popup = self._open_ai_picks(page)
+        app_controller.set_ai_model_setup(
+            "ready",
+            ready=True,
+            progress=3,
+            status="AI models are ready",
+        )
+        self.app.processEvents()
+
+        setup_panel = popup.findChild(QObject, "aiModelSetupPanel")
+        analyze_button = popup.findChild(QObject, "aiPicksActionButton")
+        self.assertFalse(popup.property("showModelSetup"))
+        self.assertTrue(popup.property("analyzeActionEnabled"))
+        self.assertFalse(setup_panel.property("visible"))
+        self.assertTrue(analyze_button.property("enabled"))
         self.assertIsNotNone(engine)
 
 

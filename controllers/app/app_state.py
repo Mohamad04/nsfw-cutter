@@ -39,3 +39,11 @@ class AppState:
     ai_analysis_active_job_token: str = ""
     ai_analysis_media_path: str = ""
     ai_suggestions: list = field(default_factory=list)
+    ai_models_ready: bool = False
+    ai_model_setup_state: str = "idle"
+    ai_model_setup_progress: int = 0
+    ai_model_setup_total: int = 3
+    ai_model_setup_status: str = "AI model status has not been checked"
+    ai_model_setup_error: str = ""
+    ai_model_setup_component: str = ""
+    ai_model_setup_active_job_token: str = ""

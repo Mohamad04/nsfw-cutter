@@ -210,13 +210,13 @@ Current demo limitations:
 installer consumes. PyInstaller generates its temporary `.spec` file during the build;
 generated spec files are ignored by Git.
 
-The existing build script verifies that `ffmpeg.exe`, `ffprobe.exe`, Qt Multimedia
-plugins, and the QML runtime are present in the onedir output. The Windows workflow,
-however, installs only `requirements.txt`; it does not install or explicitly collect
-`requirements-ai.txt`, and model weights are intentionally not bundled. Therefore the
-source launch above is currently the reliable AI-demo path. Treat packaged AI analysis
-as unverified until a build produced with the optional AI stack passes the same vertical
-smoke.
+The release build verifies that `ffmpeg.exe`, `ffprobe.exe`, Qt Multimedia plugins,
+the QML runtime, and the required packaged AI runtime assets are present in the onedir
+output. Consent-based model provisioning has been validated in the packaged application:
+all three pinned production models provisioned successfully, and packaged Marqo,
+Qwen2.5-VL, and faster-whisper/CTranslate2 inference initialized successfully. The final
+physical-monitor release-candidate smoke passed. Model weights remain external to the
+package and are downloaded only after explicit user consent.
 
 ---
 

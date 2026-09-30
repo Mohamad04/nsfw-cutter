@@ -34,6 +34,7 @@ class FakeAppController(QObject):
         self.model_downloads = 0
         self.model_retries = 0
         self.model_cancellations = 0
+        self.open_file_requests = 0
 
     @Property(str, notify=selectedVideoPathChanged)
     def selectedVideoPath(self):
@@ -154,6 +155,10 @@ class FakeAppController(QObject):
     def cancelAiModelDownload(self):
         self.model_cancellations += 1
         return True
+
+    @Slot()
+    def openFile(self):
+        self.open_file_requests += 1
 
     @Slot(result=bool)
     def analyzeVideo(self):
@@ -336,7 +341,7 @@ class CleanShellPageTests(unittest.TestCase):
         page = engine.rootObjects()[0]
         return engine, page, app_controller, video_cut_controller
 
-    def _load_windowed_page(self):
+    def _load_windowed_page(self, width=1200, height=800):
         app_controller = FakeAppController()
         settings_controller = FakeSettingsController()
         video_cut_controller = FakeVideoCutController()
@@ -358,8 +363,8 @@ import "{app_shell_dir.as_uri()}" as AppShell
 
 ApplicationWindow {{
     visible: true
-    width: 1200
-    height: 800
+    width: {width}
+    height: {height}
     AppShell.CleanShellPage {{
         objectName: "windowedCleanShellPage"
         anchors.fill: parent
@@ -376,6 +381,43 @@ ApplicationWindow {{
         page = window.findChild(QObject, "windowedCleanShellPage")
         self.assertIsNotNone(page)
         return engine, page, app_controller, video_cut_controller
+
+    def test_empty_video_stage_is_a_real_open_button(self):
+        engine, page, app_controller, _video_cut_controller = self._load_windowed_page()
+        open_button = page.findChild(QObject, "openVideoButton")
+        self.assertIsNotNone(open_button)
+        self.assertTrue(open_button.property("visible"))
+
+        self.assertTrue(QMetaObject.invokeMethod(open_button, "click"))
+        self.app.processEvents()
+
+        self.assertEqual(app_controller.open_file_requests, 1)
+        self.assertIsNotNone(engine)
+
+    def test_video_controls_stay_inside_a_short_window(self):
+        engine, page, _app_controller, _video_cut_controller = self._load_windowed_page(
+            height=640
+        )
+        self.app.processEvents()
+
+        workspace = page.findChild(QObject, "videoWorkspace")
+        playback_controls = page.findChild(QObject, "playbackControlsBar")
+        cut_actions = page.findChild(QObject, "cutActionBar")
+        self.assertIsNotNone(workspace)
+        self.assertIsNotNone(playback_controls)
+        self.assertIsNotNone(cut_actions)
+
+        workspace_height = float(workspace.property("height"))
+        self.assertLessEqual(
+            float(playback_controls.property("y"))
+            + float(playback_controls.property("height")),
+            workspace_height,
+        )
+        self.assertLessEqual(
+            float(cut_actions.property("y")) + float(cut_actions.property("height")),
+            workspace_height,
+        )
+        self.assertIsNotNone(engine)
 
     def _open_ai_picks(self, page):
         popup = page.findChild(QObject, "aiPicksPopup")

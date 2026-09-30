@@ -1,6 +1,7 @@
 import ctypes
 import sys
 
+from PySide6.QtCore import QTimer
 from PySide6.QtGui import QFont, QFontDatabase, QIcon
 from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtQuickControls2 import QQuickStyle
@@ -21,7 +22,6 @@ from services.infrastructure.ffmpeg.paths import (
     get_ffprobe_path,
 )
 from services.settings_service import SettingsService
-
 
 WINDOWS_APP_USER_MODEL_ID = "com.nsfwcutter.desktop"
 WINDOWS_UI_FONT_FILES = (
@@ -140,8 +140,6 @@ def main():
     update_controller.setParent(app)
     engine.rootContext().setContextProperty("updateController", update_controller)
 
-    controller.restoreLastVideo()
-
     qml_file = get_resource_path("vue/qml/Main.qml")
     engine.load(str(qml_file))
 
@@ -153,6 +151,10 @@ def main():
         set_icon = getattr(root_object, "setIcon", None)
         if callable(set_icon):
             set_icon(app_icon)
+
+    # Let Qt render a usable first frame before probing/restoring the previous
+    # video.  Slow media metadata or keyframe work must never delay the UI.
+    QTimer.singleShot(250, controller.restoreLastVideo)
 
     sys.exit(app.exec())
 

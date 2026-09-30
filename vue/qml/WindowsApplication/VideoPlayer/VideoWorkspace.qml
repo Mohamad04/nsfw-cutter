@@ -513,7 +513,9 @@ Rectangle {
 
             Layout.fillWidth: true
             Layout.fillHeight: true
-            Layout.minimumHeight: 360
+            // Keep both control rows inside short laptop-sized windows. The
+            // previous fixed 360 px minimum could push them below the viewport.
+            Layout.minimumHeight: Math.max(180, Math.min(360, root.height - 176))
 
             hasVideo: root.hasVideo
             lightMode: root.lightMode
@@ -523,9 +525,11 @@ Rectangle {
             mutedTextColor: root.mutedTextColor
             accentColor: root.accentColor
             previewSubtitleText: appController.previewSubtitleText
+            onOpenVideoRequested: appController.openFile()
         }
 
         PlaybackControlsBar {
+            objectName: "playbackControlsBar"
             Layout.fillWidth: true
             Layout.preferredHeight: 56
 
@@ -577,6 +581,7 @@ Rectangle {
         }
 
         CutActionBar {
+            objectName: "cutActionBar"
             Layout.fillWidth: true
             Layout.preferredHeight: 76
 

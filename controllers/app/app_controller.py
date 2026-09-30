@@ -7,11 +7,13 @@ from PySide6.QtCore import (
     Property,
     QCoreApplication,
     QObject,
+    Qt,
     QThreadPool,
     QUrl,
     Signal,
     Slot,
 )
+from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import QApplication, QFileDialog
 
 from controllers.app.app_state import AppState
@@ -369,31 +371,60 @@ class AppController(QObject):
 
     @Slot()
     def browseFolder(self):
-        folder = QFileDialog.getExistingDirectory(None, "Select video folder")
+        dialog = self._create_file_dialog("Select video folder")
+        dialog.setFileMode(QFileDialog.FileMode.Directory)
+        dialog.setOption(QFileDialog.Option.ShowDirsOnly, True)
+        folder = self._exec_file_dialog(dialog)
         if folder:
             self.loadFolder(folder)
 
     @Slot()
     def openFile(self):
-        file_path, _selected_filter = QFileDialog.getOpenFileName(
-            None,
-            "Open video file",
-            "",
-            self._video_file_filter(),
-        )
+        dialog = self._create_file_dialog("Open video file")
+        dialog.setFileMode(QFileDialog.FileMode.ExistingFile)
+        dialog.setNameFilter(self._video_file_filter())
+        file_path = self._exec_file_dialog(dialog)
         if file_path:
             self.loadVideoFile(file_path)
 
     @Slot()
     def openFiles(self):
-        file_paths, _selected_filter = QFileDialog.getOpenFileNames(
-            None,
-            "Open video files",
-            "",
-            self._video_file_filter(),
-        )
+        dialog = self._create_file_dialog("Open video files")
+        dialog.setFileMode(QFileDialog.FileMode.ExistingFiles)
+        dialog.setNameFilter(self._video_file_filter())
+        file_paths = self._exec_file_dialog(dialog, multiple=True)
         if file_paths:
             self.loadVideoFiles(file_paths)
+
+    @staticmethod
+    def _create_file_dialog(title: str) -> QFileDialog:
+        """Create a dialog that stays owned by the active QML window.
+
+        A parentless static QFileDialog can be placed behind a maximized
+        QQuickWindow on Windows. The hidden modal dialog then makes the main
+        window look as though none of its buttons work.
+        """
+        transient_parent = QGuiApplication.focusWindow()
+        dialog = QFileDialog()
+        dialog.setWindowTitle(title)
+        dialog.setAcceptMode(QFileDialog.AcceptMode.AcceptOpen)
+        dialog.setWindowModality(Qt.WindowModality.ApplicationModal)
+
+        # Materialize the QWidget's QWindow before assigning the QML window as
+        # its transient owner. This keeps the chooser in front without forcing
+        # the less capable non-native Windows file dialog.
+        dialog.winId()
+        dialog_window = dialog.windowHandle()
+        if transient_parent is not None and dialog_window is not None:
+            dialog_window.setTransientParent(transient_parent)
+        return dialog
+
+    @staticmethod
+    def _exec_file_dialog(dialog: QFileDialog, *, multiple: bool = False):
+        selected_files = dialog.selectedFiles() if dialog.exec() else []
+        if multiple:
+            return selected_files
+        return selected_files[0] if selected_files else ""
 
     @Slot(str)
     def loadFolder(self, folder: str):

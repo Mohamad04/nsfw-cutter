@@ -1,0 +1,185 @@
+{
+  "schema_version": 1,
+  "generated_at_utc": "2026-08-18T08:13:49.532401+00:00",
+  "video_path": "D:\\test movies\\Let's Be Cops (2014)\\Lets.Be.Cops.2014.720p.BluRay.x264.YIFY.mp4",
+  "cases": [
+    {
+      "configuration": {
+        "sampling_gap_seconds": 1.0,
+        "chunk_duration_seconds": 240.0,
+        "chunk_overlap_seconds": 2.0,
+        "target_width": 384,
+        "target_height": 384,
+        "selected_video_stream_index": 0,
+        "scene_threshold": 0.35,
+        "black_pixel_luma_threshold": 12,
+        "black_frame_ratio_threshold": 0.995,
+        "black_mean_luma_threshold": 8.0,
+        "perceptual_hash_algorithm": "dhash-spatial-64",
+        "perceptual_hash_version": 1,
+        "duplicate_hamming_threshold": 3,
+        "static_suppression_limit_seconds": 10.0,
+        "physical_execution_mode": "one_ffmpeg_process_per_logical_chunk"
+      },
+      "runs": [
+        {
+          "run_index": 1,
+          "source": {
+            "filename": "Lets.Be.Cops.2014.720p.BluRay.x264.YIFY.mp4",
+            "path": "D:\\test movies\\Let's Be Cops (2014)\\Lets.Be.Cops.2014.720p.BluRay.x264.YIFY.mp4",
+            "container": "mov,mp4,m4a,3gp,3g2,mj2",
+            "duration_seconds": 6268.373333,
+            "selected_video_stream_index": 0,
+            "codec": "h264",
+            "width": 1280,
+            "height": 688,
+            "display_aspect_ratio": "80:43",
+            "nominal_fps": 23.976023976023978,
+            "frame_rate_mode": "likely_cfr",
+            "frame_rate_evidence": "avg_frame_rate and r_frame_rate agree within 0.5%; this is heuristic"
+          },
+          "configuration": {
+            "sampling_gap_seconds": 1.0,
+            "chunk_duration_seconds": 240.0,
+            "chunk_overlap_seconds": 2.0,
+            "target_width": 384,
+            "target_height": 384,
+            "selected_video_stream_index": 0,
+            "scene_threshold": 0.35,
+            "black_pixel_luma_threshold": 12,
+            "black_frame_ratio_threshold": 0.995,
+            "black_mean_luma_threshold": 8.0,
+            "perceptual_hash_algorithm": "dhash-spatial-64",
+            "perceptual_hash_version": 1,
+            "duplicate_hamming_threshold": 3,
+            "static_suppression_limit_seconds": 10.0,
+            "physical_execution_mode": "one_ffmpeg_process_per_logical_chunk"
+          },
+          "timings": {
+            "media_probe_seconds": 0.348660000000109,
+            "process_popen_seconds": 8.224602199998117,
+            "startup_seek_to_first_rgb_seconds": 10.46034009999903,
+            "ffmpeg_process_lifetime_seconds": 74.07381850000002,
+            "frame_stream_wait_seconds": 29.201115800066873,
+            "frame_assembly_seconds": 4.304956699886134,
+            "python_frame_preparation_seconds": 4.13515759999018,
+            "black_filtering_seconds": 8.876937699980317,
+            "perceptual_hashing_seconds": 24.370578200040654,
+            "duplicate_static_reduction_seconds": 0.21842190000279516,
+            "result_materialization_seconds": 0.9154609999659442,
+            "python_filter_total_seconds": 38.69390269999576,
+            "chunk_merge_finalization_seconds": 0.33993789995429324,
+            "total_preprocessing_wall_seconds": 74.43193029999975,
+            "correctness_verification_seconds": 0.029376800000136427,
+            "measurement_notes": [
+              "FFmpeg process lifetime includes startup, seek, decode, filtering, pipe transfer, and downstream backpressure; it overlaps Python filtering.",
+              "Frame stream wait measures main-thread waits for stdout blocks and process finish; it is not pure transfer time.",
+              "Frame assembly includes matching each RGB frame to its concurrently drained stderr timing metadata.",
+              "Popen timing is exact for process creation, while time-to-first-RGB also includes seek and initial decoding.",
+              "Pure decoder compute and pipe-copy time cannot be isolated without changing the pipeline or using an external profiler."
+            ]
+          },
+          "media_throughput": 84.21618662494933,
+          "realtime_factor": 0.011874201861613936,
+          "counts": {
+            "chunks": 27,
+            "ffmpeg_process_launches": 27,
+            "temporal_samples": 12537,
+            "scene_samples": 1736,
+            "union_samples": 14103,
+            "overlap_context_samples_discarded": 140,
+            "black_frames_removed": 50,
+            "near_duplicates_removed": 0,
+            "static_frames_suppressed": 811,
+            "representatives_retained": 13242
+          },
+          "data_volume": {
+            "raw_rgb_bytes_received": 6300647424,
+            "approximate_python_rgb_bytes_processed": 6238715904,
+            "peak_stdout_queue_bytes": 262144,
+            "peak_stdout_queue_items": 8
+          },
+          "resources": {
+            "monitoring_available": true,
+            "unavailable_reason": null,
+            "sample_interval_seconds": 0.05,
+            "samples": 1182,
+            "average_system_cpu_percent": 76.4336717428088,
+            "peak_system_cpu_percent": 100.0,
+            "average_python_cpu_percent": 86.90186125211505,
+            "peak_python_cpu_percent": 199.5,
+            "average_ffmpeg_cpu_percent": 764.0837563451777,
+            "peak_ffmpeg_cpu_percent": 1323.5,
+            "average_process_tree_cpu_percent": 850.9856175972927,
+            "peak_process_tree_cpu_percent": 1424.0,
+            "peak_python_rss_bytes": 91348992,
+            "peak_ffmpeg_rss_bytes": 104710144,
+            "measurement_note": "CPU values are sampled, may exceed 100% on multicore systems, and include Python plus active FFmpeg children where separately identified."
+          },
+          "correctness": {
+            "valid": true,
+            "checks": [
+              {
+                "name": "timestamps_sorted",
+                "passed": true,
+                "detail": "observed 14103 globally ordered sample timestamps"
+              },
+              {
+                "name": "timestamps_within_media",
+                "passed": true,
+                "detail": "expected every timestamp in [0, 6268373333] microseconds"
+              },
+              {
+                "name": "complete_chunk_core_coverage",
+                "passed": true,
+                "detail": "checked 27 logical chunks against the full media duration"
+              },
+              {
+                "name": "deterministic_chunk_ownership",
+                "passed": true,
+                "detail": "every considered sample belongs to its recorded half-open core range"
+              },
+              {
+                "name": "maximum_temporal_safety_gap",
+                "passed": true,
+                "detail": "maximum observed edge/inter-sample gap was 500500 us; configured maximum is 1000000 us"
+              },
+              {
+                "name": "static_representative_policy",
+                "passed": true,
+                "detail": "every suppressed static sample references a recent retained representative"
+              },
+              {
+                "name": "representatives_nonzero_and_consistent",
+                "passed": true,
+                "detail": "statistics=13242, result=13242"
+              },
+              {
+                "name": "sample_accounting",
+                "passed": true,
+                "detail": "considered=14103, observed=14103, dispositions=14103"
+              }
+            ]
+          }
+        }
+      ],
+      "aggregate": {
+        "run_count": 1,
+        "valid_runs": 1,
+        "invalid_runs": 0,
+        "median_wall_seconds": 74.43193029999975,
+        "minimum_wall_seconds": 74.43193029999975,
+        "maximum_wall_seconds": 74.43193029999975,
+        "median_media_throughput": 84.21618662494933,
+        "repeated_run_caveat": "No persistent preprocessing cache is used, but later runs may benefit from the operating system filesystem cache."
+      }
+    }
+  ],
+  "notes": [
+    "Repeated runs repeat preprocessing, but OS filesystem caches may warm between runs.",
+    "Stage timings are not additive: FFmpeg process lifetime overlaps Python filtering.",
+    "Benchmark instrumentation and optional resource sampling overhead are included.",
+    "Continuous decode is intentionally not implemented: a valid comparison requires decoupling physical extraction ranges from logical chunk ownership while keeping temporal buckets and scene state globally equivalent."
+  ],
+  "valid": true
+}

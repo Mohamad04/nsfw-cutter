@@ -27,6 +27,10 @@ from services.analysis.stage1_safety import (
     Stage1BatchConsumer,
     Stage1SafetyClassifier,
 )
+from services.analysis.temporal_representative_router import (
+    TemporalRepresentativeRouter,
+    TemporalRoutingMetrics,
+)
 from services.analysis.tinyclip_semantic import (
     MODEL_REPOSITORY_ID,
     MODEL_REVISION,
@@ -90,16 +94,21 @@ class CombinedSafetyTinyCLIPBenchmark(BaseModel):
     video_path: str
     safety_batch_size: int = Field(gt=0)
     tinyclip_batch_size: int = Field(gt=0)
+    semantic_gap_seconds: float | None = Field(default=None, gt=0.0)
+    semantic_phase_seconds: float | None = Field(default=None, ge=0.0)
     movie_duration_seconds: float = Field(ge=0.0)
     combined_wall_seconds: float = Field(gt=0.0)
     media_throughput: float = Field(ge=0.0)
     representatives: int = Field(ge=0)
     safety_results: int = Field(ge=0)
     tinyclip_results: int = Field(ge=0)
+    semantic_routing: TemporalRoutingMetrics | None = None
     onnx_inference_seconds: float = Field(ge=0.0)
     tinyclip_image_preprocessing_seconds: float = Field(ge=0.0)
     tinyclip_image_encoder_seconds: float = Field(ge=0.0)
     tinyclip_similarity_seconds: float = Field(ge=0.0)
+    tinyclip_text_tokenization_seconds: float = Field(ge=0.0)
+    tinyclip_text_embedding_seconds: float = Field(ge=0.0)
     safety_batch_count: int = Field(ge=0)
     tinyclip_batch_count: int = Field(ge=0)
     failures: tuple[RepresentativeConsumerFailure, ...]
@@ -156,7 +165,9 @@ def run_tinyclip_benchmark(
                 preprocessing_times.append(
                     runtime.timing.image_preprocessing_seconds - pre_before
                 )
-                encoder_times.append(runtime.timing.image_encoder_seconds - encoder_before)
+                encoder_times.append(
+                    runtime.timing.image_encoder_seconds - encoder_before
+                )
                 similarity_times.append(
                     runtime.timing.similarity_seconds - similarity_before
                 )
@@ -236,6 +247,8 @@ def run_combined_safety_tinyclip_benchmark(
     safety_batch_size: int,
     tinyclip_batch_size: int,
     config: PreprocessingConfig | None = None,
+    semantic_gap_seconds: float | None = None,
+    semantic_phase_seconds: float = 0.0,
     local_files_only: bool = False,
     monitor_memory: bool = True,
 ) -> CombinedSafetyTinyCLIPBenchmark:
@@ -245,6 +258,8 @@ def run_combined_safety_tinyclip_benchmark(
         raise FileNotFoundError(f"Video does not exist: {resolved_video}")
     if safety_batch_size <= 0 or tinyclip_batch_size <= 0:
         raise ValueError("Combined benchmark batch sizes must be positive.")
+    if semantic_gap_seconds is None and semantic_phase_seconds != 0.0:
+        raise ValueError("A semantic phase requires a semantic routing gap.")
 
     safety_artifact = SafetyModelArtifactResolver().resolve(
         local_files_only=local_files_only
@@ -259,17 +274,24 @@ def run_combined_safety_tinyclip_benchmark(
         batch_size=safety_batch_size,
     )
 
-    tinyclip_classifier = TinyCLIPSemanticClassifier(
-        local_files_only=local_files_only
-    )
+    tinyclip_classifier = TinyCLIPSemanticClassifier(local_files_only=local_files_only)
     tinyclip_classifier.prepare_prompt_bank(prompt_bank)
     tinyclip_consumer = TinyCLIPBatchConsumer(
         tinyclip_classifier,
         prompt_bank,
         batch_size=tinyclip_batch_size,
     )
+    semantic_consumer: object = tinyclip_consumer
+    router: TemporalRepresentativeRouter | None = None
+    if semantic_gap_seconds is not None:
+        router = TemporalRepresentativeRouter(
+            tinyclip_consumer,
+            gap_seconds=semantic_gap_seconds,
+            phase_seconds=semantic_phase_seconds,
+        )
+        semantic_consumer = router
     fanout = FinalizableRepresentativeFanout(
-        (("onnx-safety", safety_consumer), ("tinyclip-semantic", tinyclip_consumer))
+        (("onnx-safety", safety_consumer), ("tinyclip-semantic", semantic_consumer))
     )
     token = CancellationToken()
     monitor = _ProcessTreeMemoryMonitor(enabled=monitor_memory)
@@ -293,6 +315,10 @@ def run_combined_safety_tinyclip_benchmark(
         video_path=str(resolved_video),
         safety_batch_size=safety_batch_size,
         tinyclip_batch_size=tinyclip_batch_size,
+        semantic_gap_seconds=semantic_gap_seconds,
+        semantic_phase_seconds=(
+            semantic_phase_seconds if semantic_gap_seconds is not None else None
+        ),
         movie_duration_seconds=duration_seconds,
         combined_wall_seconds=combined_wall_seconds,
         media_throughput=(
@@ -303,18 +329,25 @@ def run_combined_safety_tinyclip_benchmark(
         representatives=len(result.representative_frames),
         safety_results=len(safety_consumer.results),
         tinyclip_results=len(tinyclip_consumer.results),
+        semantic_routing=router.metrics if router is not None else None,
         onnx_inference_seconds=safety_session.onnx_inference_seconds,
         tinyclip_image_preprocessing_seconds=(
             runtime.timing.image_preprocessing_seconds
         ),
         tinyclip_image_encoder_seconds=runtime.timing.image_encoder_seconds,
         tinyclip_similarity_seconds=runtime.timing.similarity_seconds,
+        tinyclip_text_tokenization_seconds=runtime.timing.text_tokenization_seconds,
+        tinyclip_text_embedding_seconds=runtime.timing.text_embedding_seconds,
         safety_batch_count=safety_consumer.inference_calls,
         tinyclip_batch_count=tinyclip_consumer.inference_calls,
         failures=tuple(fanout.failures),
         memory=memory,
     )
-def _run_one(runtime: object, frames: Sequence[TinyCLIPFrameInput], text: object) -> None:
+
+
+def _run_one(
+    runtime: object, frames: Sequence[TinyCLIPFrameInput], text: object
+) -> None:
     pixel_values = runtime.prepare_image_batch(frames)
     images = runtime.encode_image_features(pixel_values, expected_rows=len(frames))
     runtime.cosine_similarities(images, text)

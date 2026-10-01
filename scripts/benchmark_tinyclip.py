@@ -51,6 +51,17 @@ def build_argument_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--safety-batch-size", type=_positive_int)
     parser.add_argument("--tinyclip-batch-size", type=_positive_int)
+    parser.add_argument(
+        "--semantic-gap-seconds",
+        type=_positive_float,
+        help="Optional evaluation-only timestamp routing gap for TinyCLIP",
+    )
+    parser.add_argument(
+        "--semantic-phase-seconds",
+        type=_nonnegative_float,
+        default=0.0,
+        help="Evaluation-only global timestamp phase; requires --semantic-gap-seconds",
+    )
     return parser
 
 
@@ -62,6 +73,12 @@ def main(argv: list[str] | None = None) -> int:
         print(
             "Combined benchmark requires --safety-batch-size and "
             "--tinyclip-batch-size.",
+            file=sys.stderr,
+        )
+        return 2
+    if args.semantic_gap_seconds is None and args.semantic_phase_seconds != 0.0:
+        print(
+            "--semantic-phase-seconds requires --semantic-gap-seconds.",
             file=sys.stderr,
         )
         return 2
@@ -85,6 +102,8 @@ def main(argv: list[str] | None = None) -> int:
                 prompt_bank,
                 safety_batch_size=args.safety_batch_size,
                 tinyclip_batch_size=args.tinyclip_batch_size,
+                semantic_gap_seconds=args.semantic_gap_seconds,
+                semantic_phase_seconds=args.semantic_phase_seconds,
                 local_files_only=args.local_files_only,
                 monitor_memory=not args.no_memory_monitor,
             )
@@ -154,15 +173,19 @@ def _print_result(
         print(f"  media throughput: {combined.media_throughput:.2f}x")
         print(f"  representatives:  {combined.representatives}")
         print(f"  ONNX time:         {combined.onnx_inference_seconds:.3f} s")
-        print(
-            f"  TinyCLIP encoder:  "
-            f"{combined.tinyclip_image_encoder_seconds:.3f} s"
-        )
+        print(f"  TinyCLIP encoder:  {combined.tinyclip_image_encoder_seconds:.3f} s")
         print(
             f"  batch calls:       safety={combined.safety_batch_count}, "
             f"TinyCLIP={combined.tinyclip_batch_count}"
         )
         print(f"  failures:          {len(combined.failures)}")
+        if combined.semantic_routing is not None:
+            routing = combined.semantic_routing
+            print(
+                f"  semantic routing:  gap={routing.configured_gap_seconds:g}s "
+                f"phase={routing.configured_phase_seconds:g}s "
+                f"routed={routing.representatives_routed}/{routing.total_representatives_observed}"
+            )
 
 
 def _positive_int(value: str) -> int:
@@ -175,6 +198,20 @@ def _positive_int(value: str) -> int:
 def _nonnegative_int(value: str) -> int:
     parsed = int(value)
     if parsed < 0:
+        raise argparse.ArgumentTypeError("value cannot be negative")
+    return parsed
+
+
+def _positive_float(value: str) -> float:
+    parsed = float(value)
+    if parsed <= 0.0:
+        raise argparse.ArgumentTypeError("value must be positive")
+    return parsed
+
+
+def _nonnegative_float(value: str) -> float:
+    parsed = float(value)
+    if parsed < 0.0:
         raise argparse.ArgumentTypeError("value cannot be negative")
     return parsed
 

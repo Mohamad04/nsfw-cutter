@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 @dataclass
@@ -9,3 +9,4 @@ class VideoCutState:
     cut_error: str = ""
     cut_details: str = ""
     cut_warning: str = ""
+    cut_output_paths: list[str] = field(default_factory=list)

@@ -13,7 +13,6 @@ from services.export.smart_cut_planner import (
 )
 from services.infrastructure.ffmpeg.runner import FFmpegService
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -66,16 +65,23 @@ class VideoSegmentRenderer:
         for offset, segment in enumerate(render_segments, start=1):
             output_path = chunks_dir / f"chunk_{offset:04d}_{segment.type}.mp4"
             command = self.build_command(Path(input_path), output_path, segment)
-            self._run_command(command)
-            chunks.append(
-                RenderedVideoChunk(
-                    index=offset,
-                    segment_type=segment.type,
-                    output_path=output_path,
-                    start_seconds=segment.start_seconds,
-                    end_seconds=segment.end_seconds,
+            stderr = self._run_command(command)
+            if _ffmpeg_reported_empty_output(stderr):
+                logger.warning(
+                    "Skipping Smart Cutting video chunk %s because FFmpeg produced no video frames: %s",
+                    output_path,
+                    segment,
                 )
-            )
+            else:
+                chunks.append(
+                    RenderedVideoChunk(
+                        index=offset,
+                        segment_type=segment.type,
+                        output_path=output_path,
+                        start_seconds=segment.start_seconds,
+                        end_seconds=segment.end_seconds,
+                    )
+                )
             _emit(
                 progress_callback,
                 int(offset / len(render_segments) * 100),
@@ -167,7 +173,7 @@ class VideoSegmentRenderer:
             str(output_path),
         ]
 
-    def _run_command(self, command: list[str]) -> None:
+    def _run_command(self, command: list[str]) -> str:
         logger.info("Running Smart Cutting video command: %s", command)
         completed = self.command_runner(
             command,
@@ -181,6 +187,11 @@ class VideoSegmentRenderer:
         self.stderr.append(completed.stderr or "")
         if completed.returncode != 0:
             raise VideoSegmentRenderError(command, completed.returncode, completed.stderr or "")
+        return completed.stderr or ""
+
+
+def _ffmpeg_reported_empty_output(stderr: str) -> bool:
+    return "Output file is empty, nothing was encoded" in stderr
 
 
 def _emit(progress_callback, percentage: int, message: str) -> None:

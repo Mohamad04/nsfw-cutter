@@ -1,6 +1,6 @@
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
 
 from pydantic import ValidationError
 
@@ -20,6 +20,7 @@ class CutExportCallbacks:
     on_error: Callable[[str], None]
     on_details: Callable[[str], None]
     on_warning: Callable[[str], None]
+    on_output_paths: Callable[[list[str]], None]
     on_started: Callable[[int], None]
     on_finished: Callable[[str], None]
     on_failed: Callable[[str], None]
@@ -43,6 +44,11 @@ class CutExportRunner:
         export_mode: str,
         callbacks: CutExportCallbacks,
     ) -> bool:
+        callbacks.on_error("")
+        callbacks.on_warning("")
+        callbacks.on_details("")
+        callbacks.on_output_paths([])
+        callbacks.on_progress_value(0)
         try:
             input_file = Path(input_path)
             resolved_output_dir = self._output_preferences.resolve_output_dir(input_file, output_dir)
@@ -67,9 +73,6 @@ class CutExportRunner:
         self._callbacks[job_key] = callbacks
         self._output_preferences.remember(request.output_dir, str(request.export_mode))
         callbacks.on_busy(True)
-        callbacks.on_error("")
-        callbacks.on_warning("")
-        callbacks.on_progress_value(0)
         callbacks.on_status(start_status(request.export_mode))
 
         worker = self._worker_factory(job_key=job_key, request_data=request.model_dump(mode="json"))
@@ -108,6 +111,7 @@ class CutExportRunner:
         callbacks.on_status(message)
         callbacks.on_warning(warning)
         callbacks.on_details(format_cut_details(result_payload))
+        callbacks.on_output_paths([str(path) for path in output_paths])
         callbacks.on_busy(False)
         callbacks.on_finished(message)
 

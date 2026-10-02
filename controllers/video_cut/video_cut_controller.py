@@ -1,4 +1,4 @@
-from PySide6.QtCore import QObject, Property, QThreadPool, Signal, Slot
+from PySide6.QtCore import Property, QObject, QThreadPool, Signal, Slot
 
 from controllers.common.qt_state import clamp_percent
 from controllers.video_cut.cut_export_runner import CutExportCallbacks, CutExportRunner
@@ -32,6 +32,7 @@ class VideoCutController(QObject):
     cutErrorChanged = Signal()
     cutDetailsChanged = Signal()
     cutWarningChanged = Signal()
+    cutOutputPathsChanged = Signal()
 
     def __init__(
         self,
@@ -98,6 +99,21 @@ class VideoCutController(QObject):
     @Property(str, notify=cutWarningChanged)
     def cutWarning(self):
         return self._state.cut_warning
+
+    @Property("QVariantList", notify=cutOutputPathsChanged)
+    def cutOutputPaths(self):
+        return list(self._state.cut_output_paths)
+
+    @Slot()
+    def clearExportResult(self):
+        if self._state.cut_busy:
+            return
+        self._set_cut_status("Video export idle")
+        self._set_cut_progress(0)
+        self._set_cut_error("")
+        self._set_cut_details("")
+        self._set_cut_warning("")
+        self._set_cut_output_paths([])
 
     @Slot(str, float, float, str)
     def exportSingleSegment(self, input_path: str, start_seconds: float, end_seconds: float, output_dir: str):
@@ -170,6 +186,7 @@ class VideoCutController(QObject):
             on_error=self._set_cut_error,
             on_details=self._set_cut_details,
             on_warning=self._set_cut_warning,
+            on_output_paths=self._set_cut_output_paths,
             on_started=self.cutStarted.emit,
             on_finished=self.cutFinished.emit,
             on_failed=self.cutFailed.emit,
@@ -245,3 +262,9 @@ class VideoCutController(QObject):
         if self._state.cut_warning != value:
             self._state.cut_warning = value
             self.cutWarningChanged.emit()
+
+    def _set_cut_output_paths(self, value) -> None:
+        output_paths = [str(path) for path in value or [] if str(path)]
+        if self._state.cut_output_paths != output_paths:
+            self._state.cut_output_paths = output_paths
+            self.cutOutputPathsChanged.emit()

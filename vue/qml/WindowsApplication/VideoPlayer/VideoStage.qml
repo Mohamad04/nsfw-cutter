@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Controls
 import QtMultimedia
 
 import "../Shared"
@@ -17,6 +18,8 @@ Rectangle {
     property string previewSubtitleText: ""
     property alias videoOutput: stageVideoOutput
     property alias videoSink: stageVideoOutput.videoSink
+
+    signal openVideoRequested()
 
     radius: 16
     color: root.videoColor
@@ -52,33 +55,56 @@ Rectangle {
         fillMode: VideoOutput.PreserveAspectCrop
     }
 
-    Column {
+    Button {
+        id: openVideoButton
+        objectName: "openVideoButton"
+
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.verticalCenter: parent.verticalCenter
-        spacing: 10
         visible: !root.hasVideo
+        hoverEnabled: true
+        padding: 18
+        Accessible.name: qsTr("Open a video")
+        onClicked: root.openVideoRequested()
 
-        VectorIcon {
-            anchors.horizontalCenter: parent.horizontalCenter
-            width: 44
-            height: 44
-            name: "play"
-            iconColor: root.lightMode ? "#94A3B8" : "#36506E"
+        background: Rectangle {
+            radius: 14
+            color: openVideoButton.down
+                ? (root.lightMode ? "#DBEAFE" : "#0C2340")
+                : (openVideoButton.hovered
+                    ? (root.lightMode ? "#EFF6FF" : "#081A30")
+                    : "transparent")
+            border.color: openVideoButton.hovered || openVideoButton.activeFocus
+                ? root.accentColor
+                : "transparent"
+            border.width: 1
         }
 
-        Text {
-            anchors.horizontalCenter: parent.horizontalCenter
-            text: qsTr("Video preview will appear here")
-            color: root.textColor
-            font.pixelSize: 18
-            font.weight: Font.DemiBold
-        }
+        contentItem: Column {
+            spacing: 10
 
-        Text {
-            anchors.horizontalCenter: parent.horizontalCenter
-            text: qsTr("Open a video to get started")
-            color: root.mutedTextColor
-            font.pixelSize: 13
+            VectorIcon {
+                anchors.horizontalCenter: parent.horizontalCenter
+                width: 44
+                height: 44
+                name: "open"
+                iconColor: openVideoButton.hovered ? root.accentColor : (root.lightMode ? "#64748B" : "#4B6B91")
+            }
+
+            Text {
+                anchors.horizontalCenter: parent.horizontalCenter
+                text: qsTr("Open a video")
+                color: root.textColor
+                font.pixelSize: 18
+                font.weight: Font.DemiBold
+            }
+
+            Text {
+                anchors.horizontalCenter: parent.horizontalCenter
+                text: qsTr("MP4 or MKV")
+                color: root.mutedTextColor
+                font.pixelSize: 13
+            }
         }
     }
 

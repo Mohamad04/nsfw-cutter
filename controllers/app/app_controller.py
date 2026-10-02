@@ -3,7 +3,17 @@ import math
 import uuid
 from pathlib import Path
 
-from PySide6.QtCore import QCoreApplication, QObject, Property, QThreadPool, QUrl, Signal, Slot
+from PySide6.QtCore import (
+    Property,
+    QCoreApplication,
+    QObject,
+    Qt,
+    QThreadPool,
+    QUrl,
+    Signal,
+    Slot,
+)
+from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import QApplication, QFileDialog
 
 from controllers.app.app_state import AppState
@@ -16,10 +26,19 @@ from controllers.app.lossless_export_runner import ExportCallbacks, LosslessExpo
 from controllers.app.video_loader import VideoLoader
 from controllers.common.qt_state import clamp_percent
 from core.job_registry import JobRegistry
+from services.analysis.cancellation import CancellationToken
+from services.analysis.contracts import AnalysisRunRequest, AnalysisSettings
+from services.analysis.model_provisioning import (
+    PRODUCTION_MODELS,
+    ModelComponent,
+    ModelReadiness,
+    ProductionModelProvisioner,
+    ProvisioningProgress,
+)
 from services.editing.keyframe_service import KeyframeService
 from services.export.cut_json_service import CutJsonError, CutJsonService
-from services.settings_service import SettingsService
 from services.media.import_service import VideoImportService
+from services.settings_service import SettingsService
 from services.subtitles.processing_service import SubtitleService
 from services.subtitles.selection_service import (
     OFF_SUBTITLE_OPTION_ID,
@@ -31,14 +50,30 @@ from services.subtitles.selection_service import (
     find_selectable_candidate,
     preview_subtitle_track_index_for_selection,
 )
-from services.subtitles.subtitle_loader_service import load_subtitle_events, subtitle_text_at_position
+from services.subtitles.subtitle_loader_service import (
+    load_subtitle_events,
+    subtitle_text_at_position,
+)
+from workers.analysis_worker import AnalysisWorker
 from workers.keyframe_index_worker import KeyframeIndexWorker
+from workers.model_provisioning_worker import ModelProvisioningWorker
 from workers.prepare_export_job_worker import PrepareExportJobWorker
 from workers.subtitle_discovery_worker import SubtitleDiscoveryWorker
 from workers.video_export_worker import VideoExportWorker
 
-
 logger = logging.getLogger(__name__)
+
+_MODEL_COMPONENT_LABELS = {
+    ModelComponent.NSFW_PREFILTER: "Safety prefilter",
+    ModelComponent.VISUAL_REVIEW: "Visual review",
+    ModelComponent.SPEECH_TRANSCRIPTION: "Speech transcription",
+}
+
+
+def _model_component_label(component: ModelComponent | None) -> str:
+    if component is None:
+        return ""
+    return _MODEL_COMPONENT_LABELS.get(component, str(component.value))
 
 
 def _path_exists(path_text: str) -> bool:
@@ -89,7 +124,17 @@ class AppController(QObject):
     keyframeCountChanged = Signal()
     keyframeMediaPathChanged = Signal()
     aiAnalysisStateChanged = Signal()
+    aiAnalysisProgressChanged = Signal()
+    aiAnalysisStatusChanged = Signal()
+    aiAnalysisErrorChanged = Signal()
+    aiAnalysisDetailsChanged = Signal()
     aiSuggestionsChanged = Signal()
+    aiModelsReadyChanged = Signal()
+    aiModelSetupStateChanged = Signal()
+    aiModelSetupProgressChanged = Signal()
+    aiModelSetupStatusChanged = Signal()
+    aiModelSetupErrorChanged = Signal()
+    aiModelSetupComponentChanged = Signal()
 
     def __init__(
         self,
@@ -104,6 +149,9 @@ class AppController(QObject):
         keyframe_worker_factory=None,
         subtitle_service=None,
         subtitle_worker_factory=None,
+        analysis_worker_factory=None,
+        model_provisioner=None,
+        model_provisioning_worker_factory=None,
     ):
         super().__init__()
         self.video_import_service = video_import_service or VideoImportService()
@@ -126,8 +174,16 @@ class AppController(QObject):
         )
         self._subtitle_worker_factory = subtitle_worker_factory or SubtitleDiscoveryWorker
         self._subtitle_workers = {}
+        self._analysis_worker_factory = analysis_worker_factory or AnalysisWorker
+        self._analysis_workers = {}
+        self._model_provisioner = model_provisioner or ProductionModelProvisioner()
+        self._model_provisioning_worker_factory = (
+            model_provisioning_worker_factory or ModelProvisioningWorker
+        )
+        self._model_setup_workers = {}
 
         self._state = AppState()
+        self._state.ai_model_setup_total = len(PRODUCTION_MODELS)
         self._video_loader = VideoLoader(self.video_import_service, self.settings_service)
         self._cut_json_service = CutJsonService()
         self._lossless_export_runner = LosslessExportRunner(
@@ -265,37 +321,110 @@ class AppController(QObject):
     def aiAnalysisState(self):
         return self._state.ai_analysis_state
 
+    @Property(int, notify=aiAnalysisProgressChanged)
+    def aiAnalysisProgress(self):
+        return self._state.ai_analysis_progress
+
+    @Property(str, notify=aiAnalysisStatusChanged)
+    def aiAnalysisStatus(self):
+        return self._state.ai_analysis_status
+
+    @Property(str, notify=aiAnalysisErrorChanged)
+    def aiAnalysisError(self):
+        return self._state.ai_analysis_error
+
+    @Property("QVariantMap", notify=aiAnalysisDetailsChanged)
+    def aiAnalysisDetails(self):
+        return dict(self._state.ai_analysis_details)
+
     @Property("QVariantList", notify=aiSuggestionsChanged)
     def aiSuggestions(self):
         return list(self._state.ai_suggestions)
 
+    @Property(bool, notify=aiModelsReadyChanged)
+    def aiModelsReady(self):
+        return self._state.ai_models_ready
+
+    @Property(str, notify=aiModelSetupStateChanged)
+    def aiModelSetupState(self):
+        return self._state.ai_model_setup_state
+
+    @Property(int, notify=aiModelSetupProgressChanged)
+    def aiModelSetupProgress(self):
+        return self._state.ai_model_setup_progress
+
+    @Property(int, notify=aiModelSetupProgressChanged)
+    def aiModelSetupTotal(self):
+        return self._state.ai_model_setup_total
+
+    @Property(str, notify=aiModelSetupStatusChanged)
+    def aiModelSetupStatus(self):
+        return self._state.ai_model_setup_status
+
+    @Property(str, notify=aiModelSetupErrorChanged)
+    def aiModelSetupError(self):
+        return self._state.ai_model_setup_error
+
+    @Property(str, notify=aiModelSetupComponentChanged)
+    def aiModelSetupComponent(self):
+        return self._state.ai_model_setup_component
+
     @Slot()
     def browseFolder(self):
-        folder = QFileDialog.getExistingDirectory(None, "Select video folder")
+        dialog = self._create_file_dialog("Select video folder")
+        dialog.setFileMode(QFileDialog.FileMode.Directory)
+        dialog.setOption(QFileDialog.Option.ShowDirsOnly, True)
+        folder = self._exec_file_dialog(dialog)
         if folder:
             self.loadFolder(folder)
 
     @Slot()
     def openFile(self):
-        file_path, _selected_filter = QFileDialog.getOpenFileName(
-            None,
-            "Open video file",
-            "",
-            self._video_file_filter(),
-        )
+        dialog = self._create_file_dialog("Open video file")
+        dialog.setFileMode(QFileDialog.FileMode.ExistingFile)
+        dialog.setNameFilter(self._video_file_filter())
+        file_path = self._exec_file_dialog(dialog)
         if file_path:
             self.loadVideoFile(file_path)
 
     @Slot()
     def openFiles(self):
-        file_paths, _selected_filter = QFileDialog.getOpenFileNames(
-            None,
-            "Open video files",
-            "",
-            self._video_file_filter(),
-        )
+        dialog = self._create_file_dialog("Open video files")
+        dialog.setFileMode(QFileDialog.FileMode.ExistingFiles)
+        dialog.setNameFilter(self._video_file_filter())
+        file_paths = self._exec_file_dialog(dialog, multiple=True)
         if file_paths:
             self.loadVideoFiles(file_paths)
+
+    @staticmethod
+    def _create_file_dialog(title: str) -> QFileDialog:
+        """Create a dialog that stays owned by the active QML window.
+
+        A parentless static QFileDialog can be placed behind a maximized
+        QQuickWindow on Windows. The hidden modal dialog then makes the main
+        window look as though none of its buttons work.
+        """
+        transient_parent = QGuiApplication.focusWindow()
+        dialog = QFileDialog()
+        dialog.setWindowTitle(title)
+        dialog.setAcceptMode(QFileDialog.AcceptMode.AcceptOpen)
+        dialog.setWindowModality(Qt.WindowModality.ApplicationModal)
+
+        # Materialize the QWidget's QWindow before assigning the QML window as
+        # its transient owner. This keeps the chooser in front without forcing
+        # the less capable non-native Windows file dialog.
+        dialog.winId()
+        dialog_window = dialog.windowHandle()
+        if transient_parent is not None and dialog_window is not None:
+            dialog_window.setTransientParent(transient_parent)
+        return dialog
+
+    @staticmethod
+    def _exec_file_dialog(dialog: QFileDialog, *, multiple: bool = False):
+        selected_files = dialog.selectedFiles() if dialog.exec() else []
+        if multiple:
+            return selected_files
+        return selected_files[0] if selected_files else ""
 
     @Slot(str)
     def loadFolder(self, folder: str):
@@ -439,6 +568,7 @@ class AppController(QObject):
 
     @Slot()
     def clearVideo(self):
+        self._cancel_active_ai_analysis(publish=False)
         self._state.video_url = ""
         self._state.video_name = "No video selected"
         self._clear_subtitle_discovery()
@@ -694,6 +824,7 @@ class AppController(QObject):
         self._export_preparation_runner.handle_error(job_key, error_message)
 
     def _apply_loaded_video(self, result: dict):
+        self._cancel_active_ai_analysis(publish=False)
         selected_video_path = result.get("video_path", "")
         converted_video_url = (
             _local_file_url(selected_video_path)
@@ -1003,6 +1134,465 @@ class AppController(QObject):
         self._state.selected_analysis_subtitle = None
         self._state.analysis_subtitle_auto_selected = False
 
+    @Slot(result=bool)
+    def refreshAiModelStatus(self) -> bool:
+        if self._state.ai_model_setup_active_job_token:
+            return False
+        return self._start_model_setup_worker(ModelProvisioningWorker.CHECK)
+
+    @Slot(result=bool)
+    def downloadAiModels(self) -> bool:
+        if self._state.ai_model_setup_active_job_token or self._state.ai_models_ready:
+            return False
+        return self._start_model_setup_worker(ModelProvisioningWorker.PROVISION)
+
+    @Slot(result=bool)
+    def retryAiModelDownload(self) -> bool:
+        return self.downloadAiModels()
+
+    @Slot(result=bool)
+    def cancelAiModelDownload(self) -> bool:
+        job_token = self._state.ai_model_setup_active_job_token
+        worker = self._model_setup_workers.get(job_token)
+        if (
+            not job_token
+            or worker is None
+            or getattr(worker, "operation", "") != ModelProvisioningWorker.PROVISION
+            or self._state.ai_model_setup_state == "cancelling"
+        ):
+            return False
+        worker.cancel()
+        self._state.ai_model_setup_state = "cancelling"
+        self._state.ai_model_setup_status = (
+            "Cancelling after the current model transfer completes..."
+        )
+        self._state.ai_model_setup_error = ""
+        self._emit_ai_model_setup_changed()
+        return True
+
+    def _start_model_setup_worker(self, operation: str) -> bool:
+        job_token = uuid.uuid4().hex
+        cancellation = CancellationToken()
+        try:
+            worker = self._model_provisioning_worker_factory(
+                job_token=job_token,
+                operation=operation,
+                cancellation=cancellation,
+                provisioner=self._model_provisioner,
+            )
+            self._model_setup_workers[job_token] = worker
+            worker.signals.modelProvisioningEvent.connect(
+                self._on_ai_model_setup_progress
+            )
+            worker.signals.finished.connect(self._on_ai_model_setup_finished)
+            worker.signals.cancelled.connect(self._on_ai_model_setup_cancelled)
+            worker.signals.error.connect(self._on_ai_model_setup_error)
+        except Exception as exc:
+            logger.exception("Unable to prepare production model setup worker")
+            self._set_ai_model_setup_error(str(exc))
+            return False
+
+        self._state.ai_model_setup_active_job_token = job_token
+        self._state.ai_models_ready = False
+        self._state.ai_model_setup_state = (
+            "checking" if operation == ModelProvisioningWorker.CHECK else "downloading"
+        )
+        self._state.ai_model_setup_progress = 0
+        self._state.ai_model_setup_status = (
+            "Checking the local production AI model cache..."
+            if operation == ModelProvisioningWorker.CHECK
+            else "Starting production AI model setup..."
+        )
+        self._state.ai_model_setup_error = ""
+        self._state.ai_model_setup_component = ""
+        self._emit_ai_model_setup_changed()
+        try:
+            self._thread_pool.start(worker)
+        except Exception as exc:
+            self._model_setup_workers.pop(job_token, None)
+            self._state.ai_model_setup_active_job_token = ""
+            self._set_ai_model_setup_error(str(exc))
+            logger.exception("Unable to start production model setup worker")
+            return False
+        return True
+
+    @Slot(str, object)
+    def _on_ai_model_setup_progress(self, job_token: str, event) -> None:
+        if job_token != self._state.ai_model_setup_active_job_token:
+            return
+        if not isinstance(event, ProvisioningProgress):
+            return
+
+        total = max(1, int(event.total_components))
+        self._state.ai_model_setup_total = total
+        self._state.ai_model_setup_progress = max(
+            0,
+            min(total, int(event.completed_components)),
+        )
+        self._state.ai_model_setup_component = _model_component_label(event.component)
+        if self._state.ai_model_setup_state != "cancelling":
+            self._state.ai_model_setup_state = "downloading"
+            self._state.ai_model_setup_status = str(event.message)
+        self._emit_ai_model_setup_changed()
+
+    @Slot(str, object)
+    def _on_ai_model_setup_finished(self, job_token: str, result) -> None:
+        worker = self._model_setup_workers.pop(job_token, None)
+        if job_token != self._state.ai_model_setup_active_job_token:
+            logger.info("Ignoring stale AI model setup result: job=%s", job_token)
+            return
+        cancellation = getattr(worker, "cancellation", None)
+        if self._state.ai_model_setup_state == "cancelling" or (
+            cancellation is not None and cancellation.is_cancelled
+        ):
+            self._on_ai_model_setup_cancelled(
+                job_token,
+                "Model provisioning was cancelled after backend control returned.",
+            )
+            return
+        self._state.ai_model_setup_active_job_token = ""
+        operation = getattr(worker, "operation", "") if worker is not None else ""
+        self._apply_ai_model_readiness(result, operation=operation)
+
+    @Slot(str, str)
+    def _on_ai_model_setup_cancelled(self, job_token: str, _message: str) -> None:
+        self._model_setup_workers.pop(job_token, None)
+        if job_token != self._state.ai_model_setup_active_job_token:
+            return
+        self._state.ai_model_setup_active_job_token = ""
+        self._state.ai_models_ready = False
+        self._state.ai_model_setup_state = "cancelled"
+        self._state.ai_model_setup_status = (
+            "AI model setup was cancelled. Downloaded data was kept and can be reused."
+        )
+        self._state.ai_model_setup_error = ""
+        self._state.ai_model_setup_component = ""
+        self._emit_ai_model_setup_changed()
+
+    @Slot(str, str)
+    def _on_ai_model_setup_error(self, job_token: str, error_message: str) -> None:
+        self._model_setup_workers.pop(job_token, None)
+        if job_token != self._state.ai_model_setup_active_job_token:
+            return
+        self._state.ai_model_setup_active_job_token = ""
+        self._set_ai_model_setup_error(error_message)
+
+    def _apply_ai_model_readiness(self, readiness, *, operation: str) -> bool:
+        models = tuple(readiness) if readiness is not None else ()
+        ready = len(models) == len(PRODUCTION_MODELS) and all(
+            isinstance(item, ModelReadiness) and item.ready for item in models
+        )
+        self._state.ai_models_ready = ready
+        self._state.ai_model_setup_component = ""
+        self._state.ai_model_setup_error = ""
+        if ready:
+            self._state.ai_model_setup_state = "ready"
+            self._state.ai_model_setup_progress = len(PRODUCTION_MODELS)
+            self._state.ai_model_setup_total = len(PRODUCTION_MODELS)
+            self._state.ai_model_setup_status = (
+                "All production AI models are ready for local, offline analysis."
+            )
+        else:
+            first_unready = next(
+                (item for item in models if isinstance(item, ModelReadiness) and not item.ready),
+                None,
+            )
+            self._state.ai_model_setup_state = "required"
+            self._state.ai_model_setup_progress = sum(
+                1 for item in models if isinstance(item, ModelReadiness) and item.ready
+            )
+            self._state.ai_model_setup_total = len(PRODUCTION_MODELS)
+            self._state.ai_model_setup_status = (
+                first_unready.reason
+                if first_unready is not None
+                else "Production AI model setup is required before analysis."
+            )
+            if operation == ModelProvisioningWorker.PROVISION:
+                self._state.ai_model_setup_error = (
+                    "Model setup finished without a complete, valid production model cache. "
+                    "Retry setup to reuse downloaded data."
+                )
+        self._emit_ai_model_setup_changed()
+        return ready
+
+    def _set_ai_model_setup_error(self, error_message: str) -> None:
+        self._state.ai_models_ready = False
+        self._state.ai_model_setup_state = "error"
+        self._state.ai_model_setup_status = "Production AI model setup failed."
+        self._state.ai_model_setup_error = str(error_message)
+        self._state.ai_model_setup_component = ""
+        self._emit_ai_model_setup_changed()
+
+    def _emit_ai_model_setup_changed(self) -> None:
+        self.aiModelsReadyChanged.emit()
+        self.aiModelSetupStateChanged.emit()
+        self.aiModelSetupProgressChanged.emit()
+        self.aiModelSetupStatusChanged.emit()
+        self.aiModelSetupErrorChanged.emit()
+        self.aiModelSetupComponentChanged.emit()
+
+    def _production_models_ready_for_analysis(self) -> bool:
+        if self._state.ai_model_setup_state in {"downloading", "cancelling"}:
+            return False
+        try:
+            readiness = self._model_provisioner.check_all_models()
+        except Exception as exc:
+            logger.exception("Unable to validate production models before analysis")
+            self._set_ai_model_setup_error(str(exc))
+            return False
+        return self._apply_ai_model_readiness(readiness, operation="check")
+
+    @Slot(result=bool)
+    def analyzeVideo(self) -> bool:
+        if self._state.ai_analysis_state in {"running", "cancelling"}:
+            return False
+        if not self._state.selected_video_path:
+            self._state.ai_analysis_state = "error"
+            self._state.ai_analysis_error = "Select a video before running analysis."
+            self._state.ai_analysis_status = self._state.ai_analysis_error
+            self._emit_ai_analysis_changed()
+            return False
+        if not self._production_models_ready_for_analysis():
+            return False
+
+        job_token = uuid.uuid4().hex
+        cancellation = CancellationToken()
+        try:
+            settings = _analysis_settings_from_app_settings(self.settings_service.load())
+            selected_subtitle = (
+                dict(self._state.selected_analysis_subtitle)
+                if self._state.selected_analysis_subtitle
+                else None
+            )
+            request = AnalysisRunRequest(
+                video_path=Path(self._state.selected_video_path),
+                selected_subtitle=selected_subtitle,
+                settings=settings,
+            )
+            worker = self._analysis_worker_factory(
+                job_token=job_token,
+                request=request,
+                cancellation=cancellation,
+            )
+            self._analysis_workers[job_token] = worker
+            worker.signals.progress.connect(self._on_ai_analysis_progress)
+            worker.signals.analysisEvent.connect(self._on_ai_analysis_event)
+            worker.signals.finished.connect(self._on_ai_analysis_finished)
+            worker.signals.error.connect(self._on_ai_analysis_error)
+        except Exception as exc:
+            logger.exception("Unable to prepare VLM analysis worker")
+            self._state.ai_analysis_state = "error"
+            self._state.ai_analysis_error = str(exc)
+            self._state.ai_analysis_status = "Unable to start video analysis."
+            self._emit_ai_analysis_changed()
+            return False
+
+        self._state.ai_analysis_active_job_token = job_token
+        self._state.ai_analysis_media_path = _resolved_media_path(
+            self._state.selected_video_path
+        )
+        self._state.ai_analysis_state = "running"
+        self._state.ai_analysis_progress = 0
+        self._state.ai_analysis_status = "Starting local video analysis"
+        self._state.ai_analysis_error = ""
+        self._state.ai_analysis_details = {}
+        self._state.ai_suggestions = []
+        self._emit_ai_analysis_changed(suggestions=True)
+        try:
+            self._thread_pool.start(worker)
+        except Exception as exc:
+            self._analysis_workers.pop(job_token, None)
+            self._state.ai_analysis_active_job_token = ""
+            self._state.ai_analysis_media_path = ""
+            self._state.ai_analysis_state = "error"
+            self._state.ai_analysis_status = "Unable to start video analysis."
+            self._state.ai_analysis_error = str(exc)
+            self._emit_ai_analysis_changed()
+            logger.exception("Unable to start VLM analysis worker")
+            return False
+        return True
+
+    @Slot(result=bool)
+    def cancelVideoAnalysis(self) -> bool:
+        return self._cancel_active_ai_analysis(publish=True)
+
+    @Slot(str, str, result=bool)
+    def reviewAiSuggestion(self, suggestion_id: str, decision: str) -> bool:
+        return self._review_ai_suggestion(suggestion_id, decision)
+
+    @Slot(str, str, str, str, str, result=bool)
+    def reviewAiSuggestionWithEdits(
+        self,
+        suggestion_id: str,
+        decision: str,
+        start_time: str,
+        end_time: str,
+        reason: str,
+    ) -> bool:
+        start = _normalize_hhmmss_millis(start_time)
+        end = _normalize_hhmmss_millis(end_time)
+        start_seconds = _ai_time_to_seconds(start)
+        end_seconds = _ai_time_to_seconds(end)
+        if (
+            not start
+            or not end
+            or start_seconds is None
+            or end_seconds is None
+            or end_seconds <= start_seconds
+        ):
+            return False
+        return self._review_ai_suggestion(
+            suggestion_id,
+            decision,
+            edits={
+                "start": start,
+                "end": end,
+                "start_seconds": start_seconds,
+                "end_seconds": end_seconds,
+                "reason": str(reason or "").strip(),
+            },
+        )
+
+    def _review_ai_suggestion(
+        self,
+        suggestion_id: str,
+        decision: str,
+        edits: dict | None = None,
+    ) -> bool:
+        normalized_decision = str(decision or "").strip().casefold()
+        if normalized_decision not in {"accepted", "rejected"}:
+            return False
+        for index, suggestion in enumerate(self._state.ai_suggestions):
+            if str(suggestion.get("id") or "") != str(suggestion_id or ""):
+                continue
+            updated = dict(suggestion)
+            if edits:
+                updated.update(edits)
+            updated["review_state"] = normalized_decision
+            self._state.ai_suggestions[index] = updated
+            self.aiSuggestionsChanged.emit()
+            return True
+        return False
+
+    @Slot(str, int, str)
+    def _on_ai_analysis_progress(
+        self,
+        job_token: str,
+        percentage: int,
+        message: str,
+    ) -> None:
+        if job_token != self._state.ai_analysis_active_job_token:
+            return
+        self._state.ai_analysis_progress = clamp_percent(percentage)
+        self._state.ai_analysis_status = str(message)
+        self.aiAnalysisProgressChanged.emit()
+        self.aiAnalysisStatusChanged.emit()
+
+    @Slot(str, object)
+    def _on_ai_analysis_event(self, job_token: str, payload) -> None:
+        if job_token != self._state.ai_analysis_active_job_token:
+            return
+        if not isinstance(payload, dict):
+            return
+        self._state.ai_analysis_details = dict(payload)
+        self.aiAnalysisDetailsChanged.emit()
+
+    @Slot(str, object)
+    def _on_ai_analysis_finished(self, job_token: str, result) -> None:
+        worker = self._analysis_workers.pop(job_token, None)
+        if job_token != self._state.ai_analysis_active_job_token:
+            logger.info("Ignoring stale VLM analysis result: job=%s", job_token)
+            return
+        worker_path = getattr(worker, "input_path", "") if worker is not None else ""
+        if worker_path and _resolved_media_path(worker_path) != self._state.ai_analysis_media_path:
+            logger.info("Ignoring VLM result for superseded media: job=%s", job_token)
+            return
+
+        payload = result if isinstance(result, dict) else {}
+        status = str(payload.get("status") or "failed")
+        suggestions = []
+        if status in {"completed", "partial"}:
+            suggestions = [
+                normalized
+                for item in payload.get("suggestions", [])
+                if (normalized := _normalize_ai_suggestion(item)) is not None
+            ]
+        errors = [str(error) for error in payload.get("errors", []) if str(error).strip()]
+        warnings = [
+            str(warning)
+            for warning in payload.get("warnings", [])
+            if str(warning).strip()
+        ]
+        self._state.ai_suggestions = suggestions
+        self._state.ai_analysis_active_job_token = ""
+        self._state.ai_analysis_media_path = ""
+        self._state.ai_analysis_error = "\n".join([*errors, *warnings][:3])
+
+        if status == "completed":
+            self._state.ai_analysis_state = "ready"
+            self._state.ai_analysis_progress = 100
+            self._state.ai_analysis_status = (
+                f"Analysis complete. Review {len(suggestions)} suggestion(s)."
+            )
+        elif status == "partial":
+            self._state.ai_analysis_state = "partial"
+            self._state.ai_analysis_progress = 100
+            self._state.ai_analysis_status = (
+                f"Analysis completed with warnings. Review {len(suggestions)} suggestion(s)."
+            )
+        elif status == "cancelled":
+            self._state.ai_analysis_state = "cancelled"
+            self._state.ai_analysis_progress = 0
+            self._state.ai_analysis_status = "Video analysis cancelled"
+        else:
+            self._state.ai_analysis_state = "error"
+            self._state.ai_analysis_progress = 0
+            self._state.ai_analysis_status = "Video analysis failed"
+            if not self._state.ai_analysis_error:
+                self._state.ai_analysis_error = "The local analysis pipeline could not run."
+        self._emit_ai_analysis_changed(suggestions=True)
+
+    @Slot(str, str)
+    def _on_ai_analysis_error(self, job_token: str, error_message: str) -> None:
+        self._analysis_workers.pop(job_token, None)
+        if job_token != self._state.ai_analysis_active_job_token:
+            return
+        self._state.ai_analysis_active_job_token = ""
+        self._state.ai_analysis_media_path = ""
+        self._state.ai_analysis_state = "error"
+        self._state.ai_analysis_progress = 0
+        self._state.ai_analysis_status = "Video analysis failed"
+        self._state.ai_analysis_error = str(error_message)
+        self._emit_ai_analysis_changed()
+
+    def _cancel_active_ai_analysis(self, *, publish: bool) -> bool:
+        job_token = self._state.ai_analysis_active_job_token
+        worker = self._analysis_workers.get(job_token)
+        if not job_token or worker is None:
+            return False
+        cancel = getattr(worker, "cancel", None)
+        if callable(cancel):
+            cancel()
+        else:
+            cancellation = getattr(worker, "cancellation", None)
+            if cancellation is not None:
+                cancellation.cancel()
+        self._state.ai_analysis_state = "cancelling"
+        self._state.ai_analysis_status = "Cancelling video analysis..."
+        if publish:
+            self.aiAnalysisStateChanged.emit()
+            self.aiAnalysisStatusChanged.emit()
+        return True
+
+    def _emit_ai_analysis_changed(self, *, suggestions: bool = False) -> None:
+        self.aiAnalysisStateChanged.emit()
+        self.aiAnalysisProgressChanged.emit()
+        self.aiAnalysisStatusChanged.emit()
+        self.aiAnalysisErrorChanged.emit()
+        self.aiAnalysisDetailsChanged.emit()
+        if suggestions:
+            self.aiSuggestionsChanged.emit()
+
     @Slot("QVariantList")
     def setAiSuggestions(self, suggestions) -> None:
         normalized_suggestions = []
@@ -1013,18 +1603,39 @@ class AppController(QObject):
 
         self._state.ai_suggestions = normalized_suggestions
         self._state.ai_analysis_state = "ready"
-        self.aiSuggestionsChanged.emit()
-        self.aiAnalysisStateChanged.emit()
+        self._state.ai_analysis_progress = 100
+        self._state.ai_analysis_status = "Suggestions ready for review"
+        self._state.ai_analysis_error = ""
+        self._state.ai_analysis_details = {}
+        self._emit_ai_analysis_changed(suggestions=True)
 
     def _clear_ai_suggestions(self) -> None:
         changed_suggestions = bool(self._state.ai_suggestions)
         changed_state = self._state.ai_analysis_state != "idle"
+        changed_progress = self._state.ai_analysis_progress != 0
+        changed_status = self._state.ai_analysis_status != "No analysis running"
+        changed_error = bool(self._state.ai_analysis_error)
+        changed_details = bool(self._state.ai_analysis_details)
         self._state.ai_suggestions = []
         self._state.ai_analysis_state = "idle"
+        self._state.ai_analysis_progress = 0
+        self._state.ai_analysis_status = "No analysis running"
+        self._state.ai_analysis_error = ""
+        self._state.ai_analysis_details = {}
+        self._state.ai_analysis_active_job_token = ""
+        self._state.ai_analysis_media_path = ""
         if changed_suggestions:
             self.aiSuggestionsChanged.emit()
         if changed_state:
             self.aiAnalysisStateChanged.emit()
+        if changed_progress:
+            self.aiAnalysisProgressChanged.emit()
+        if changed_status:
+            self.aiAnalysisStatusChanged.emit()
+        if changed_error:
+            self.aiAnalysisErrorChanged.emit()
+        if changed_details:
+            self.aiAnalysisDetailsChanged.emit()
 
     @Slot(str, object)
     def _on_keyframe_indexing_finished(self, job_token: str, result) -> None:
@@ -1168,6 +1779,26 @@ class AppController(QObject):
         return parse_hh_mm_ss_to_seconds(value)
 
 
+def _analysis_settings_from_app_settings(settings) -> AnalysisSettings:
+    return AnalysisSettings(
+        analysis_mode=str(getattr(settings, "ai_analysis_mode", "balanced")),
+        use_gpu=bool(getattr(settings, "enable_gpu", True)),
+        quantization_mode=str(getattr(settings, "ai_quantization_mode", "auto")),
+        batch_size=int(getattr(settings, "ai_visual_batch_size", 4)),
+        visual_confidence_threshold=float(
+            getattr(settings, "confidence_threshold", 0.5)
+        ),
+        scene_threshold=float(getattr(settings, "ai_scene_threshold", 0.35)),
+        merge_gap_seconds=float(getattr(settings, "ai_merge_gap_seconds", 1.5)),
+        context_padding_seconds=float(
+            getattr(settings, "ai_context_padding_seconds", 0.75)
+        ),
+        whisper_model_id=str(
+            getattr(settings, "ai_whisper_model_name", "small") or "small"
+        ),
+    )
+
+
 def _resolved_media_path(media_path: str | Path) -> str:
     return str(Path(media_path).expanduser().resolve())
 
@@ -1195,12 +1826,54 @@ def _normalize_ai_suggestion(suggestion) -> dict | None:
     if not start or not end:
         return None
 
-    return {
+    confidence_value = suggestion.get("confidence")
+    if confidence_value is None:
+        confidence_value = suggestion.get("final_confidence")
+    normalized = {
         "start": start,
         "end": end,
-        "confidence": _normalize_ai_confidence(suggestion.get("confidence")),
+        "confidence": _normalize_ai_confidence(confidence_value),
         "reason": str(suggestion.get("reason") or "").strip(),
     }
+    is_mvp_suggestion = any(
+        key in suggestion
+        for key in (
+            "id",
+            "category",
+            "visual_confidence",
+            "final_confidence",
+            "evidence_timestamps",
+            "needs_review",
+            "review_state",
+        )
+    )
+    if not is_mvp_suggestion:
+        return normalized
+
+    category_value = suggestion.get("category")
+    category = str(getattr(category_value, "value", category_value) or "uncertain")
+    normalized.update(
+        {
+            "id": str(suggestion.get("id") or uuid.uuid4().hex),
+            "start_seconds": _finite_confidence_or_time(suggestion.get("start_seconds")),
+            "end_seconds": _finite_confidence_or_time(suggestion.get("end_seconds")),
+            "category": category,
+            "visual_confidence": _bounded_confidence(
+                suggestion.get("visual_confidence")
+            ),
+            "text_confidence": _bounded_confidence(suggestion.get("text_confidence")),
+            "final_confidence": _bounded_confidence(
+                suggestion.get("final_confidence", confidence_value)
+            ),
+            "evidence_timestamps": _normalized_evidence_timestamps(
+                suggestion.get("evidence_timestamps")
+            ),
+            "needs_review": bool(suggestion.get("needs_review", True)),
+            "review_state": str(suggestion.get("review_state") or "pending"),
+            "tags": f"ai,{category}",
+        }
+    )
+    return normalized
 
 
 def _ai_suggestion_time_value(suggestion: dict, *keys: str) -> str:
@@ -1253,11 +1926,26 @@ def _normalize_hhmmss_millis(value: str) -> str:
     return _format_seconds_to_hhmmss_millis(total_seconds)
 
 
+def _ai_time_to_seconds(value: str) -> float | None:
+    parts = str(value or "").split(":")
+    if len(parts) != 3:
+        return None
+    try:
+        hours = int(parts[0])
+        minutes = int(parts[1])
+        seconds = float(parts[2])
+    except ValueError:
+        return None
+    if hours < 0 or minutes < 0 or minutes > 59 or seconds < 0 or seconds >= 60:
+        return None
+    return hours * 3600 + minutes * 60 + seconds
+
+
 def _format_seconds_to_hhmmss_millis(seconds: float) -> str:
     if not math.isfinite(seconds) or seconds < 0:
         return ""
 
-    total_milliseconds = int(round(seconds * 1000))
+    total_milliseconds = round(seconds * 1000)
     total_seconds = total_milliseconds // 1000
     milliseconds = total_milliseconds % 1000
     hours = total_seconds // 3600
@@ -1285,3 +1973,32 @@ def _normalize_ai_confidence(value) -> str:
     if text == "low":
         return "Low"
     return "Medium"
+
+
+def _bounded_confidence(value) -> float:
+    try:
+        numeric_value = float(value)
+    except (TypeError, ValueError):
+        return 0.0
+    if not math.isfinite(numeric_value):
+        return 0.0
+    return max(0.0, min(1.0, numeric_value))
+
+
+def _finite_confidence_or_time(value) -> float | None:
+    try:
+        numeric_value = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(numeric_value) or numeric_value < 0.0:
+        return None
+    return numeric_value
+
+
+def _normalized_evidence_timestamps(values) -> list[float]:
+    timestamps = []
+    for value in values or []:
+        timestamp = _finite_confidence_or_time(value)
+        if timestamp is not None:
+            timestamps.append(round(timestamp, 3))
+    return sorted(set(timestamps))

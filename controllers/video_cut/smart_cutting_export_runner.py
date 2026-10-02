@@ -21,6 +21,11 @@ class SmartCuttingExportRunner:
         export_mode: str,
         callbacks: CutExportCallbacks,
     ) -> bool:
+        callbacks.on_error("")
+        callbacks.on_warning("")
+        callbacks.on_details("")
+        callbacks.on_output_paths([])
+        callbacks.on_progress_value(0)
         try:
             input_file = Path(input_path)
             if not input_file.is_file():
@@ -50,9 +55,6 @@ class SmartCuttingExportRunner:
         self._callbacks[job_key] = callbacks
         self._output_preferences.remember(resolved_output_dir, str(export_mode or "remove_intervals"))
         callbacks.on_busy(True)
-        callbacks.on_error("")
-        callbacks.on_warning("")
-        callbacks.on_progress_value(0)
         callbacks.on_status("Preparing Smart Cutting export")
 
         worker = self._worker_factory(job_key=job_key, request_data=request_data)
@@ -90,6 +92,7 @@ class SmartCuttingExportRunner:
         callbacks.on_status(message)
         callbacks.on_warning(warning)
         callbacks.on_details(format_cut_details(result_payload))
+        callbacks.on_output_paths([str(path) for path in output_paths])
         callbacks.on_busy(False)
         callbacks.on_finished(message)
 

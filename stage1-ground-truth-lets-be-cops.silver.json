@@ -1,0 +1,120 @@
+{
+  "schema_version": 1,
+  "video": {
+    "filename": "Lets.Be.Cops.2014.720p.BluRay.x264.YIFY.mp4"
+  },
+  "intervals": [
+    {
+      "start": "00:12:55.000",
+      "end": "00:13:28.000",
+      "category": "drugs",
+      "severity": "medium",
+      "notes": "[SILVER/HIGH] Marijuana/joint use. Timestamp anchored to YIFY-synced subtitles; public parental guides confirm marijuana use."
+    },
+    {
+      "start": "00:16:10.000",
+      "end": "00:16:44.000",
+      "category": "sexual_content",
+      "severity": "low",
+      "notes": "[SILVER/MEDIUM] Suggestive sobriety-test/pelvic-thrust sequence; timestamp anchored to YIFY-synced subtitles."
+    },
+    {
+      "start": "00:24:35.000",
+      "end": "00:24:57.000",
+      "category": "sexual_content",
+      "severity": "low",
+      "notes": "[SILVER/MEDIUM] Suggestive stripping/dancing dialogue ('Take it off', dollar bills); timestamp anchored to YIFY-synced subtitles."
+    },
+    {
+      "start": "00:32:51.000",
+      "end": "00:33:25.000",
+      "category": "sexual_content",
+      "severity": "medium",
+      "notes": "[SILVER/HIGH] Kissing/sexualized scene; public parental guides report partial rear nudity/top removal in the romantic sequence. Subtitle timing anchors the kiss and surrounding visual scene."
+    },
+    {
+      "start": "00:38:11.000",
+      "end": "00:38:41.000",
+      "category": "nudity",
+      "severity": "high",
+      "notes": "[SILVER/HIGH] Fully nude male attack with explicit genital/scrotum close-up described by multiple parental guides. The 'Wrecking Ball' subtitle sequence anchors the scene."
+    },
+    {
+      "start": "00:46:10.000",
+      "end": "00:46:31.000",
+      "category": "violence",
+      "severity": "medium",
+      "notes": "[SILVER/MEDIUM] Visual montage/context describing Mossi as violent and prone to fighting; timestamp inferred from synced subtitles and parental-guide violence description."
+    },
+    {
+      "start": "00:50:52.000",
+      "end": "00:52:26.000",
+      "category": "sexual_content",
+      "severity": "medium",
+      "notes": "[SILVER/HIGH] Sexually suggestive woman/apartment sequence including threesome remark and 'bubble bath' innuendo; parental guides describe suggestive poses, cleavage, and lollipop behavior."
+    },
+    {
+      "start": "01:00:51.000",
+      "end": "01:01:05.000",
+      "category": "sexual_content",
+      "severity": "medium",
+      "notes": "[SILVER/HIGH] Explicit sexual dialogue about removing a dress and intercourse; subtitle-anchored. Mainly language rather than necessarily explicit visuals."
+    },
+    {
+      "start": "01:04:55.000",
+      "end": "01:05:42.000",
+      "category": "drugs",
+      "severity": "high",
+      "notes": "[SILVER/HIGH] Character is coerced into smoking crystal meth; subtitles explicitly identify the drug and timing. Public parental guides confirm the sequence."
+    },
+    {
+      "start": "01:07:46.000",
+      "end": "01:08:13.000",
+      "category": "weapons",
+      "severity": "medium",
+      "notes": "[SILVER/HIGH] Large cache of guns/weapons is revealed; timestamp anchored to synced subtitles."
+    },
+    {
+      "start": "01:21:20.000",
+      "end": "01:21:53.000",
+      "category": "graphic_violence",
+      "severity": "high",
+      "notes": "[SILVER/HIGH] Armed attack/shooting during meeting/presentation sequence; parental guides describe a gunman barging into a room and firing."
+    },
+    {
+      "start": "01:23:17.000",
+      "end": "01:23:50.000",
+      "category": "violence",
+      "severity": "high",
+      "notes": "[SILVER/HIGH] Captive is threatened with death/torture; timestamp anchored to synced subtitles."
+    },
+    {
+      "start": "01:25:55.000",
+      "end": "01:26:18.000",
+      "category": "graphic_violence",
+      "severity": "high",
+      "notes": "[SILVER/MEDIUM-HIGH] Pleading followed by violent 'backup plan' event/shooting; timing inferred from subtitle gap, screams, and parental-guide description."
+    },
+    {
+      "start": "01:26:49.000",
+      "end": "01:27:44.000",
+      "category": "graphic_violence",
+      "severity": "high",
+      "notes": "[SILVER/HIGH] Armed confrontation and shots fired; public parental guides describe multiple people shot during the final confrontation."
+    },
+    {
+      "start": "01:29:43.000",
+      "end": "01:30:20.000",
+      "category": "graphic_violence",
+      "severity": "high",
+      "notes": "[SILVER/HIGH] Sustained shootout; subtitles explicitly say 'shoot like crazy' and then report Segars killed."
+    },
+    {
+      "start": "01:31:33.000",
+      "end": "01:33:20.000",
+      "category": "graphic_violence",
+      "severity": "high",
+      "notes": "[SILVER/HIGH] Continued final gunfight with characters being shot; timestamp anchored to synced subtitles and parental-guide final-shootout description."
+    }
+  ]
+}

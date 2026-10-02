@@ -132,7 +132,9 @@ foreach ($moduleName in $pySide6RuntimeModules) {
 
 $pyinstallerArgs += @(
     "--collect-data", "PySide6",
-    "--collect-binaries", "PySide6"
+    "--collect-binaries", "PySide6",
+    "--collect-data", "faster_whisper",
+    "--hidden-import", "transformers.models.qwen2_vl.video_processing_qwen2_vl"
 )
 
 $iconPath = Join-Path $ProjectRoot "assets\icons\app.ico"

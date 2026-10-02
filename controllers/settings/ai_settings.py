@@ -26,6 +26,18 @@ class AISettings:
     def set_batch_size(self, batch_size: int):
         return self._accessor.update(batch_size=batch_size)
 
+    def get_analysis_mode(self) -> str:
+        return self._accessor.reload().ai_analysis_mode
+
+    def set_analysis_mode(self, mode: str):
+        return self._accessor.update(ai_analysis_mode=mode)
+
+    def get_analysis_batch_size(self) -> int:
+        return self._accessor.reload().ai_visual_batch_size
+
+    def set_analysis_batch_size(self, batch_size: int):
+        return self._accessor.update(ai_visual_batch_size=batch_size)
+
     def get_enable_gpu(self) -> bool:
         return self._accessor.reload().enable_gpu
 

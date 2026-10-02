@@ -8,6 +8,13 @@ from pathlib import Path
 from PySide6.QtCore import QCoreApplication, QThreadPool
 
 from controllers.app_controller import AppController
+from services.analysis.model_provisioning import (
+    PRODUCTION_MODELS,
+    ModelReadiness,
+    ProvisioningProgress,
+    ProvisioningState,
+    ReadinessState,
+)
 from services.editing.keyframe_service import KeyframeService
 from services.subtitles.processing_service import SubtitleService
 from workers.worker_signals import WorkerSignals
@@ -110,6 +117,51 @@ class FakeSubtitleWorker:
         self.signals = WorkerSignals()
 
 
+class FakeAnalysisWorker:
+    def __init__(self, job_token, request, cancellation):
+        self.job_token = job_token
+        self.request = request
+        self.input_path = str(request.video_path)
+        self.cancellation = cancellation
+        self.signals = WorkerSignals()
+
+    def cancel(self):
+        self.cancellation.cancel()
+
+
+def model_readiness(state=ReadinessState.READY):
+    return tuple(
+        ModelReadiness(
+            spec=spec,
+            state=state,
+            reason=f"{spec.repo_id}: {state.value}",
+        )
+        for spec in PRODUCTION_MODELS
+    )
+
+
+class FakeModelProvisioner:
+    def __init__(self, readiness=None):
+        self.readiness = readiness or model_readiness()
+        self.check_calls = 0
+
+    def check_all_models(self):
+        self.check_calls += 1
+        return self.readiness
+
+
+class FakeModelProvisioningWorker:
+    def __init__(self, job_token, operation, cancellation, provisioner):
+        self.job_token = job_token
+        self.operation = operation
+        self.cancellation = cancellation
+        self.provisioner = provisioner
+        self.signals = WorkerSignals()
+
+    def cancel(self):
+        self.cancellation.cancel()
+
+
 class FakeSettingsService:
     def __init__(self, last_video=None):
         self.last_video = last_video
@@ -168,6 +220,7 @@ class AppControllerTests(unittest.TestCase):
     def setUp(self):
         self.thread_pool = FakeThreadPool()
         self.settings_service = FakeSettingsService()
+        self.model_provisioner = FakeModelProvisioner()
         self.controller = AppController(
             video_import_service=FakeVideoImportService(),
             thread_pool=self.thread_pool,
@@ -176,10 +229,16 @@ class AppControllerTests(unittest.TestCase):
             settings_service=self.settings_service,
             keyframe_worker_factory=FakeKeyframeWorker,
             subtitle_worker_factory=FakeSubtitleWorker,
+            analysis_worker_factory=FakeAnalysisWorker,
+            model_provisioner=self.model_provisioner,
+            model_provisioning_worker_factory=FakeModelProvisioningWorker,
         )
 
     def _workers_of_type(self, worker_type):
         return [worker for worker in self.thread_pool.workers if isinstance(worker, worker_type)]
+
+    def _model_workers(self):
+        return self._workers_of_type(FakeModelProvisioningWorker)
 
     def test_controller_configures_default_thread_limit(self):
         self.assertEqual(self.thread_pool.max_thread_count, AppController.DEFAULT_MAX_THREAD_COUNT)
@@ -196,6 +255,141 @@ class AppControllerTests(unittest.TestCase):
         )
 
         self.assertEqual(thread_pool.max_thread_count, 4)
+
+    def test_ai_model_readiness_check_maps_ready_state(self):
+        self.assertTrue(self.controller.refreshAiModelStatus())
+        worker = self._model_workers()[-1]
+
+        worker.signals.finished.emit(worker.job_token, model_readiness())
+
+        self.assertTrue(self.controller.aiModelsReady)
+        self.assertEqual(self.controller.aiModelSetupState, "ready")
+        self.assertEqual(self.controller.aiModelSetupProgress, 3)
+
+    def test_ai_model_readiness_check_maps_unready_states_to_required(self):
+        for state in (
+            ReadinessState.MISSING,
+            ReadinessState.INCOMPLETE,
+            ReadinessState.INVALID,
+        ):
+            with self.subTest(state=state):
+                self.assertTrue(self.controller.refreshAiModelStatus())
+                worker = self._model_workers()[-1]
+                worker.signals.finished.emit(worker.job_token, model_readiness(state))
+                self.assertFalse(self.controller.aiModelsReady)
+                self.assertEqual(self.controller.aiModelSetupState, "required")
+                self.assertIn(state.value, self.controller.aiModelSetupStatus)
+
+    def test_ai_model_provisioning_prevents_duplicate_workers(self):
+        self.assertTrue(self.controller.downloadAiModels())
+
+        self.assertFalse(self.controller.downloadAiModels())
+        self.assertFalse(self.controller.refreshAiModelStatus())
+        self.assertEqual(len(self._model_workers()), 1)
+
+    def test_ai_model_progress_maps_component_and_component_count(self):
+        self.assertTrue(self.controller.downloadAiModels())
+        worker = self._model_workers()[-1]
+        event = ProvisioningProgress(
+            component=PRODUCTION_MODELS[1].component,
+            state=ProvisioningState.VALIDATING,
+            message="Validating visual review model",
+            completed_components=1,
+            total_components=3,
+            overall_fraction=1 / 3,
+        )
+
+        worker.signals.modelProvisioningEvent.emit(worker.job_token, event)
+
+        self.assertEqual(self.controller.aiModelSetupState, "downloading")
+        self.assertEqual(self.controller.aiModelSetupComponent, "Visual review")
+        self.assertEqual(self.controller.aiModelSetupProgress, 1)
+        self.assertEqual(self.controller.aiModelSetupTotal, 3)
+        self.assertEqual(
+            self.controller.aiModelSetupStatus,
+            "Validating visual review model",
+        )
+
+    def test_ai_model_success_revalidates_without_starting_analysis(self):
+        self.assertTrue(self.controller.downloadAiModels())
+        worker = self._model_workers()[-1]
+        analysis_count = len(self._workers_of_type(FakeAnalysisWorker))
+
+        worker.signals.finished.emit(worker.job_token, model_readiness())
+
+        self.assertTrue(self.controller.aiModelsReady)
+        self.assertEqual(self.controller.aiModelSetupState, "ready")
+        self.assertEqual(len(self._workers_of_type(FakeAnalysisWorker)), analysis_count)
+
+    def test_ai_model_download_error_allows_retry_with_new_worker(self):
+        self.assertTrue(self.controller.downloadAiModels())
+        first_worker = self._model_workers()[-1]
+        first_worker.signals.error.emit(first_worker.job_token, "network unavailable")
+
+        self.assertEqual(self.controller.aiModelSetupState, "error")
+        self.assertIn("network unavailable", self.controller.aiModelSetupError)
+        self.assertTrue(self.controller.retryAiModelDownload())
+        second_worker = self._model_workers()[-1]
+        self.assertNotEqual(first_worker.job_token, second_worker.job_token)
+        self.assertEqual(self.controller.aiModelSetupState, "downloading")
+
+    def test_ai_model_cancellation_waits_for_worker_confirmation(self):
+        self.assertTrue(self.controller.downloadAiModels())
+        worker = self._model_workers()[-1]
+
+        self.assertTrue(self.controller.cancelAiModelDownload())
+        self.assertTrue(worker.cancellation.is_cancelled)
+        self.assertEqual(self.controller.aiModelSetupState, "cancelling")
+
+        worker.signals.cancelled.emit(worker.job_token, "cancelled between components")
+
+        self.assertFalse(self.controller.aiModelsReady)
+        self.assertEqual(self.controller.aiModelSetupState, "cancelled")
+        self.assertIn("kept", self.controller.aiModelSetupStatus)
+
+    def test_late_finished_after_ai_model_cancellation_cannot_publish_ready(self):
+        self.assertTrue(self.controller.downloadAiModels())
+        worker = self._model_workers()[-1]
+        self.assertTrue(self.controller.cancelAiModelDownload())
+
+        worker.signals.finished.emit(worker.job_token, model_readiness())
+
+        self.assertFalse(self.controller.aiModelsReady)
+        self.assertEqual(self.controller.aiModelSetupState, "cancelled")
+
+    def test_stale_ai_model_callbacks_do_not_corrupt_new_attempt(self):
+        self.assertTrue(self.controller.downloadAiModels())
+        first_worker = self._model_workers()[-1]
+        first_worker.signals.error.emit(first_worker.job_token, "first failed")
+        self.assertTrue(self.controller.retryAiModelDownload())
+        second_worker = self._model_workers()[-1]
+
+        self.controller._on_ai_model_setup_finished(
+            first_worker.job_token,
+            model_readiness(),
+        )
+
+        self.assertEqual(self.controller.aiModelSetupState, "downloading")
+        self.assertFalse(self.controller.aiModelsReady)
+        self.assertNotEqual(first_worker.job_token, second_worker.job_token)
+
+    def test_analysis_is_blocked_when_production_models_are_not_ready(self):
+        self.model_provisioner.readiness = model_readiness(ReadinessState.MISSING)
+        self.controller.loadVideoFile("/tmp/a.mp4")
+
+        self.assertFalse(self.controller.analyzeVideo())
+        self.assertEqual(self.controller.aiModelSetupState, "required")
+        self.assertFalse(self.controller.aiModelsReady)
+        self.assertEqual(self._workers_of_type(FakeAnalysisWorker), [])
+
+    def test_analysis_proceeds_when_production_models_are_ready(self):
+        self.controller.loadVideoFile("/tmp/a.mp4")
+
+        self.assertTrue(self.controller.analyzeVideo())
+
+        self.assertTrue(self.controller.aiModelsReady)
+        self.assertEqual(self.controller.aiModelSetupState, "ready")
+        self.assertEqual(len(self._workers_of_type(FakeAnalysisWorker)), 1)
 
     def test_ai_suggestions_normalize_formatted_times(self):
         self.controller.setAiSuggestions(
@@ -244,6 +438,131 @@ class AppControllerTests(unittest.TestCase):
                 }
             ],
         )
+
+    def test_video_analysis_reports_progress_cancels_and_stays_review_only(self):
+        self.controller.loadVideoFile("/tmp/a.mp4")
+
+        started = self.controller.analyzeVideo()
+        worker = self._workers_of_type(FakeAnalysisWorker)[0]
+        worker.signals.progress.emit(worker.job_token, 47, "Reviewing visual batches")
+        worker.signals.analysisEvent.emit(
+            worker.job_token,
+            {
+                "stage": "vlm_review",
+                "overall_percent": 47,
+                "candidate_count": 3,
+                "completed_units": 1,
+                "total_units": 4,
+                "device": "GPU bitsandbytes-nf4",
+            },
+        )
+
+        self.assertTrue(started)
+        self.assertEqual(self.controller.aiAnalysisState, "running")
+        self.assertEqual(self.controller.aiAnalysisProgress, 47)
+        self.assertEqual(self.controller.aiAnalysisStatus, "Reviewing visual batches")
+        self.assertEqual(self.controller.aiAnalysisDetails["candidate_count"], 3)
+        self.assertEqual(self.controller.aiAnalysisDetails["device"], "GPU bitsandbytes-nf4")
+        self.assertEqual(worker.request.video_path, Path("/tmp/a.mp4"))
+
+        cancelled = self.controller.cancelVideoAnalysis()
+
+        self.assertTrue(cancelled)
+        self.assertTrue(worker.cancellation.is_cancelled)
+        self.assertEqual(self.controller.aiAnalysisState, "cancelling")
+
+    def test_completed_analysis_publishes_pending_editable_suggestions(self):
+        self.controller.loadVideoFile("/tmp/a.mp4")
+        self.assertTrue(self.controller.analyzeVideo())
+        worker = self._workers_of_type(FakeAnalysisWorker)[0]
+
+        worker.signals.finished.emit(
+            worker.job_token,
+            {
+                "status": "completed",
+                "suggestions": [
+                    {
+                        "id": "suggestion-1",
+                        "start_seconds": 12.25,
+                        "end_seconds": 18.5,
+                        "category": "sexual_context",
+                        "visual_confidence": 0.82,
+                        "text_confidence": 0.21,
+                        "final_confidence": 0.86,
+                        "evidence_timestamps": [12.5, 17.75],
+                        "reason": "Visual context requiring manual review",
+                        "needs_review": True,
+                    }
+                ],
+            },
+        )
+
+        self.assertEqual(self.controller.aiAnalysisState, "ready")
+        self.assertEqual(self.controller.aiAnalysisProgress, 100)
+        self.assertEqual(len(self.controller.aiSuggestions), 1)
+        suggestion = self.controller.aiSuggestions[0]
+        self.assertEqual(suggestion["id"], "suggestion-1")
+        self.assertEqual(suggestion["category"], "sexual_context")
+        self.assertEqual(suggestion["review_state"], "pending")
+        self.assertTrue(suggestion["needs_review"])
+
+        self.assertTrue(
+            self.controller.reviewAiSuggestionWithEdits(
+                "suggestion-1",
+                "accepted",
+                "00:00:13.000",
+                "00:00:19.250",
+                "Edited review reason",
+            )
+        )
+        reviewed = self.controller.aiSuggestions[0]
+        self.assertEqual(reviewed["review_state"], "accepted")
+        self.assertEqual(reviewed["start"], "00:00:13.000")
+        self.assertEqual(reviewed["end"], "00:00:19.250")
+        self.assertEqual(reviewed["start_seconds"], 13.0)
+        self.assertEqual(reviewed["end_seconds"], 19.25)
+        self.assertEqual(reviewed["reason"], "Edited review reason")
+
+    def test_loading_new_video_clears_ai_review_state(self):
+        self.controller.loadVideoFile("/tmp/a.mp4")
+        self.controller.setAiSuggestions(
+            [
+                {
+                    "id": "suggestion-1",
+                    "start": "00:00:12",
+                    "end": "00:00:18",
+                    "confidence": "high",
+                    "reason": "scene candidate",
+                }
+            ]
+        )
+        self.assertTrue(self.controller.reviewAiSuggestion("suggestion-1", "accepted"))
+        self.assertEqual(self.controller.aiSuggestions[0]["review_state"], "accepted")
+
+        self.controller.loadVideoFile("/tmp/b.mkv")
+
+        self.assertEqual(self.controller.selectedVideoPath, "/tmp/b.mkv")
+        self.assertEqual(self.controller.aiSuggestions, [])
+        self.assertEqual(self.controller.aiAnalysisState, "idle")
+
+    def test_analysis_thread_pool_failure_returns_controller_to_error_state(self):
+        class FailingThreadPool(FakeThreadPool):
+            def start(self, _worker):
+                raise RuntimeError("thread pool unavailable")
+
+        controller = AppController(
+            video_import_service=FakeVideoImportService(),
+            thread_pool=FailingThreadPool(),
+            settings_service=FakeSettingsService(),
+            analysis_worker_factory=FakeAnalysisWorker,
+            model_provisioner=FakeModelProvisioner(),
+            model_provisioning_worker_factory=FakeModelProvisioningWorker,
+        )
+        controller._state.selected_video_path = "/tmp/a.mp4"
+
+        self.assertFalse(controller.analyzeVideo())
+        self.assertEqual(controller.aiAnalysisState, "error")
+        self.assertIn("thread pool unavailable", controller.aiAnalysisError)
 
     def test_load_folder_populates_available_videos(self):
         self.controller.loadFolder("folder")

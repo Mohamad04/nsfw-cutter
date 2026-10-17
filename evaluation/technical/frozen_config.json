@@ -1,0 +1,19 @@
+{
+  "settings": {
+    "settings_version": 2, "analysis_mode": "balanced", "sampling_profile_revision": 1,
+    "provider": "local_qwen", "model_id": "Qwen/Qwen2.5-VL-3B-Instruct",
+    "model_revision": "66285546d2b821cf421d4f5eb2576359d3770cd3", "quantization_mode": "auto",
+    "whisper_model_id": "Systran/faster-whisper-small", "whisper_model_revision": "536b0662742c02347bc0e980a01041f333bce120",
+    "use_gpu": true, "sample_rate_fps": null, "dense_sample_rate_fps": null, "scene_threshold": 0.35,
+    "batch_size": 8, "prefilter_model_id": "Marqo/nsfw-image-detection-384",
+    "prefilter_model_revision": "0c26ec22111b83f106d72a55f611ec35962bcb65",
+    "prefilter_batch_size": 32, "prefilter_candidate_threshold": 0.15, "prefilter_strong_threshold": 0.45,
+    "candidate_gap_seconds": 5.0, "candidate_padding_seconds": 5.0, "max_candidate_window_seconds": 30.0,
+    "visual_confidence_threshold": 0.5, "text_confidence_threshold": 0.35, "merge_gap_seconds": 1.5,
+    "context_padding_seconds": 0.75, "max_new_tokens": 192, "repair_max_new_tokens": 128,
+    "batch_timeout_seconds": 75.0, "prompt_schema_revision": 3
+  },
+  "resolved_coarse_sample_rate_fps": 0.2, "resolved_dense_sample_rate_fps": 1.0, "resolved_marqo_gate": 0.15,
+  "effective_max_new_tokens": 192, "effective_repair_max_new_tokens": 128,
+  "selected_subtitle": null, "text_policy": "production audio/Whisper fallback", "force_reanalysis": true
+}

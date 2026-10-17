@@ -298,6 +298,13 @@ def fake_pipeline_factory(outcomes, references, observed=True):
                 outcome = outcomes.get(batch.batch_id, "complete")
                 if outcome == "fail":
                     raise VLMStructuredOutputError("synthetic invalid", raw_output="DO NOT RETAIN")
+                if outcome == "invalid_frame_indices":
+                    from services.analysis.providers.qwen import _validate_wire_output
+                    _validate_wire_output(json.dumps({"suggestions": [{
+                        "category": "nudity", "confidence": 0.9,
+                        "first_frame": 16, "last_frame": 19, "evidence_frames": [16, 19],
+                        "reason": "DO NOT RETAIN",
+                    }]}), batch)
                 if outcome == "unavailable":
                     raise VLMProviderUnavailableError("synthetic unavailable")
                 if outcome == "cancel":
@@ -362,6 +369,33 @@ def test_unprocessed_batches_and_cancellation(tmp_path):
     _, _, summary, _ = synthetic_attempt(tmp_path, {"b0": "cancel"})
     assert summary["status"] == "cancelled"
     assert summary["reliability"]["cancelled_batches"] == 1
+
+
+def test_invalid_frame_indices_preserve_partial_record_and_private_checkpoint(tmp_path):
+    _, directory, summary, _ = synthetic_attempt(
+        tmp_path, {"b0": "positive", "b1": "invalid_frame_indices"})
+    assert summary["status"] == "partial"
+    assert summary["reliability"]["completed_batches"] == 1
+    assert summary["reliability"]["failed_batches"] == 1
+    assert summary["reliability"]["invalid_responses"] == 1
+    record = AnalysisRecord.model_validate_json((directory / "record.json").read_text(encoding="utf-8"))
+    assert record.status == AnalysisStatus.PARTIAL
+    assert len(record.visual_evidence) == 1
+    assert len(record.suggestions) == 1
+    assert record.errors
+    checkpoints = [json.loads(p.read_text(encoding="utf-8"))
+                   for p in (directory / "cache/checkpoints").rglob("*.json")]
+    failed = next(c for c in checkpoints if c["status"] == "failed")
+    assert failed["response"] is None
+    assert failed["raw_output"] is None
+    assert failed["repaired_output"] is None
+    observations = [json.loads(line) for line in (directory / "observations.jsonl").read_text(
+        encoding="utf-8").splitlines()]
+    failure = next(o for o in observations if o["kind"] == "batch_finished" and o["status"] == "failed")
+    assert failure["error_type"] == "VLMStructuredOutputError"
+    assert failure["invalid"] is True
+    for path in directory.rglob("*.json*"):
+        assert "DO NOT RETAIN" not in path.read_text(encoding="utf-8")
 
 
 def test_cache_isolation_record_preservation_and_no_overwrite(tmp_path):

@@ -113,7 +113,8 @@ class AnalysisSettings(BaseModel):
     max_new_tokens: int = Field(default=192, ge=96, le=384)
     repair_max_new_tokens: int = Field(default=128, ge=64, le=192)
     batch_timeout_seconds: float = Field(default=75.0, ge=5.0, le=600.0)
-    prompt_schema_revision: int = Field(default=2, ge=1)
+    # Revision 3 constrains local frame IDs with numeric enums in both passes.
+    prompt_schema_revision: int = Field(default=3, ge=1)
 
     @field_validator(
         "model_id",

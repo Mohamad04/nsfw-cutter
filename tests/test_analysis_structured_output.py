@@ -1,9 +1,13 @@
 import json
+import os
 import string
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
+from services.analysis.cache import AnalysisCache
 from services.analysis.cancellation import CancellationToken
 from services.analysis.contracts import (
     AnalysisSettings,
@@ -19,10 +23,12 @@ from services.analysis.providers.qwen import (
     _build_schema_prefix_allowed_tokens_fn,
     _generation_stopping_criteria,
     _messages_for_batch,
+    _GenerationAttempt,
     _validate_wire_output,
     _wire_response_to_review,
     _wire_schema_for_batch,
 )
+from services.analysis.visual_sampling import _build_batches
 
 
 def _batch(*, contact_sheet: bool = False) -> VisualBatch:
@@ -57,6 +63,143 @@ def _wire_payload(**changes) -> dict:
     }
     item.update(changes)
     return {"suggestions": [item]}
+
+
+def _three_batches():
+    # No files are opened: omit contact_sheet_dir to exercise production batching.
+    frames = [SampledFrame(timestamp_seconds=float(t), path=Path(f"synthetic-{t}.jpg"),
+                           source="refined") for t in range(20)]
+    return _build_batches(frames, 8, 22.4)
+
+
+def _filter_accepts(tokenizer, tokenizer_data, schema, payload):
+    allowed = _build_schema_prefix_allowed_tokens_fn(
+        tokenizer_data, schema, initial_prompt_length=3)
+    sequence = [-1, -2, -3]  # Prompt tokens must be excluded from JSON filtering.
+    target = json.dumps(payload, separators=(",", ":"))
+    for token in tokenizer.encode(target, add_special_tokens=False):
+        if token not in allowed(0, sequence):
+            return False
+        sequence.append(token)
+    return tokenizer.eos_token_id in allowed(0, sequence)
+
+
+@pytest.fixture(scope="module", params=["character", "local_qwen"])
+def constrained_tokenizer(request):
+    if request.param == "character":
+        tokenizer = _CharacterTokenizer()
+    else:
+        snapshot = os.environ.get("NSFW_CUTTER_TEST_QWEN_TOKENIZER")
+        if not snapshot:
+            pytest.skip("Set NSFW_CUTTER_TEST_QWEN_TOKENIZER to a local pinned Qwen snapshot")
+        path = Path(snapshot)
+        assert path.is_dir(), "Explicit tokenizer snapshot must exist; never download"
+        from transformers import AutoTokenizer
+        # Only tokenizer files: no processor, model weights, network or generation.
+        tokenizer = AutoTokenizer.from_pretrained(
+            str(path.resolve()), local_files_only=True, trust_remote_code=False)
+    return tokenizer, _build_lmfe_tokenizer_data(tokenizer)
+
+
+@pytest.mark.parametrize("batch_index", [0, 1, 2])
+def test_local_indices_restart_and_map_to_each_batch(batch_index):
+    batches = _three_batches()
+    assert [len(b.frames) for b in batches] == [8, 8, 4]
+    batch = batches[batch_index]
+    count = len(batch.frames)
+    schema = _wire_schema_for_batch(batch)
+    properties = schema["$defs"]["VLMWireSuggestion"]["properties"]
+    for field in (properties["first_frame"], properties["last_frame"],
+                  properties["evidence_frames"]["items"]):
+        assert field["enum"] == list(range(1, count + 1))
+    prompt = _messages_for_batch(batch)[0]["content"][-1]["text"]
+    for index, frame in enumerate(batch.frames, 1):
+        assert f"frame {index}={frame.timestamp_seconds:.3f}s" in prompt
+    wire = _validate_wire_output(json.dumps(_wire_payload(
+        last_frame=count, evidence_frames=list(range(1, count + 1)))), batch)
+    item = _wire_response_to_review(wire, batch).suggestions[0]
+    assert item.evidence_timestamps == [f.timestamp_seconds for f in batch.frames]
+    assert (item.start_seconds, item.end_seconds) == (batch.start_seconds, batch.end_seconds)
+
+
+@pytest.mark.parametrize("batch_index", [0, 1, 2])
+def test_real_filter_accepts_every_local_index_and_empty(constrained_tokenizer, batch_index):
+    tokenizer, data = constrained_tokenizer
+    batch = _three_batches()[batch_index]
+    schema = _wire_schema_for_batch(batch)
+    for index in range(1, len(batch.frames) + 1):
+        payload = _wire_payload(first_frame=index, last_frame=index, evidence_frames=[index])
+        assert _filter_accepts(tokenizer, data, schema, payload)
+        _validate_wire_output(json.dumps(payload), batch)
+    assert _filter_accepts(tokenizer, data, schema, {"suggestions": []})
+    assert not _validate_wire_output('{"suggestions":[]}', batch).suggestions
+
+
+@pytest.mark.parametrize("field", ["first_frame", "last_frame", "evidence_frames"])
+@pytest.mark.parametrize("invalid", [0, 5, 8, 16, 19])
+def test_real_filter_and_validator_reject_invalid_local_indices(constrained_tokenizer, field, invalid):
+    tokenizer, data = constrained_tokenizer
+    batch = _three_batches()[2]
+    payload = _wire_payload(last_frame=4, evidence_frames=[1, 4])
+    payload["suggestions"][0][field] = [invalid] if field == "evidence_frames" else invalid
+    assert not _filter_accepts(tokenizer, data, _wire_schema_for_batch(batch), payload)
+    with pytest.raises(VLMStructuredOutputError):
+        _validate_wire_output(json.dumps(payload), batch)
+
+
+def test_schema_revision_invalidates_record_and_batch_cache_keys():
+    current = AnalysisSettings()
+    old = AnalysisSettings(prompt_schema_revision=2)
+    assert current.prompt_schema_revision == 3
+    assert {k: v for k, v in current.model_dump().items() if k != "prompt_schema_revision"} == {
+        k: v for k, v in old.model_dump().items() if k != "prompt_schema_revision"}
+    old_key = AnalysisCache.make_key("sha256:synthetic", old)
+    new_key = AnalysisCache.make_key("sha256:synthetic", current)
+    assert old_key != new_key
+    batch = _three_batches()[2]
+    assert AnalysisCache.make_batch_key(old_key, batch, old, prompt_schema_version="2") != (
+        AnalysisCache.make_batch_key(new_key, batch, current, prompt_schema_version="3"))
+
+
+@pytest.mark.parametrize("repair_valid", [True, False])
+def test_initial_and_repair_share_enum_constraints_and_keep_errors(constrained_tokenizer, repair_valid):
+    tokenizer, data = constrained_tokenizer
+    batch = _three_batches()[2]
+    invalid = _wire_payload(first_frame=16, last_frame=19, evidence_frames=[16, 19])
+    valid = _wire_payload(first_frame=1, last_frame=4, evidence_frames=[1, 4])
+    raw_output = json.dumps(invalid)
+    repaired_output = json.dumps(valid if repair_valid else invalid)
+    provider = LocalQwenVLProvider(model_cache_dir=Path("unused-model-cache"))
+    # Mock only model execution and input preparation; run production review,
+    # schema construction, repair dispatch, validation and conversion unchanged.
+    with (
+        patch.object(provider, "_ensure_loaded"),
+        patch.object(provider, "_prepare_visual_inputs", return_value=object()),
+        patch.object(provider, "_prepare_repair_inputs", return_value=object()) as prepare_repair,
+        patch.object(provider, "_generate", side_effect=[
+            _GenerationAttempt(raw_output, 1, "completed"),
+            _GenerationAttempt(repaired_output, 1, "completed"),
+        ]) as generate,
+    ):
+        if repair_valid:
+            result = provider.review_batch(batch, AnalysisSettings(), CancellationToken())
+            assert result.repaired
+            assert result.response.suggestions[0].evidence_timestamps == [16.0, 19.0]
+        else:
+            with pytest.raises(VLMStructuredOutputError) as error:
+                provider.review_batch(batch, AnalysisSettings(), CancellationToken())
+            assert error.value.raw_output == raw_output
+            assert error.value.repaired_output == repaired_output
+            assert isinstance(error.value.__cause__, VLMStructuredOutputError)
+        prepare_repair.assert_called_once_with(raw_output)
+        assert generate.call_count == 2
+        initial_schema = generate.call_args_list[0].kwargs["wire_schema"]
+        repair_schema = generate.call_args_list[1].kwargs["wire_schema"]
+        assert initial_schema is repair_schema
+        for schema in (initial_schema, repair_schema):
+            assert not _filter_accepts(tokenizer, data, schema, invalid)
+            assert _filter_accepts(tokenizer, data, schema, valid)
+            assert _filter_accepts(tokenizer, data, schema, {"suggestions": []})
 
 
 class _CharacterTokenizer:

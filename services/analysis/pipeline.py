@@ -202,6 +202,10 @@ def gather_text_evidence_node(state: AnalysisState, services: AnalysisServices) 
             state["request"].settings,
             state["cancellation"],
             _stage_progress(state, AnalysisStage.TEXT_EVIDENCE),
+            has_audio=any(
+                stream.get("codec_type") == "audio"
+                for stream in state["preflight"].media.streams
+            ),
         )
         warnings = [*state.get("warnings", []), *output.warnings]
         _finish_trace(

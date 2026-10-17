@@ -1,0 +1,91 @@
+{
+  "schema_version": 1,
+  "dataset_id": "six_clip_pilot",
+  "synthetic": false,
+  "clips": [
+    {
+      "clip_id": "pilot_01",
+      "source_video_id": null,
+      "file_path": null,
+      "source_offset_seconds": null,
+      "split": "tuning",
+      "duration_seconds": null,
+      "sha256": null,
+      "media_metadata": {},
+      "annotation_version": "1",
+      "exhaustive": false,
+      "events": [],
+      "excluded_intervals": []
+    },
+    {
+      "clip_id": "pilot_02",
+      "source_video_id": null,
+      "file_path": null,
+      "source_offset_seconds": null,
+      "split": "tuning",
+      "duration_seconds": null,
+      "sha256": null,
+      "media_metadata": {},
+      "annotation_version": "1",
+      "exhaustive": false,
+      "events": [],
+      "excluded_intervals": []
+    },
+    {
+      "clip_id": "pilot_03",
+      "source_video_id": null,
+      "file_path": null,
+      "source_offset_seconds": null,
+      "split": "tuning",
+      "duration_seconds": null,
+      "sha256": null,
+      "media_metadata": {},
+      "annotation_version": "1",
+      "exhaustive": false,
+      "events": [],
+      "excluded_intervals": []
+    },
+    {
+      "clip_id": "pilot_04",
+      "source_video_id": null,
+      "file_path": null,
+      "source_offset_seconds": null,
+      "split": "tuning",
+      "duration_seconds": null,
+      "sha256": null,
+      "media_metadata": {},
+      "annotation_version": "1",
+      "exhaustive": false,
+      "events": [],
+      "excluded_intervals": []
+    },
+    {
+      "clip_id": "pilot_05",
+      "source_video_id": null,
+      "file_path": null,
+      "source_offset_seconds": null,
+      "split": "tuning",
+      "duration_seconds": null,
+      "sha256": null,
+      "media_metadata": {},
+      "annotation_version": "1",
+      "exhaustive": false,
+      "events": [],
+      "excluded_intervals": []
+    },
+    {
+      "clip_id": "pilot_06",
+      "source_video_id": null,
+      "file_path": null,
+      "source_offset_seconds": null,
+      "split": "tuning",
+      "duration_seconds": null,
+      "sha256": null,
+      "media_metadata": {},
+      "annotation_version": "1",
+      "exhaustive": false,
+      "events": [],
+      "excluded_intervals": []
+    }
+  ]
+}

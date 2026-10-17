@@ -1,6 +1,8 @@
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import Mock
 
 from services.analysis.cache import AnalysisCache
 from services.analysis.cancellation import AnalysisCancelled, CancellationToken
@@ -23,6 +25,7 @@ from services.analysis.pipeline import (
     _invoke_fixed_sequence,
 )
 from services.analysis.providers.base import VLMProviderUnavailableError
+from services.analysis.text_evidence import TextEvidenceService
 
 _FINGERPRINT = f"sha256:{'a' * 64}"
 
@@ -43,8 +46,9 @@ class _NoopTracer:
 
 
 class _FakePreflight:
-    def __init__(self, cache):
+    def __init__(self, cache, has_audio=False):
         self.cache = cache
+        self.has_audio = has_audio
 
     def run(
         self,
@@ -62,7 +66,8 @@ class _FakePreflight:
                 duration_seconds=8.0,
                 fps=24.0,
                 format_name="mock",
-                streams=[{"codec_type": "video", "codec_name": "mock"}],
+                streams=[{"codec_type": "video", "codec_name": "mock"}]
+                + ([{"codec_type": "audio", "codec_name": "mock"}] if self.has_audio else []),
             ),
             cache_key=self.cache.make_key(_FINGERPRINT, settings),
         )
@@ -78,6 +83,8 @@ class _CancellingTextEvidence:
         _settings,
         cancellation,
         _progress_callback=None,
+        *,
+        has_audio=True,
     ):
         cancellation.cancel()
         cancellation.raise_if_cancelled()
@@ -92,6 +99,8 @@ class _EmptyTextEvidence:
         _settings,
         cancellation,
         _progress_callback=None,
+        *,
+        has_audio=True,
     ):
         cancellation.raise_if_cancelled()
         return TextEvidenceOutput()
@@ -216,6 +225,56 @@ class CancellationTokenTests(unittest.TestCase):
 
 
 class AnalysisPipelineFailureTests(unittest.TestCase):
+    def test_text_availability_and_failures_preserve_visual_suggestions(self):
+        # Simulate the old unconditional extraction as the reference. Both graph
+        # orchestration paths use the real text service, fusion and persistence.
+        for pipeline_type in (_FixedSequencePipeline, AnalysisPipeline):
+            reference = None
+            for scenario in ("before_fix", "silent", "audio", "extraction_failure", "transcription_failure"):
+                with self.subTest(pipeline=pipeline_type.__name__, scenario=scenario), tempfile.TemporaryDirectory() as tmp:
+                    cache = AnalysisCache(tmp)
+                    runner, transcriber = Mock(), Mock()
+                    transcriber.transcribe.return_value = ([], [])
+                    if scenario in ("before_fix", "extraction_failure"):
+                        runner.run.side_effect = RuntimeError("synthetic extraction failure")
+                    if scenario == "transcription_failure":
+                        transcriber.transcribe.side_effect = RuntimeError("synthetic transcription failure")
+                    text = TextEvidenceService(ffmpeg_service=SimpleNamespace(ffmpeg_path="ffmpeg"),
+                                               process_runner=runner, transcriber=transcriber)
+                    if scenario == "before_fix":
+                        gather = text.gather
+                        text.gather = lambda *args, **kwargs: gather(*args, has_audio=True)
+                    provider = Mock()
+                    provider.warnings = []
+                    provider.review_batch.return_value = VLMReviewResponse(suggestions=[
+                        VLMReviewItem(category=NSFWCategory.NUDITY, confidence=0.9,
+                                      start_seconds=4.0, end_seconds=5.0,
+                                      evidence_timestamps=[4.5], reason="synthetic visual event",
+                                      needs_review=True)])
+                    services = AnalysisServices(cache=cache,
+                        preflight=_FakePreflight(cache, has_audio=scenario not in ("before_fix", "silent")),
+                        text_evidence=text, visual_sampling=_TwoBatchSampling(),
+                        provider=provider, tracer=_NoopTracer())
+                    record = pipeline_type(services).run(AnalysisRunRequest(
+                        video_path=Path(tmp) / "synthetic.mp4", settings=AnalysisSettings(use_gpu=False),
+                        force_reanalysis=True))
+                    failed = scenario in ("before_fix", "extraction_failure", "transcription_failure")
+                    self.assertEqual(record.status, AnalysisStatus.PARTIAL if failed else AnalysisStatus.COMPLETED)
+                    self.assertEqual(len(record.errors), 1 if failed else 0)
+                    self.assertEqual(record.metrics["completed_batches"], 2)
+                    self.assertTrue(record.suggestions)
+                    suggestions = [s.model_dump(mode="json") for s in record.suggestions]
+                    if reference is None:
+                        reference = suggestions
+                    self.assertEqual(suggestions, reference)
+                    self.assertEqual(record.text_evidence, [])
+                    if scenario == "silent":
+                        runner.run.assert_not_called()
+                        transcriber.transcribe.assert_not_called()
+                        self.assertIn("not applicable", record.warnings[0])
+                    else:
+                        runner.run.assert_called_once()
+
     def test_cooperative_cancellation_returns_and_persists_cancelled_record(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             cache = AnalysisCache(temp_dir)

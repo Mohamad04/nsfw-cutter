@@ -423,6 +423,51 @@ Item {
             }
 
             Rectangle {
+                id: videoLoadingBanner
+                objectName: "videoLoadingBanner"
+
+                Layout.fillWidth: true
+                Layout.preferredHeight: visible ? videoLoadingRow.implicitHeight + 16 : 0
+                visible: appController.videoLoading
+                radius: 10
+                color: root.surface
+                border.color: root.borderColor
+
+                RowLayout {
+                    id: videoLoadingRow
+
+                    anchors.fill: parent
+                    anchors.margins: 8
+                    anchors.leftMargin: 14
+                    spacing: 12
+
+                    BusyIndicator {
+                        running: videoLoadingBanner.visible
+                        Layout.preferredWidth: 24
+                        Layout.preferredHeight: 24
+                    }
+
+                    Text {
+                        objectName: "videoLoadingText"
+                        Layout.fillWidth: true
+                        text: qsTr("Checking %1…").arg(appController.videoLoadingName)
+                        elide: Text.ElideMiddle
+                        color: root.textMain
+                        font.pixelSize: 13
+                    }
+
+                    AppButton {
+                        objectName: "cancelVideoLoadButton"
+                        text: qsTr("Cancel")
+                        variant: "ghost"
+                        size: "sm"
+                        lightMode: root.lightMode
+                        onClicked: appController.cancelVideoLoad()
+                    }
+                }
+            }
+
+            Rectangle {
                 id: videoLoadErrorBanner
                 objectName: "videoLoadErrorBanner"
 

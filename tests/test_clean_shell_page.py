@@ -21,11 +21,14 @@ class FakeAppController(QObject):
     aiModelSetupErrorChanged = Signal()
     aiModelSetupComponentChanged = Signal()
     videoLoadErrorChanged = Signal()
+    videoLoadingChanged = Signal()
 
     def __init__(self):
         super().__init__()
         self._selected_video_path = ""
         self._video_load_error = ""
+        self._video_loading_name = ""
+        self.video_load_cancellations = 0
         self._ai_models_ready = True
         self._ai_model_setup_state = "ready"
         self._ai_model_setup_progress = 3
@@ -65,6 +68,23 @@ class FakeAppController(QObject):
     @Slot()
     def dismissVideoLoadError(self):
         self.set_video_load_error("")
+
+    @Property(bool, notify=videoLoadingChanged)
+    def videoLoading(self):
+        return bool(self._video_loading_name)
+
+    @Property(str, notify=videoLoadingChanged)
+    def videoLoadingName(self):
+        return self._video_loading_name
+
+    @Slot()
+    def cancelVideoLoad(self):
+        self.video_load_cancellations += 1
+        self.set_video_loading("")
+
+    def set_video_loading(self, name: str):
+        self._video_loading_name = name
+        self.videoLoadingChanged.emit()
 
     def set_video_load_error(self, message: str):
         self._video_load_error = message
@@ -447,6 +467,22 @@ ApplicationWindow {{
 
         app_controller.dismissVideoLoadError()
         self.app.processEvents()
+        self.assertFalse(banner.property("visible"))
+        engine.deleteLater()
+
+    def test_video_check_in_progress_is_visible_and_cancellable(self):
+        engine, page, app_controller, _video_cut_controller = self._load_windowed_page()
+        banner = page.findChild(QObject, "videoLoadingBanner")
+        self.assertFalse(banner.property("visible"))
+
+        app_controller.set_video_loading("movie.mkv")
+        self.app.processEvents()
+        self.assertTrue(banner.property("visible"))
+        self.assertIn("movie.mkv", page.findChild(QObject, "videoLoadingText").property("text"))
+
+        self.assertTrue(QMetaObject.invokeMethod(page.findChild(QObject, "cancelVideoLoadButton"), "click"))
+        self.app.processEvents()
+        self.assertEqual(app_controller.video_load_cancellations, 1)
         self.assertFalse(banner.property("visible"))
         engine.deleteLater()
 

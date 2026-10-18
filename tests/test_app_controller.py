@@ -17,6 +17,7 @@ from services.analysis.model_provisioning import (
 )
 from services.editing.keyframe_service import KeyframeService
 from services.subtitles.processing_service import SubtitleService
+from workers.video_load_worker import VideoLoadWorker
 from workers.worker_signals import WorkerSignals
 
 
@@ -43,10 +44,12 @@ class FakeVideoImportService:
             return []
         return self.videos
 
-    def build_video_listing_for_file(self, file_path):
+    def build_video_listing_for_file(self, file_path, cancel_token=None):
         raw_path = str(file_path)
         path = Path(file_path)
-        if raw_path == "invalid" or path.suffix.lower() not in {".mp4", ".mkv"}:
+        if raw_path == "invalid":
+            raise ValueError("Selected video file does not exist")
+        if path.suffix.lower() not in {".mp4", ".mkv"}:
             raise ValueError("Unsupported video format. Use .mp4 or .mkv")
         return {
             "name": path.name,
@@ -56,6 +59,9 @@ class FakeVideoImportService:
             "subtitle_found": False,
             "subtitle_name": None,
         }
+
+    def register_video_file(self, file_path, user_id=None):
+        return self.import_video_file(file_path, user_id)
 
     def import_video_file(self, file_path, user_id=None):
         if file_path == "invalid":
@@ -82,6 +88,11 @@ class FakeThreadPool:
         self.max_thread_count = count
 
     def start(self, worker):
+        if isinstance(worker, VideoLoadWorker):
+            # The real worker only validates (here: the fake import service); run it inline so the
+            # tests see the loaded state right away. Threading is covered by test_video_loading.py.
+            worker.run()
+            return
         self.workers.append(worker)
 
 
@@ -1089,6 +1100,10 @@ class AppControllerTests(unittest.TestCase):
 
         try:
             controller.loadVideoFile("/tmp/a.mp4")
+            deadline = time.monotonic() + 5
+            while controller.selectedVideoPath != "/tmp/a.mp4" and time.monotonic() < deadline:
+                app.processEvents()
+                time.sleep(0.01)
 
             self.assertTrue(probe_started.wait(timeout=1))
             self.assertEqual(controller.keyframeState, "loading")

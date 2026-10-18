@@ -23,6 +23,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 
+from services.infrastructure.ffmpeg.bounded_runner import BoundedProcessRunner, ExportCancellationToken, FFmpegTimeoutError
 from services.infrastructure.ffmpeg.paths import FFmpegNotFoundError, get_ffprobe_path
 
 
@@ -66,9 +67,13 @@ class MediaCheck:
 
 def validate_media_file(
     file_path: str | Path,
-    run=subprocess.run,
+    run=None,
     ffprobe_path: str | Path | None = None,
+    cancel_token: ExportCancellationToken | None = None,
 ) -> MediaCheck:
+    """Raises ``MediaValidationError``; with ``cancel_token``, a cancelled check stops its ffprobe and raises
+    ``ExportCancelledError``."""
+    run = run or (cancellable_run(cancel_token) if cancel_token is not None else subprocess.run)
     path = Path(file_path).expanduser()
     try:
         check = _validate(path, run, ffprobe_path)
@@ -218,6 +223,20 @@ def _validate(path: Path, run, ffprobe_path) -> MediaCheck:
         )
 
     return MediaCheck(path.resolve(), container, duration, codec, width, height, has_audio)
+
+
+def cancellable_run(cancel_token: ExportCancellationToken):
+    """``subprocess.run`` stand-in: same timeout, but cancelling the token terminates the running ffprobe."""
+
+    def run(command, timeout=None, **_kwargs):
+        runner = BoundedProcessRunner(cancel_token=cancel_token, stall_timeout_seconds=timeout,
+                                      max_runtime_seconds=timeout)
+        try:
+            return runner(command, text=True, encoding="utf-8", errors="replace")
+        except FFmpegTimeoutError as exc:
+            raise subprocess.TimeoutExpired(command, timeout) from exc
+
+    return run
 
 
 def _probe(run, command: list[str], timeout: float, name: str) -> subprocess.CompletedProcess:

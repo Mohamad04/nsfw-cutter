@@ -15,7 +15,15 @@ avant tout enregistrement en base et avant tout changement d'état de l'interfac
 
 Chaque appel ffprobe a un délai maximal (30 s pour l'en-tête, 60 s pour les contrôles de flux). Les
 étapes 3 et 4 tournent en parallèle : le démarrage du ffprobe livré coûte environ 0,5 s sous Windows,
-d'où environ 1,5 s pour ouvrir une vidéo valide.
+d'où environ 1,1 s pour contrôler une vidéo valide.
+
+**Hors du fil de l'interface.** `AppController` confie le contrôle à `VideoLoadWorker`, dans un
+`QThreadPool` dédié : le pool partagé, limité à 2 fils, peut être occupé par une analyse ou un export.
+L'enregistrement en base et la mise à jour de l'état se font ensuite sur le fil de l'interface, et
+seulement si la demande est toujours la plus récente. Une nouvelle sélection, `cancelVideoLoad`,
+`clearVideo` ou `shutdown` (branché sur `aboutToQuit`) annule le contrôle en cours et termine son
+ffprobe. Le résultat tardif d'une demande remplacée est ignoré, et une demande identique à celle en
+cours n'en lance pas une seconde. La page affiche « Checking … » avec un bouton d'annulation.
 
 **Limite.** C'est un contrôle préliminaire, pas une garantie que chaque image se décode : une
 corruption au milieu d'un fichier complet n'est pas détectée et apparaîtra à l'analyse, à la lecture ou
@@ -58,3 +66,16 @@ Un dossier de sortie qui est un fichier est refusé avant toute commande FFmpeg
   aussi présenter les coupes comme des plages **à garder** dans les modes clips (elles sont des plages
   **à supprimer** dans l'interface actuelle). Enfin, Smart Cutting n'accepte que `remove_intervals` :
   les modes clips n'existent qu'en Fast Cutting, sans audio et avec des bornes sur des keyframes.
+
+## Enregistrement en base après validation
+
+`VideoImportService.register_video_file` n'accepte qu'un fichier qui a réussi `validate_video_file`
+et n'a pas changé depuis (même taille et même date de modification). Chaque validation n'autorise
+qu'un enregistrement. Appeler cette méthode directement ne permet donc pas de sauter la validation D9,
+ni d'enregistrer un fichier remplacé entre le contrôle et l'enregistrement.
+
+**Défaut préexistant, non modifié.** Chaque chargement réussi ajoute une ligne `Video`
+(`repositories/video_repository.add_video` insère toujours), y compris pour une vidéo déjà connue :
+rouvrir le même fichier crée des doublons. Corriger ce point demande de décider s'il faut réutiliser la
+ligne existante (par chemin, ou par chemin et empreinte) et ce que deviennent les travaux de découpe qui
+y sont rattachés. C'est hors du périmètre de D9.

@@ -1,3 +1,4 @@
+import threading
 from collections.abc import Callable
 from pathlib import Path
 
@@ -27,19 +28,51 @@ class VideoImportService:
         self.media_validator = media_validator or validate_media_file
         self.video_discovery_service = video_discovery_service or VideoDiscoveryService()
         self.subtitle_service = subtitle_service or SubtitleService()
+        # Files that passed validate_video_file, with the (size, mtime) seen then. Validation runs in a
+        # worker thread and registration on the GUI thread, hence the lock.
+        self._validated: dict[Path, tuple[int, int]] = {}
+        self._validated_lock = threading.Lock()
 
     def list_importable_videos(self, folder: str | Path) -> list[dict]:
         videos = self.video_discovery_service.find_videos_in_folder(folder)
         return [self._build_video_listing(video_path) for video_path in videos]
 
-    def build_video_listing_for_file(self, file_path: str | Path) -> dict:
+    def validate_video_file(self, file_path: str | Path, cancel_token=None) -> Path:
+        """Extension check, then the ffprobe media checks; slow, so the GUI runs it in a worker thread."""
         video_path = self.video_discovery_service.validate_video_file(file_path)
-        self.media_validator(video_path)
-        return self._build_video_listing(video_path)
+        if cancel_token is None:
+            self.media_validator(video_path)
+        else:
+            self.media_validator(video_path, cancel_token=cancel_token)
+        resolved = video_path.resolve()
+        with self._validated_lock:
+            self._validated[resolved] = _file_stamp(resolved)
+        return video_path
+
+    def build_video_listing_for_file(self, file_path: str | Path, cancel_token=None) -> dict:
+        return self._build_video_listing(self.validate_video_file(file_path, cancel_token))
 
     def import_video_file(self, file_path: str | Path, user_id: int | None = None) -> dict:
-        video_path = self.video_discovery_service.validate_video_file(file_path)
-        self.media_validator(video_path)
+        return self.register_video_file(self.validate_video_file(file_path), user_id)
+
+    def register_video_file(self, video_path: str | Path, user_id: int | None = None) -> dict:
+        """Record a video that passed ``validate_video_file`` and has not changed since (no new probe).
+
+        A file that was never validated, or was modified or replaced after its check, is refused, so
+        the D9 validation cannot be skipped by calling this method directly.
+        """
+        video_path = Path(video_path).resolve()
+        with self._validated_lock:
+            stamp = self._validated.pop(video_path, None)
+        try:
+            current = _file_stamp(video_path)
+        except OSError:
+            current = None
+        if stamp is None or stamp != current:
+            raise ValueError(
+                f"\"{video_path.name}\" must be checked again before it is opened: it was not checked, "
+                "or it changed after the check."
+            )
         subtitle_path = self.subtitle_service.find_subtitle_for_video(video_path)
 
         with self.db_session_factory() as db:
@@ -89,3 +122,8 @@ class VideoImportService:
             "subtitle_found": subtitle_path is not None,
             "subtitle_name": subtitle_path.name if subtitle_path else None,
         }
+
+
+def _file_stamp(path: Path) -> tuple[int, int]:
+    stat = path.stat()
+    return stat.st_size, stat.st_mtime_ns

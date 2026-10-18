@@ -5,9 +5,11 @@ from services.export.video_packet_index import (
     VideoPacketIndexError,
     copyable_range,
     is_clean_cut_point,
+    kept_frame_durations,
     nearest_keyframes,
     packets_in_range,
     parse_packet_csv,
+    timeline_mismatch,
 )
 
 
@@ -71,6 +73,21 @@ class VideoPacketIndexTests(unittest.TestCase):
         self.assertEqual(nearest_keyframes(packets, 0.1), (0.0, 0.24))
         self.assertEqual(nearest_keyframes(packets, 0.24), (0.24, 0.24))
         self.assertEqual(nearest_keyframes(packets, 0.3), (0.24, None))
+
+    def test_timeline_check_accepts_exact_spacing_across_a_splice(self):
+        source = [VideoPacket(index / 25, index % 6 == 0, f"h{index}") for index in range(12)]
+        durations = kept_frame_durations(source, [(0.0, 0.12), (0.2, 1.0)])
+        joined = [VideoPacket(index / 25, False, "x") for index in range(len(durations))]
+
+        self.assertIsNone(timeline_mismatch(joined, durations, 0.0021))
+
+    def test_timeline_check_reports_a_gap_or_a_squeezed_frame(self):
+        source = [VideoPacket(index / 25, index % 6 == 0, f"h{index}") for index in range(12)]
+        durations = kept_frame_durations(source, [(0.0, 1.0)])
+        gap = [VideoPacket(t, False, "x") for t in [0.0, 0.04, 0.12] + [0.16 + k / 25 for k in range(9)]]
+
+        self.assertIn("80.0 ms instead of 40.0 ms", timeline_mismatch(gap, durations, 0.0021))
+        self.assertIn("frames instead of", timeline_mismatch(gap[:-1], durations, 0.0021))
 
 
 if __name__ == "__main__":

@@ -54,7 +54,7 @@ CASES = [
     ("S09", SMART, "h264_aac_mp4", TEN_UNALIGNED, "exact", "Ten cuts off the frame grid (A/V drift)"),
     ("S10", SMART, "h264_aac_opengop_mp4", [(7.3, 12.7), (16.0, 17.0)], "exact_or_reject",
      "Open-GOP source (copy segments not cleanly copyable)"),
-    ("S11", SMART, "h264_aac_mkv", [(7.3, 12.7)], "exact_or_reject", "MKV H.264 (known D2)"),
+    ("S11", SMART, "h264_aac_mkv", [(7.3, 12.7)], "exact", "MKV H.264/AAC (D2)"),
     ("S12", SMART, "h264_aac_mp4", [(0.0, 1.5), (10.0, 16.3), (28.7, 30.0)], "exact_or_reject",
      "Known D1 trigger ranges (audio rebuild may hang)"),
     ("F01", FAST, "h264_noaudio_mp4", [(7.3, 12.7)], "reject", "Non-keyframe cut"),
@@ -70,7 +70,30 @@ CASES = [
     ("F11", FAST, "h264_noaudio_opengop_mp4", [(8.0, 12.0)], "exact_or_reject", "Open-GOP source, keyframe times"),
 ]
 
+MKV_CASES = [
+    ("M01", SMART, "h264_aac_mkv", [(7.3, 12.7)], "exact", "MKV H.264/AAC, non-keyframe cut"),
+    ("M02", SMART, "h264_noaudio_mkv", [(7.3, 12.7)], "exact", "MKV H.264 without audio"),
+    ("M03", SMART, "h264_aac_mkv", [(6.0, 7.0)], "exact", "MKV, cut starting on a keyframe"),
+    ("M04", SMART, "h264_aac_mkv", TEN_ALIGNED_HALF_SECOND, "exact", "MKV, ten cuts"),
+    ("M05", SMART, "h264_aac_mkv", TEN_UNALIGNED, "exact", "MKV, ten cuts off the frame grid"),
+    ("M06", SMART, "h264_aac_mkv", [(0.0, 2.3), (27.7, 30.0)], "exact", "MKV, cuts at beginning and end"),
+    ("M07", SMART, "h264_aac_opengop_mkv", [(7.3, 12.7), (16.0, 17.0)], "exact", "MKV open GOP"),
+    ("M08", SMART, "h264_aac_offset_mkv", [(7.3, 12.7)], "exact", "MKV starting at 1.5 s (non-zero start)"),
+    ("M09", SMART, "h264_aac_mkv", [(5.0, 8.0), (7.0, 9.3)], "exact", "MKV, overlapping cuts"),
+    ("M10", SMART, "h264_aac_vfr_mkv", [(7.3, 12.7)], "reject", "MKV variable frame rate (unsupported)"),
+    ("M11", SMART, "h264_aac_2audio_mkv", [(7.3, 12.7)], "reject", "MKV with two audio tracks (unsupported)"),
+    ("M12", SMART, "h264_aac_truncated_mkv", [(7.3, 12.7)], "reject", "Truncated MKV"),
+    ("M13", SMART, "h264_aac_ts90k_mp4", [(7.3, 12.7)], "exact", "MP4 with 1/90000 video timescale"),
+]
+CASES += MKV_CASES
+
 EXTRA_FIXTURES = {
+    "h264_noaudio_mkv_d2": efa.FixtureSpec("h264_noaudio_mkv", audio=False, container="mkv"),
+    "h264_aac_opengop_mkv": efa.FixtureSpec("h264_aac_opengop_mkv", open_gop=True, container="mkv"),
+    "h264_aac_offset_mkv": efa.FixtureSpec("h264_aac_offset_mkv", container="mkv", start_offset=1.5),
+    "h264_aac_vfr_mkv": efa.FixtureSpec("h264_aac_vfr_mkv", container="mkv", variable_frame_rate=True),
+    "h264_aac_2audio_mkv": efa.FixtureSpec("h264_aac_2audio_mkv", container="mkv", audio_tracks=2),
+    "h264_aac_ts90k_mp4": efa.FixtureSpec("h264_aac_ts90k_mp4", video_timescale=90000),
     "h264_noaudio_gop25_mp4": efa.FixtureSpec("h264_noaudio_gop25_mp4", audio=False, gop_frames=25),
     "h264_noaudio_mkv": efa.FixtureSpec("h264_noaudio_mkv", audio=False, container="mkv"),
     "h264_noaudio_opengop_mp4": efa.FixtureSpec("h264_noaudio_opengop_mp4", audio=False, open_gop=True),
@@ -109,6 +132,12 @@ def main() -> int:
     for name, spec in specs.items():
         existing = fixtures_dir / f"{spec.name}.{spec.container}"
         fixtures[name] = existing if existing.is_file() else efa.generate_fixture(ffmpeg, spec, fixtures_dir)
+    fixtures["h264_noaudio_mkv"] = fixtures.get("h264_noaudio_mkv", fixtures.get("h264_noaudio_mkv_d2"))
+    truncated = fixtures_dir / "h264_aac_truncated.mkv"
+    if not truncated.is_file():
+        data = fixtures["h264_aac_mkv"].read_bytes()
+        truncated.write_bytes(data[: int(len(data) * 0.4)])
+    fixtures["h264_aac_truncated_mkv"] = truncated
 
     selected = [case for case in CASES if not args.cases or case[0] in args.cases]
     results = []

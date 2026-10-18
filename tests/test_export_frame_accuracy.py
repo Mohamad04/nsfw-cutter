@@ -19,6 +19,7 @@ from evaluation import export_frame_accuracy as efa
 from schemas.video_cut_schema import VideoCutRequest
 from services.editing.cut_execution_service import CutExecutionService, FastCuttingAudioError
 from services.export.smart_cutting_export_service import SmartCuttingExportService
+from services.export.video_segment_renderer import VideoSegmentVerificationError
 from services.infrastructure.ffmpeg.bounded_runner import BoundedProcessRunner
 from services.infrastructure.ffmpeg.paths import (
     FFmpegNotFoundError,
@@ -45,33 +46,60 @@ def _run_with_timeout(*args, **kwargs):
     return _original_run(*args, **kwargs)
 
 
+_SHARED: dict = {}
+
+
+def setUpModule():
+    """Generate every synthetic fixture once for all test classes of this module."""
+    try:
+        ffmpeg, ffprobe = get_ffmpeg_path(), get_ffprobe_path()
+    except FFmpegNotFoundError as exc:
+        _SHARED["skip"] = str(exc)
+        return
+    _SHARED["timeout_patch"] = patch("subprocess.run", _run_with_timeout)
+    _SHARED["timeout_patch"].start()
+    root = Path(tempfile.mkdtemp(prefix="export-frame-accuracy-"))
+    specs = {
+        **efa.FIXTURES,
+        "h264_noaudio_gop25_mp4": efa.FixtureSpec("h264_noaudio_gop25_mp4", audio=False, gop_frames=25),
+        "h264_noaudio_opengop_mp4": efa.FixtureSpec("h264_noaudio_opengop_mp4", audio=False, open_gop=True),
+        "h264_noaudio_mkv": efa.FixtureSpec("h264_noaudio_mkv", audio=False, container="mkv"),
+        "marker_7.3_12.7_mp4": efa.FixtureSpec("marker_7.3_12.7_mp4", marker_intervals=((7.3, 12.7),)),
+        "marker_7.3_12.7_mkv": efa.FixtureSpec("marker_7.3_12.7_mkv", container="mkv", marker_intervals=((7.3, 12.7),)),
+        "h264_aac_opengop_mkv": efa.FixtureSpec("h264_aac_opengop_mkv", open_gop=True, container="mkv"),
+        "h264_aac_offset_mkv": efa.FixtureSpec("h264_aac_offset_mkv", container="mkv", start_offset=1.5),
+        "h264_aac_vfr_mkv": efa.FixtureSpec("h264_aac_vfr_mkv", container="mkv", variable_frame_rate=True),
+        "h264_aac_2audio_mkv": efa.FixtureSpec("h264_aac_2audio_mkv", container="mkv", audio_tracks=2),
+        "h264_aac_ts90k_mp4": efa.FixtureSpec("h264_aac_ts90k_mp4", video_timescale=90000),
+    }
+    fixtures = {name: efa.generate_fixture(ffmpeg, spec, root / "fixtures") for name, spec in specs.items()}
+    data = fixtures["h264_aac_mkv"].read_bytes()
+    fixtures["h264_aac_truncated_mkv"] = root / "fixtures" / "h264_aac_truncated.mkv"
+    fixtures["h264_aac_truncated_mkv"].write_bytes(data[: int(len(data) * 0.4)])
+    fixtures["garbage_mkv"] = root / "fixtures" / "garbage.mkv"
+    fixtures["garbage_mkv"].write_bytes(b"not a matroska file" * 1000)
+    _SHARED.update(ffmpeg=ffmpeg, ffprobe=ffprobe, root=root, fixtures=fixtures,
+                   aac_encoder_hangs=efa.aac_encoder_hangs(ffmpeg, root / "d1"))
+
+
+def tearDownModule():
+    if "timeout_patch" in _SHARED:
+        _SHARED["timeout_patch"].stop()
+    if "root" in _SHARED:
+        shutil.rmtree(_SHARED["root"], ignore_errors=True)
+
+
 class _FrameAccuracyCase(unittest.TestCase):
     fixtures: ClassVar[dict[str, Path]] = {}
 
     @classmethod
     def setUpClass(cls):
-        try:
-            cls.ffmpeg = get_ffmpeg_path()
-            cls.ffprobe = get_ffprobe_path()
-        except FFmpegNotFoundError as exc:
-            raise unittest.SkipTest(str(exc)) from exc
-        cls._timeout_patch = patch("subprocess.run", _run_with_timeout)
-        cls._timeout_patch.start()
-        cls._root = Path(tempfile.mkdtemp(prefix="export-frame-accuracy-"))
-        specs = {
-            **efa.FIXTURES,
-            "h264_noaudio_gop25_mp4": efa.FixtureSpec("h264_noaudio_gop25_mp4", audio=False, gop_frames=25),
-            "h264_noaudio_opengop_mp4": efa.FixtureSpec("h264_noaudio_opengop_mp4", audio=False, open_gop=True),
-            "h264_noaudio_mkv": efa.FixtureSpec("h264_noaudio_mkv", audio=False, container="mkv"),
-            "marker_7.3_12.7_mp4": efa.FixtureSpec("marker_7.3_12.7_mp4", marker_intervals=((7.3, 12.7),)),
-        }
-        cls.fixtures = {name: efa.generate_fixture(cls.ffmpeg, spec, cls._root / "fixtures") for name, spec in specs.items()}
-        cls.aac_encoder_hangs = efa.aac_encoder_hangs(cls.ffmpeg, cls._root / "d1")
-
-    @classmethod
-    def tearDownClass(cls):
-        cls._timeout_patch.stop()
-        shutil.rmtree(cls._root, ignore_errors=True)
+        if _SHARED.get("skip"):
+            raise unittest.SkipTest(_SHARED["skip"])
+        cls.ffmpeg, cls.ffprobe = _SHARED["ffmpeg"], _SHARED["ffprobe"]
+        cls._root = _SHARED["root"]
+        cls.fixtures = _SHARED["fixtures"]
+        cls.aac_encoder_hangs = _SHARED["aac_encoder_hangs"]
 
     def setUp(self):
         self.work = Path(tempfile.mkdtemp(dir=self._root))
@@ -180,15 +208,82 @@ class SmartCuttingFrameAccuracyTests(_FrameAccuracyCase):
         self.assertEqual(result["video_fallbacks"], [])
         self.assertEqual(result["verification"]["final_video_packets"], result["verification"]["expected_video_frames"])
 
-    def test_mkv_source_is_exact_or_refused_without_output(self):
-        removed = [(7.3, 12.7)]
-        try:
-            result = self.smart_export("h264_aac_mkv", removed)
-        except (ValueError, RuntimeError) as exc:
-            self.assertTrue(str(exc))
-            self.assert_no_files(self.output_dir, self.cache_dir)
-            return
-        self.assert_frame_exact(Path(result["merged_output_path"]), removed, audio=True)
+    def test_mp4_with_a_90k_video_timescale_keeps_frame_timing(self):
+        # Copy chunks keep the source timescale; re-encoded chunks must use it too, or concat shifts them.
+        self.check("h264_aac_ts90k_mp4", [(7.3, 12.7)])
+
+
+class MkvSmartCuttingTests(_FrameAccuracyCase):
+    """D2: MKV H.264 sources are normalized losslessly to MP4, verified, then cut by the same pipeline."""
+
+    smart_export = SmartCuttingFrameAccuracyTests.smart_export
+    check = SmartCuttingFrameAccuracyTests.check
+
+    def test_mkv_non_keyframe_cut_is_frame_exact(self):
+        result = self.check("h264_aac_mkv", [(7.3, 12.7)])
+
+        self.assertTrue(Path(result["merged_output_path"]).name.endswith("_smart_cut.mkv"))
+        normalization = result["source_normalization"]
+        self.assertEqual(normalization["method"], "mkv_to_mp4_stream_copy")
+        self.assertEqual(normalization["verified_video_packets"], efa.SOURCE_FRAMES)
+        self.assertGreater(normalization["verified_audio_packets"], 0)
+
+    def test_mkv_without_audio(self):
+        self.check("h264_noaudio_mkv", [(7.3, 12.7)], audio=False)
+
+    def test_mkv_cut_starting_on_a_keyframe(self):
+        self.check("h264_aac_mkv", [(6.0, 7.0)])
+
+    def test_mkv_ten_cuts_on_and_off_the_frame_grid(self):
+        self.check("h264_aac_mkv", TEN_HALF_SECOND_CUTS)
+        self.check("h264_aac_mkv", TEN_OFF_GRID_CUTS)
+
+    def test_mkv_cuts_at_beginning_and_end(self):
+        self.check("h264_aac_mkv", [(0.0, 2.3), (27.7, 30.0)])
+
+    def test_mkv_open_gop(self):
+        result = self.check("h264_aac_opengop_mkv", [(7.3, 12.7), (16.0, 17.0)])
+
+        self.assertTrue(result["video_fallbacks"])
+
+    def test_mkv_with_a_non_zero_start_time(self):
+        # The container timeline starts at 1.5 s; cut times are relative to the start, like the player's.
+        self.check("h264_aac_offset_mkv", [(7.3, 12.7)])
+
+    def test_mkv_removed_audio_is_absent_at_sample_level(self):
+        result = self.smart_export("marker_7.3_12.7_mkv", [(7.3, 12.7)])
+
+        residual = efa.audible_runs(self.ffmpeg, Path(result["merged_output_path"]))
+        self.assertEqual(residual["audible_ms"], 0, residual)
+
+    def test_mismatched_chunk_timescales_are_detected(self):
+        # Regression guard: without the shared track timescale, concat shifts re-encoded chunks.
+        with patch("services.export.smart_cutting_export_service._track_timescale", return_value=None):
+            with self.assertRaises(VideoSegmentVerificationError) as caught:
+                self.smart_export("h264_aac_mkv", [(7.3, 12.7)])
+        self.assertIn("frame timing", str(caught.exception))
+        self.assert_no_files(self.output_dir, self.cache_dir)
+
+    def assert_refused(self, fixture: str, *fragments: str):
+        with self.assertRaises(ValueError) as caught:
+            self.smart_export(fixture, [(7.3, 12.7)])
+        for fragment in fragments:
+            self.assertIn(fragment, str(caught.exception))
+        self.assert_no_files(self.output_dir, self.cache_dir)
+
+    def test_variable_frame_rate_mkv_is_refused(self):
+        self.assert_refused("h264_aac_vfr_mkv", "variable-frame-rate", "Nothing was exported")
+
+    def test_mkv_with_two_audio_tracks_is_refused(self):
+        self.assert_refused("h264_aac_2audio_mkv", "at most one audio track")
+
+    def test_truncated_mkv_is_refused(self):
+        self.assert_refused("h264_aac_truncated_mkv", "incomplete or damaged")
+
+    def test_corrupted_mkv_fails_without_output(self):
+        with self.assertRaises((ValueError, RuntimeError)):
+            self.smart_export("garbage_mkv", [(7.3, 12.7)])
+        self.assert_no_files(self.output_dir, self.cache_dir)
 
 
 class FastCuttingFrameAccuracyTests(_FrameAccuracyCase):

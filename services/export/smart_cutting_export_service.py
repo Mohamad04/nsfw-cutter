@@ -20,6 +20,7 @@ from services.export.keyframe_service import ExportKeyframeService
 from services.export.media_probe_service import MediaProbeService
 from services.export.mux_service import MuxService, SubtitleMuxInput
 from services.export.smart_cut_planner import COPY_SEGMENT, SmartCutPlanner
+from services.export.source_normalization_service import MkvNormalizationService, needs_normalization
 from services.export.subtitle_rebuild_service import (
     EmbeddedSubtitleExtractError,
     EmbeddedSubtitleExtractService,
@@ -32,7 +33,9 @@ from services.export.video_packet_index import (
     VideoPacketIndexService,
     first_frame_at_or_after,
     frame_signature,
+    kept_frame_durations,
     packets_in_range,
+    timeline_mismatch,
 )
 from services.export.video_segment_renderer import (
     VideoSegmentRenderer,
@@ -48,6 +51,8 @@ SMART_CUTTING_MODE = "smart_cutting"
 SMART_CUTTING_SUBTITLE_SUCCESS = "External text subtitles rebuilt."
 SMART_CUTTING_EMBEDDED_UNSUPPORTED = "Embedded image or unsupported subtitles are not rebuilt in Smart Cutting yet."
 SMART_CUTTING_SUBTITLE_REBUILD_FAILED = "Subtitle rebuild failed. External subtitles were skipped."
+# Matroska stores millisecond timestamps, so frame spacing may be rounded by up to 1 ms on each side.
+TIMELINE_TOLERANCE_SECONDS = 0.0021
 
 
 class SmartCuttingExportService:
@@ -65,6 +70,7 @@ class SmartCuttingExportService:
         embedded_subtitle_extract_service: EmbeddedSubtitleExtractService | None = None,
         mux_service: MuxService | None = None,
         packet_index_service: VideoPacketIndexService | None = None,
+        source_normalization_service: MkvNormalizationService | None = None,
         cache_dir: str | Path | None = None,
         debug_keep_temp: bool = False,
         process_runner=None,
@@ -92,6 +98,10 @@ class SmartCuttingExportService:
             command_runner=runner
         )
         self.mux_service = mux_service or MuxService(command_runner=runner)
+        self.source_normalization_service = source_normalization_service or MkvNormalizationService(
+            command_runner=runner,
+            packet_index_service=VideoPacketIndexService(probe_runner=runner),
+        )
         self.cache_dir = Path(cache_dir) if cache_dir else get_cuts_cache_dir()
         self.debug_keep_temp = debug_keep_temp
 
@@ -118,9 +128,22 @@ class SmartCuttingExportService:
             media_info = self.media_probe_service.probe(input_path)
             validate_smart_cutting_input(media_info)
 
+            # Video and audio are cut from cut_source; subtitles are rebuilt from the original file.
+            cut_source = input_path
+            normalization = None
+            if needs_normalization(media_info):
+                _emit(progress_callback, 5, "Preparing MKV for exact cutting")
+                normalization = self.source_normalization_service.normalize(
+                    input_path,
+                    temp_dir / "normalized_source.mp4",
+                    media_info,
+                )
+                cut_source = normalization.path
+                media_info = self.media_probe_service.probe(cut_source)
+
             _emit(progress_callback, 10, "Loading keyframes")
             keyframes = validate_keyframes(
-                self.keyframe_service.extract_keyframes(input_path),
+                self.keyframe_service.extract_keyframes(cut_source),
                 media_info.duration_seconds,
             )
 
@@ -129,16 +152,19 @@ class SmartCuttingExportService:
             kept_intervals = invert_removed_intervals(delete_intervals, media_info.duration_seconds)
             expected_duration = expected_edited_duration(media_info.duration_seconds, delete_intervals)
             plan = self.planner.build_plan(delete_intervals, keyframes, media_info.duration_seconds)
-            source_packets = self.packet_index_service.probe(input_path)
+            source_packets = self.packet_index_service.probe(cut_source)
             expected_frames = sum(len(packets_in_range(source_packets, start, end)) for start, end in kept_intervals)
+            expected_durations = kept_frame_durations(source_packets, kept_intervals)
 
             _emit(progress_callback, 22, "Exporting video chunks")
             chunks = self.video_renderer.render_plan(
-                input_path,
+                cut_source,
                 plan,
                 chunks_dir,
                 progress_callback=_scaled_progress(progress_callback, 22, 55),
                 source_packets=source_packets,
+                track_timescale=_track_timescale(media_info),
+                reorder_delay=_reorder_delay(media_info),
             )
             chunk_signature = [item for chunk in chunks for item in chunk.frame_signature]
             if len(chunk_signature) != expected_frames:
@@ -156,18 +182,20 @@ class SmartCuttingExportService:
             )
             video_only_info = self.media_probe_service.probe(video_only_path)
             validate_video_only_output(video_only_info, expected_duration)
-            if frame_signature(self.packet_index_service.probe(video_only_path)) != chunk_signature:
+            video_only_packets = self.packet_index_service.probe(video_only_path)
+            if frame_signature(video_only_packets) != chunk_signature:
                 raise VideoSegmentVerificationError(
                     "Smart Cutting stopped: the concatenated video does not match the verified chunks. "
                     "Nothing was exported."
                 )
+            _verify_timeline(video_only_packets, expected_durations, "the concatenated video")
 
             audio_path = None
             if media_info.has_audio:
                 _emit(progress_callback, 68, "Rebuilding audio")
                 audio_ranges, audio_durations = _frame_aligned_audio_ranges(kept_intervals, source_packets)
                 audio_path = self.audio_rebuild_service.rebuild_audio(
-                    input_path,
+                    cut_source,
                     audio_ranges,
                     temp_dir / "smart_audio.m4a",
                     progress_callback=_scaled_progress(progress_callback, 68, 78),
@@ -202,11 +230,13 @@ class SmartCuttingExportService:
                     input_had_audio=media_info.has_audio,
                     expected_subtitle_stream=bool(subtitle_inputs),
                 )
-                if frame_signature(self.packet_index_service.probe(mux_result.output_path)) != chunk_signature:
+                final_packets = self.packet_index_service.probe(mux_result.output_path)
+                if frame_signature(final_packets) != chunk_signature:
                     raise VideoSegmentVerificationError(
                         "Smart Cutting stopped: the final file's video does not match the verified chunks. "
                         "The output was deleted."
                     )
+                _verify_timeline(final_packets, expected_durations, "the final file")
                 final_output_verified = True
             finally:
                 if not final_output_verified:
@@ -227,6 +257,7 @@ class SmartCuttingExportService:
                 "normalized_intervals": delete_intervals,
                 "kept_intervals": kept_intervals,
                 "plan": plan.to_dict(),
+                "source_normalization": normalization.to_dict() if normalization else None,
                 "video_fallbacks": [
                     {
                         "start_seconds": chunk.start_seconds,
@@ -401,6 +432,7 @@ class SmartCuttingExportService:
 
     def _reset_diagnostics(self) -> None:
         for service in (
+            self.source_normalization_service,
             self.video_renderer,
             self.video_concat_service,
             self.audio_rebuild_service,
@@ -413,7 +445,8 @@ class SmartCuttingExportService:
 
     def _commands(self) -> list[list[str]]:
         return (
-            list(getattr(self.video_renderer, "commands", []))
+            list(getattr(self.source_normalization_service, "commands", []))
+            + list(getattr(self.video_renderer, "commands", []))
             + list(getattr(self.video_concat_service, "commands", []))
             + list(getattr(self.audio_rebuild_service, "commands", []))
             + list(getattr(self.embedded_subtitle_extract_service, "commands", []))
@@ -422,11 +455,38 @@ class SmartCuttingExportService:
 
     def _stderr(self) -> list[str]:
         return (
-            list(getattr(self.video_renderer, "stderr", []))
+            list(getattr(self.source_normalization_service, "stderr", []))
+            + list(getattr(self.video_renderer, "stderr", []))
             + list(getattr(self.video_concat_service, "stderr", []))
             + list(getattr(self.audio_rebuild_service, "stderr", []))
             + list(getattr(self.embedded_subtitle_extract_service, "stderr", []))
             + list(getattr(self.mux_service, "stderr", []))
+        )
+
+
+def _track_timescale(media_info) -> int | None:
+    time_base = (media_info.video_stream.time_base or "") if media_info.video_stream else ""
+    numerator, _, denominator = time_base.partition("/")
+    if numerator == "1" and denominator.isdigit() and int(denominator) > 0:
+        return int(denominator)
+    return None
+
+
+def _reorder_delay(media_info) -> int | None:
+    stream = media_info.video_stream
+    for raw_stream in (media_info.raw or {}).get("streams", []):
+        if stream is not None and raw_stream.get("index") == stream.index:
+            value = raw_stream.get("has_b_frames")
+            return int(value) if value is not None else None
+    return None
+
+
+def _verify_timeline(packets: list[VideoPacket], expected_durations: list[float], label: str) -> None:
+    problem = timeline_mismatch(packets, expected_durations, TIMELINE_TOLERANCE_SECONDS)
+    if problem:
+        raise VideoSegmentVerificationError(
+            f"Smart Cutting stopped: {label} does not keep the source frame timing ({problem}). "
+            "No output was kept."
         )
 
 

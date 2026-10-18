@@ -105,7 +105,8 @@ class _FFmpegCase(unittest.TestCase):
         fixtures = cls._root / "fixtures"
         cls.with_audio = efa.generate_fixture(cls.ffmpeg, efa.FIXTURES["h264_aac_mp4"], fixtures)
         cls.video_only = efa.generate_fixture(cls.ffmpeg, efa.FIXTURES["h264_noaudio_mp4"], fixtures)
-        cls.source_hashes = {path: _sha256(path) for path in (cls.with_audio, cls.video_only)}
+        cls.mkv = efa.generate_fixture(cls.ffmpeg, efa.FIXTURES["h264_aac_mkv"], fixtures)
+        cls.source_hashes = {path: _sha256(path) for path in (cls.with_audio, cls.video_only, cls.mkv)}
 
     @classmethod
     def tearDownClass(cls):
@@ -129,10 +130,11 @@ class _FFmpegCase(unittest.TestCase):
             leftovers = [path for path in folder.rglob("*") if path.is_file()] if folder.exists() else []
             self.assertEqual(leftovers, [], f"unexpected files left in {folder}")
 
-    def smart(self, runner, removed=((7.3, 12.7),), progress_callback=None, output_dir=None):
+    def smart(self, runner, removed=((7.3, 12.7),), progress_callback=None, output_dir=None, source=None):
         segments = [{"requested_start_seconds": start, "requested_end_seconds": end} for start, end in removed]
         return SmartCuttingExportService(cache_dir=self.cache_dir, process_runner=runner).export(
-            {"input_path": str(self.with_audio), "output_dir": str(output_dir or self.output_dir), "segments": segments},
+            {"input_path": str(source or self.with_audio), "output_dir": str(output_dir or self.output_dir),
+             "segments": segments},
             progress_callback=progress_callback,
         )["result"]
 
@@ -261,6 +263,39 @@ class ServiceCancellationAndTimeoutTests(_FFmpegCase):
 
         with self.assertRaises(ExportCancelledError):
             self.smart(BoundedProcessRunner(cancel_token=token), progress_callback=progress)
+
+        self.assert_no_files(self.output_dir, self.cache_dir)
+
+    def test_mkv_cancellation_during_normalization_keeps_nothing(self):
+        token = ExportCancellationToken()
+
+        def progress(_percent, message):
+            if message == "Preparing MKV for exact cutting":
+                token.cancel()
+
+        with self.assertRaises(ExportCancelledError):
+            self.smart(BoundedProcessRunner(cancel_token=token), progress_callback=progress, source=self.mkv)
+
+        self.assert_no_files(self.output_dir, self.cache_dir)
+
+    def test_mkv_timeout_during_normalization_keeps_nothing(self):
+        runner = _TimeoutOnCommand(lambda command: command[-1].endswith("normalized_source.mp4"))
+
+        with self.assertRaises(FFmpegTimeoutError):
+            self.smart(runner, source=self.mkv)
+
+        self.assertTrue(runner.terminated_pids)
+        self.assert_no_files(self.output_dir, self.cache_dir)
+
+    def test_mkv_cancellation_while_rendering_after_normalization_keeps_nothing(self):
+        token = ExportCancellationToken()
+
+        def progress(_percent, message):
+            if message.startswith("Rendered smart video chunk 1/"):
+                token.cancel()
+
+        with self.assertRaises(ExportCancelledError):
+            self.smart(BoundedProcessRunner(cancel_token=token), progress_callback=progress, source=self.mkv)
 
         self.assert_no_files(self.output_dir, self.cache_dir)
 
@@ -429,6 +464,17 @@ class ControllerCancellationTests(_FFmpegCase):
         report = efa.removal_report(efa.decode_frames(self.ffmpeg, self.ffprobe, output), [(7.3, 12.7)])
         self.assertTrue(report["frame_exact"], report)
         self.assertEqual(sorted(path.name for path in self.output_dir.iterdir()), [output.name])
+
+    def test_controller_exports_an_mkv_frame_exact(self):
+        self.export(self.mkv, "safe", 7.3, 12.7)
+
+        self.assertTrue(self.wait_until(lambda: not self.controller.cutBusy))
+        self.assertEqual(self.events[-1][0], "finished", self.events)
+        output = Path(self.controller.cutOutputPaths[0])
+        self.assertEqual(output.suffix, ".mkv")
+        report = efa.removal_report(efa.decode_frames(self.ffmpeg, self.ffprobe, output), [(7.3, 12.7)])
+        self.assertTrue(report["frame_exact"], report)
+        self.assert_no_files(self.cache_dir)
 
     def test_user_cancels_a_fast_export_and_the_job_is_recorded_as_cancelled(self):
         from models.cut_job import CutJob

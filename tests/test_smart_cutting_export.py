@@ -94,6 +94,19 @@ class SmartCutCommandTests(unittest.TestCase):
         self.assertIn("-sn", command)
         self.assertEqual(command[command.index("-c:v") + 1], "copy")
 
+    def test_reencoded_chunk_matches_source_timescale_and_reorder_delay(self):
+        renderer = VideoSegmentRenderer(ffmpeg_service=_FakeFFmpegService())
+
+        no_bframes = renderer.build_reencode_command(
+            Path("in.mp4"), Path("out.mp4"), 10.0, 12.0, 13.5, track_timescale=90000, reorder_delay=0
+        )
+        default = renderer.build_reencode_command(Path("in.mp4"), Path("out.mp4"), 10.0, 12.0, 13.5, reorder_delay=2)
+
+        self.assertEqual(no_bframes[no_bframes.index("-video_track_timescale") + 1], "90000")
+        self.assertEqual(no_bframes[no_bframes.index("-bf") + 1], "0")
+        self.assertNotIn("-bf", default)
+        self.assertEqual(no_bframes[-1], "out.mp4")
+
     def test_verified_copy_chunk_is_limited_to_the_exact_frame_count(self):
         renderer = VideoSegmentRenderer(ffmpeg_service=_FakeFFmpegService())
 

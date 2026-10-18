@@ -24,6 +24,9 @@ from services.infrastructure.ffmpeg.runner import FFmpegService
 
 logger = logging.getLogger(__name__)
 
+# x264 B-frame settings giving a decoder reorder delay of 0 or 1 frame; delay 2 is x264's default.
+REORDER_DELAY_BFRAMES = {0: "0", 1: "1"}
+
 
 @dataclass(frozen=True)
 class RenderedVideoChunk:
@@ -60,6 +63,8 @@ class VideoSegmentRenderer:
         self.packet_index_service = packet_index_service or VideoPacketIndexService(ffmpeg_service=self.ffmpeg_service)
         self.commands: list[list[str]] = []
         self.stderr: list[str] = []
+        self._track_timescale: int | None = None
+        self._reorder_delay: int | None = None
 
     def reset_diagnostics(self) -> None:
         self.commands = []
@@ -72,6 +77,8 @@ class VideoSegmentRenderer:
         chunks_dir: str | Path,
         progress_callback=None,
         source_packets: list[VideoPacket] | None = None,
+        track_timescale: int | None = None,
+        reorder_delay: int | None = None,
     ) -> list[RenderedVideoChunk]:
         """Render the kept plan segments.
 
@@ -80,9 +87,16 @@ class VideoSegmentRenderer:
         re-encoded chunk exactly as many frames. A copy segment that cannot be stream-copied without
         carrying frames across its boundaries (open GOP, reordered frames) is re-encoded instead and
         reported through ``fallback_reason``.
+
+        ``track_timescale`` gives every chunk the source video timescale: the concat demuxer does not
+        rescale timestamps between files whose time bases differ. ``reorder_delay`` (the source's
+        B-frame delay, ``has_b_frames``) makes re-encoded chunks reorder frames like the copied ones, so
+        decoding timestamps stay increasing across splices.
         """
         chunks_dir = Path(chunks_dir)
         chunks_dir.mkdir(parents=True, exist_ok=True)
+        self._track_timescale = track_timescale
+        self._reorder_delay = reorder_delay
         render_segments = [segment for segment in plan.segments if segment.type != DELETE_SEGMENT]
         if not render_segments:
             raise ValueError("Smart Cutting has no kept video chunks to export.")
@@ -150,6 +164,7 @@ class VideoSegmentRenderer:
         start_seconds: float,
         end_seconds: float,
         frame_count: int | None = None,
+        track_timescale: int | None = None,
     ) -> list[str]:
         command = [
             str(self.ffmpeg_service.ffmpeg_path),
@@ -171,6 +186,8 @@ class VideoSegmentRenderer:
         if frame_count is not None:
             # -to stops on decoding timestamps: with B-frames the next GOP's keyframe would be copied too.
             command.extend(["-frames:v", str(frame_count)])
+        if track_timescale:
+            command.extend(["-video_track_timescale", str(track_timescale)])
         command.extend(["-avoid_negative_ts", "make_zero", str(output_path)])
         return command
 
@@ -181,10 +198,12 @@ class VideoSegmentRenderer:
         decode_start_seconds: float,
         output_start_seconds: float,
         output_end_seconds: float,
+        track_timescale: int | None = None,
+        reorder_delay: int | None = None,
     ) -> list[str]:
         trim_start = max(0.0, output_start_seconds - decode_start_seconds)
         trim_end = max(trim_start, output_end_seconds - decode_start_seconds)
-        return [
+        command = [
             str(self.ffmpeg_service.ffmpeg_path),
             "-y",
             "-hide_banner",
@@ -209,8 +228,13 @@ class VideoSegmentRenderer:
             "veryfast",
             "-pix_fmt",
             "yuv420p",
-            str(output_path),
         ]
+        if reorder_delay in REORDER_DELAY_BFRAMES:
+            command.extend(["-bf", REORDER_DELAY_BFRAMES[reorder_delay]])
+        if track_timescale:
+            command.extend(["-video_track_timescale", str(track_timescale)])
+        command.append(str(output_path))
+        return command
 
     def _render_verified_chunk(
         self,
@@ -237,6 +261,7 @@ class VideoSegmentRenderer:
                         segment.start_seconds,
                         segment.end_seconds,
                         frame_count=len(copy_packets),
+                        track_timescale=self._track_timescale,
                     )
                 )
                 actual = self.packet_index_service.probe(output_path)
@@ -262,6 +287,8 @@ class VideoSegmentRenderer:
                 decode_start,
                 segment.start_seconds,
                 segment.end_seconds,
+                track_timescale=self._track_timescale,
+                reorder_delay=self._reorder_delay,
             )
         )
         actual = self.packet_index_service.probe(output_path)

@@ -11,6 +11,7 @@ Time semantics are half-open: a frame belongs to [start, end) iff start <= pts <
 
 import subprocess
 from dataclasses import dataclass
+from itertools import pairwise
 from pathlib import Path
 
 from services.infrastructure.ffmpeg.runner import FFmpegService
@@ -39,14 +40,17 @@ class VideoPacketIndexService:
         self.ffmpeg_service = ffmpeg_service or FFmpegService()
         self.probe_runner = probe_runner or subprocess.run
 
-    def probe(self, media_path: str | Path) -> list[VideoPacket]:
-        """Return the first video stream's packets in decoding order, PTS relative to the file start."""
+    def probe(self, media_path: str | Path, stream: str = "v:0") -> list[VideoPacket]:
+        """Return a stream's packets (first video stream by default) in decoding order.
+
+        PTS are relative to the container start time, the timeline used by ``-ss`` and by the player.
+        """
         command = [
             str(self.ffmpeg_service.ffprobe_path),
             "-v",
             "error",
             "-select_streams",
-            "v:0",
+            stream,
             "-show_data_hash",
             PACKET_HASH_ALGORITHM,
             "-show_entries",
@@ -64,7 +68,7 @@ class VideoPacketIndexService:
             errors="replace",
         )
         if completed.returncode != 0:
-            raise VideoPacketIndexError(f"Could not read video packet timestamps: {(completed.stderr or '').strip()[-300:]}")
+            raise VideoPacketIndexError(f"Could not read packet timestamps: {(completed.stderr or '').strip()[-300:]}")
         return parse_packet_csv(completed.stdout or "")
 
 
@@ -159,3 +163,30 @@ def _float_or_none(value: str) -> float | None:
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+def kept_frame_durations(packets: list[VideoPacket], kept_intervals: list[tuple[float, float]]) -> list[float]:
+    """How long each kept source frame is shown, in presentation order (its distance to the next source frame)."""
+    times = sorted(packet.pts_seconds for packet in packets)
+    gaps = sorted(later - earlier for earlier, later in pairwise(times))
+    nominal = gaps[len(gaps) // 2] if gaps else 0.0
+    durations = []
+    for position, pts in enumerate(times):
+        if any(_in_range(pts, start, end) for start, end in kept_intervals):
+            following = times[position + 1] if position + 1 < len(times) else pts + nominal
+            durations.append(following - pts)
+    return durations
+
+
+def timeline_mismatch(packets: list[VideoPacket], expected_durations: list[float], tolerance: float) -> str | None:
+    """None when consecutive output frames are spaced exactly as the kept source frames were shown."""
+    times = sorted(packet.pts_seconds for packet in packets)
+    if len(times) != len(expected_durations):
+        return f"{len(times)} frames instead of {len(expected_durations)}"
+    for position, (earlier, later) in enumerate(pairwise(times)):
+        if abs((later - earlier) - expected_durations[position]) > tolerance:
+            return (
+                f"frame {position} at {earlier:.3f}s is shown for {(later - earlier) * 1000:.1f} ms "
+                f"instead of {expected_durations[position] * 1000:.1f} ms"
+            )
+    return None

@@ -40,6 +40,10 @@ class FixtureSpec:
     gop_frames: int = GOP_FRAMES
     # When set, audio is digital silence except a 3 kHz marker tone inside these source intervals.
     marker_intervals: tuple[tuple[float, float], ...] = ()
+    start_offset: float = 0.0  # container timeline starts at this time instead of 0
+    video_timescale: int | None = None  # MP4 video track timescale (x264 default is 12800 at 25 fps)
+    variable_frame_rate: bool = False  # 25 fps for 15 s, then 30 fps spacing
+    audio_tracks: int = 1
 
 
 def marker_audio_source(intervals: tuple[tuple[float, float], ...]) -> str:
@@ -72,12 +76,22 @@ def generate_fixture(ffmpeg: Path, spec: FixtureSpec, output_dir: Path) -> Path:
     if spec.audio:
         audio_source = marker_audio_source(spec.marker_intervals) if spec.marker_intervals else CLICKS
         command += ["-f", "lavfi", "-i", audio_source]
+    command += ["-map", "0:v:0"]
+    if spec.audio:
+        command += ["-map", "1:a:0"] * spec.audio_tracks
+    if spec.variable_frame_rate:
+        command += ["-vf", "settb=1/1000,setpts='if(lt(N,375),N/25,15+(N-375)/30)/TB'",
+                    "-fps_mode", "passthrough", "-enc_time_base", "1/1000"]
     command += [
         "-c:v", "libx264", "-preset", "veryfast", "-crf", "16", "-pix_fmt", "yuv420p",
         "-g", str(spec.gop_frames), "-keyint_min", str(spec.gop_frames), "-sc_threshold", "0", "-bf", "2",
         "-x264-params", x264_params,
     ]
     command += ["-c:a", "aac", "-b:a", "128k", "-shortest"] if spec.audio else ["-an"]
+    if spec.video_timescale:
+        command += ["-video_track_timescale", str(spec.video_timescale)]
+    if spec.start_offset:
+        command += ["-output_ts_offset", str(spec.start_offset)]
     command.append(str(output_path))
     completed = run(command)
     if completed.returncode != 0:
@@ -187,6 +201,17 @@ def stream_durations(ffprobe: Path, path: Path) -> dict:
         elif key == "duration" and value not in ("", "N/A"):
             durations[codec_type or "format"] = round(float(value), 3)
             codec_type = None
+    # Matroska stores no per-stream duration: measure it from the packets (first PTS to last PTS + duration).
+    for stream_type, selector in (("video", "v:0"), ("audio", "a:0")):
+        if stream_type in durations:
+            continue
+        packets = run([str(ffprobe), "-v", "error", "-select_streams", selector, "-show_entries",
+                       "packet=pts_time,duration_time", "-of", "csv=p=0", str(path)]).stdout.split()
+        rows = [line.split(",") for line in packets if "N/A" not in line and line.count(",") == 1]
+        if rows:
+            starts = [float(pts) for pts, _ in rows]
+            ends = [float(pts) + float(duration) for pts, duration in rows]
+            durations[stream_type] = round(max(ends) - min(starts), 3)
     return durations
 
 

@@ -6,6 +6,7 @@ from PySide6.QtCore import QRunnable, Slot
 
 from services.analysis.cancellation import CancellationToken
 from services.analysis.contracts import AnalysisRunRequest
+from services.user_errors import technical_details, user_message
 from services.workflows.analysis_service import AnalysisService
 from workers.worker_signals import WorkerSignals
 
@@ -48,8 +49,8 @@ class AnalysisWorker(QRunnable):
             )
             self.signals.finished.emit(self.job_token, result)
         except Exception as exc:
-            logger.exception("Unexpected analysis worker failure")
-            self._emit_error(str(exc))
+            logger.exception("Unexpected analysis worker failure\n%s", technical_details(exc))
+            self._emit_error(user_message(exc))
 
     def _emit_progress(self, percent: int, message: str) -> None:
         try:

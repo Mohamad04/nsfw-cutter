@@ -89,7 +89,10 @@ class VideoCutRequest(BaseModel):
     @model_validator(mode="after")
     def validate_input_path(self):
         if not self.input_path.is_file():
-            raise ValueError(f"Input video does not exist: {self.input_path}")
+            raise ValueError(f"\"{self.input_path.name}\" can no longer be found. It may have been moved, renamed or deleted.")
+        if self.input_path.suffix.lower() not in {".mp4", ".mkv"}:
+            # Same rule as opening a video (D9): the cutting services only support MP4 and MKV sources.
+            raise ValueError(f"\"{self.input_path.name}\" is not a supported video. Open an MP4 or MKV file.")
         return self
 
 

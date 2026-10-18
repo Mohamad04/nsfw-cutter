@@ -35,7 +35,8 @@ class VideoImportServiceTests(unittest.TestCase):
             finally:
                 db.close()
 
-        self.service = VideoImportService(db_session_factory=session_factory)
+        # These tests cover the database records; real media validation is in test_media_validation.py.
+        self.service = VideoImportService(db_session_factory=session_factory, media_validator=lambda path: None)
 
     def tearDown(self):
         Base.metadata.drop_all(bind=self.engine)

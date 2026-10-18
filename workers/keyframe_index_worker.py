@@ -5,6 +5,7 @@ from time import perf_counter
 from PySide6.QtCore import QRunnable, Slot
 
 from services.editing.keyframe_service import KeyframeService
+from services.user_errors import technical_details, user_message
 from workers.worker_signals import WorkerSignals
 
 
@@ -36,7 +37,8 @@ class KeyframeIndexWorker(QRunnable):
         try:
             keyframes = self.keyframe_service.extract_keyframes(self.input_path)
         except Exception as exc:
-            self._emit_error(str(exc))
+            logger.warning("[Keyframes] Indexing failed: %s\n%s", self.input_path, technical_details(exc))
+            self._emit_error(user_message(exc))
             return
 
         try:

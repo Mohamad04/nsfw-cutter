@@ -29,7 +29,9 @@ class SmartCuttingExportRunner:
         try:
             input_file = Path(input_path)
             if not input_file.is_file():
-                raise ValueError(f"Input video does not exist: {input_file}")
+                raise ValueError(
+                    f"\"{input_file.name}\" can no longer be found. It may have been moved, renamed or deleted."
+                )
             if not segments:
                 raise ValueError("At least one cut segment is required.")
             resolved_output_dir = self._output_preferences.resolve_output_dir(input_file, output_dir)

@@ -1,10 +1,11 @@
 from pydantic import ValidationError
 
+from services.user_errors import format_validation_error as format_request_validation_error
+
 
 def format_validation_error(exc: Exception) -> str:
     if isinstance(exc, ValidationError):
-        first_error = exc.errors()[0] if exc.errors() else {}
-        return first_error.get("msg") or "Invalid video cut request."
+        return format_request_validation_error(exc)
     return str(exc)
 
 

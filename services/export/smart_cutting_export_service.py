@@ -111,7 +111,7 @@ class SmartCuttingExportService:
         export_mode = str(request_data.get("export_mode") or "remove_intervals")
         segments = list(request_data.get("segments") or [])
         if not input_path.is_file():
-            raise ValueError(f"Input video does not exist: {input_path}")
+            raise ValueError(f"\"{input_path.name}\" can no longer be found. It may have been moved, renamed or deleted.")
         if not segments:
             raise ValueError("At least one cut segment is required.")
         validate_smart_export_mode(export_mode)

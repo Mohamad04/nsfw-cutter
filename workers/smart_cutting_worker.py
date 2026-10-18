@@ -1,3 +1,5 @@
+import logging
+
 from PySide6.QtCore import QRunnable, Slot
 
 from services.export.smart_cutting_export_service import SmartCuttingExportService
@@ -6,7 +8,11 @@ from services.infrastructure.ffmpeg.bounded_runner import (
     ExportCancellationToken,
     ExportCancelledError,
 )
+from services.user_errors import is_cancellation, technical_details, user_message
 from workers.worker_signals import WorkerSignals
+
+
+logger = logging.getLogger(__name__)
 
 
 def run_smart_cutting_job(request_data: dict, progress_callback=None, cancel_token=None) -> dict:
@@ -43,4 +49,8 @@ class SmartCuttingWorker(QRunnable):
         except ExportCancelledError as exc:
             self.signals.cancelled.emit(self.job_key, str(exc))
         except Exception as exc:
-            self.signals.error.emit(self.job_key, str(exc))
+            if is_cancellation(exc):
+                self.signals.cancelled.emit(self.job_key, user_message(exc))
+                return
+            logger.error("Smart Cutting export failed: %s\n%s", self.job_key, technical_details(exc), exc_info=exc)
+            self.signals.error.emit(self.job_key, user_message(exc))

@@ -422,6 +422,44 @@ Item {
                 }
             }
 
+            Rectangle {
+                id: videoLoadErrorBanner
+                objectName: "videoLoadErrorBanner"
+
+                Layout.fillWidth: true
+                Layout.preferredHeight: visible ? videoLoadErrorRow.implicitHeight + 16 : 0
+                visible: appController.videoLoadError.length > 0
+                radius: 10
+                color: root.lightMode ? "#FEF2F2" : "#2A1215"
+                border.color: root.lightMode ? "#FCA5A5" : "#7F1D1D"
+
+                RowLayout {
+                    id: videoLoadErrorRow
+
+                    anchors.fill: parent
+                    anchors.margins: 8
+                    anchors.leftMargin: 14
+                    spacing: 12
+
+                    Text {
+                        objectName: "videoLoadErrorText"
+                        Layout.fillWidth: true
+                        text: appController.videoLoadError
+                        wrapMode: Text.WordWrap
+                        color: root.lightMode ? "#991B1B" : "#FCA5A5"
+                        font.pixelSize: 13
+                    }
+
+                    AppButton {
+                        text: qsTr("Dismiss")
+                        variant: "ghost"
+                        size: "sm"
+                        lightMode: root.lightMode
+                        onClicked: appController.dismissVideoLoadError()
+                    }
+                }
+            }
+
             RowLayout {
                 Layout.fillWidth: true
                 Layout.fillHeight: true

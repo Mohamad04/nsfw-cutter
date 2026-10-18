@@ -40,6 +40,7 @@ from services.export.cut_json_service import CutJsonError, CutJsonService
 from services.media.import_service import VideoImportService
 from services.settings_service import SettingsService
 from services.subtitles.processing_service import SubtitleService
+from services.user_errors import technical_details, user_message
 from services.subtitles.selection_service import (
     OFF_SUBTITLE_OPTION_ID,
     analysis_subtitle_status_text,
@@ -107,6 +108,7 @@ class AppController(QObject):
     activePreviewSubtitleTrackIndexChanged = Signal()
     previewSubtitleTextChanged = Signal()
     projectStatusChanged = Signal()
+    videoLoadErrorChanged = Signal()
     currentFolderChanged = Signal()
     availableVideosChanged = Signal()
     selectedVideoPathChanged = Signal()
@@ -248,6 +250,15 @@ class AppController(QObject):
     @Property(str, notify=projectStatusChanged)
     def projectStatus(self):
         return self._state.project_status
+
+    @Property(str, notify=videoLoadErrorChanged)
+    def videoLoadError(self):
+        """Why the last file could not be opened; empty once a video loads or the message is dismissed."""
+        return self._state.video_load_error
+
+    @Slot()
+    def dismissVideoLoadError(self):
+        self._set_video_load_error("")
 
     @Property(str, notify=currentFolderChanged)
     def currentFolder(self):
@@ -478,18 +489,27 @@ class AppController(QObject):
     def loadVideoFiles(self, file_paths):
         valid_videos = []
         skipped = 0
+        first_error = ""
         for file_path in file_paths or []:
             try:
                 video = self.video_import_service.build_video_listing_for_file(file_path)
-            except ValueError:
+            except ValueError as exc:
                 skipped += 1
+                first_error = first_error or str(exc)
                 continue
 
             if not any(existing["path"] == video["path"] for existing in valid_videos):
                 valid_videos.append(video)
 
         if not valid_videos:
-            self._set_project_status("No supported videos selected.")
+            if skipped == 1 and first_error:
+                message = first_error
+            elif first_error:
+                message = f"None of the selected files could be opened. {first_error}"
+            else:
+                message = "No supported videos selected."
+            self._set_project_status(message)
+            self._set_video_load_error(message)
             return
 
         self._append_available_videos(valid_videos)
@@ -503,23 +523,31 @@ class AppController(QObject):
 
         if skipped:
             self._set_project_status(
-                f"Loaded {len(valid_videos)} video(s); skipped {skipped} unsupported or missing file(s)."
+                f"Loaded {len(valid_videos)} video(s); skipped {skipped} file(s) that could not be opened. "
+                f"First problem: {first_error}"
             )
         elif len(valid_videos) > 1:
             self._set_project_status(f"Loaded {len(valid_videos)} selected video(s).")
 
     def _load_video_file(self, file_path: str) -> bool:
+        """Load a video only once it passed media validation; a rejected file changes nothing but the status."""
         try:
             result = self._video_loader.import_video_file(file_path)
             self._apply_loaded_video(result)
             return True
         except ValueError as exc:
-            self._set_project_status(str(exc))
+            logger.warning("Video not loaded: %s\n%s", file_path, technical_details(exc))
+            self._reject_video_file(str(exc))
             return False
-        except Exception:
-            logger.exception("Unexpected error while loading video")
-            self._set_project_status("Unexpected error while loading video")
+        except Exception as exc:
+            logger.exception("Unexpected error while loading video: %s\n%s", file_path, technical_details(exc))
+            self._reject_video_file(f"Could not open the video. {user_message(exc)}")
             return False
+
+    def _reject_video_file(self, message: str) -> None:
+        # The previously loaded video, if any, stays loaded; only the status and the notice change.
+        self._set_project_status(message)
+        self._set_video_load_error(message)
 
     @Slot(str)
     def openRecentFile(self, file_path: str):
@@ -530,7 +558,7 @@ class AppController(QObject):
         if not video_path.is_file():
             self.settings_service.remove_recent_video(video_path)
             self.recentFilesChanged.emit()
-            self._set_project_status("Recent file no longer exists.")
+            self._reject_video_file(f"\"{video_path.name}\" no longer exists. It was removed from the recent files.")
             return
 
         self.loadVideoFile(str(video_path))
@@ -575,6 +603,7 @@ class AppController(QObject):
         self._clear_ai_suggestions()
         self._state.project_status = "Ready"
         self._state.selected_video_path = ""
+        self._set_video_load_error("")
         self.keyframe_service.clear_active_media()
 
         self.videoUrlChanged.emit()
@@ -844,6 +873,7 @@ class AppController(QObject):
         self._state.video_name = result.get("video_name", "No video selected")
         self._state.selected_video_path = selected_video_path
         self._state.project_status = result.get("status", "Video loaded")
+        self._set_video_load_error("")
         self._clear_ai_suggestions()
 
         self.videoUrlChanged.emit()
@@ -1716,6 +1746,11 @@ class AppController(QObject):
     def _set_project_status(self, status: str):
         self._state.project_status = status
         self.projectStatusChanged.emit()
+
+    def _set_video_load_error(self, message: str) -> None:
+        if self._state.video_load_error != message:
+            self._state.video_load_error = message
+            self.videoLoadErrorChanged.emit()
 
     def _set_current_folder(self, folder: str):
         if self._state.current_folder != folder:

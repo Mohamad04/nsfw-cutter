@@ -20,10 +20,12 @@ class FakeAppController(QObject):
     aiModelSetupStatusChanged = Signal()
     aiModelSetupErrorChanged = Signal()
     aiModelSetupComponentChanged = Signal()
+    videoLoadErrorChanged = Signal()
 
     def __init__(self):
         super().__init__()
         self._selected_video_path = ""
+        self._video_load_error = ""
         self._ai_models_ready = True
         self._ai_model_setup_state = "ready"
         self._ai_model_setup_progress = 3
@@ -55,6 +57,18 @@ class FakeAppController(QObject):
     @Property(str, constant=True)
     def projectStatus(self):
         return "Ready"
+
+    @Property(str, notify=videoLoadErrorChanged)
+    def videoLoadError(self):
+        return self._video_load_error
+
+    @Slot()
+    def dismissVideoLoadError(self):
+        self.set_video_load_error("")
+
+    def set_video_load_error(self, message: str):
+        self._video_load_error = message
+        self.videoLoadErrorChanged.emit()
 
     @Property(str, constant=True)
     def subtitleDetectionState(self):
@@ -417,6 +431,24 @@ ApplicationWindow {{
         page = window.findChild(QObject, "windowedCleanShellPage")
         self.assertIsNotNone(page)
         return engine, page, app_controller, video_cut_controller
+
+    def test_rejected_video_shows_a_dismissible_notice(self):
+        engine, page, app_controller, _video_cut_controller = self._load_windowed_page()
+        banner = page.findChild(QObject, "videoLoadErrorBanner")
+        self.assertIsNotNone(banner)
+        self.assertFalse(banner.property("visible"))
+
+        message = '"clip.mp4" is incomplete: the end of the video is missing or damaged.'
+        app_controller.set_video_load_error(message)
+        self.app.processEvents()
+        self.assertTrue(banner.property("visible"))
+        self.assertEqual(page.findChild(QObject, "videoLoadErrorText").property("text"), message)
+        self.assertEqual(app_controller.selectedVideoPath, "")
+
+        app_controller.dismissVideoLoadError()
+        self.app.processEvents()
+        self.assertFalse(banner.property("visible"))
+        engine.deleteLater()
 
     def test_empty_video_stage_is_a_real_open_button(self):
         engine, page, app_controller, _video_cut_controller = self._load_windowed_page()

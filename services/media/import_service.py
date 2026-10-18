@@ -5,6 +5,7 @@ from database.session import get_db_session
 from repositories.user_repository import create_user, get_user_by_email
 from repositories.video_repository import add_video
 from services.media.discovery_service import VideoDiscoveryService
+from services.media.media_validation import validate_media_file
 from services.subtitles.processing_service import SubtitleService
 
 
@@ -19,8 +20,11 @@ class VideoImportService:
         db_session_factory: Callable | None = None,
         video_discovery_service: VideoDiscoveryService | None = None,
         subtitle_service: SubtitleService | None = None,
+        media_validator: Callable | None = None,
     ):
         self.db_session_factory = db_session_factory or get_db_session
+        # Probes the real container and video stream before a file is listed or loaded (D9).
+        self.media_validator = media_validator or validate_media_file
         self.video_discovery_service = video_discovery_service or VideoDiscoveryService()
         self.subtitle_service = subtitle_service or SubtitleService()
 
@@ -30,10 +34,12 @@ class VideoImportService:
 
     def build_video_listing_for_file(self, file_path: str | Path) -> dict:
         video_path = self.video_discovery_service.validate_video_file(file_path)
+        self.media_validator(video_path)
         return self._build_video_listing(video_path)
 
     def import_video_file(self, file_path: str | Path, user_id: int | None = None) -> dict:
         video_path = self.video_discovery_service.validate_video_file(file_path)
+        self.media_validator(video_path)
         subtitle_path = self.subtitle_service.find_subtitle_for_video(video_path)
 
         with self.db_session_factory() as db:

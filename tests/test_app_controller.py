@@ -1152,7 +1152,8 @@ class AppControllerTests(unittest.TestCase):
         )
         self.assertEqual(
             self.controller.projectStatus,
-            "Loaded 2 video(s); skipped 1 unsupported or missing file(s).",
+            "Loaded 2 video(s); skipped 1 file(s) that could not be opened. "
+            "First problem: Unsupported video format. Use .mp4 or .mkv",
         )
 
     def test_open_recent_file_removes_missing_entry_without_crashing(self):
@@ -1162,7 +1163,8 @@ class AppControllerTests(unittest.TestCase):
         self.controller.openRecentFile(str(missing_path))
 
         self.assertEqual(self.controller.recentFiles, [])
-        self.assertEqual(self.controller.projectStatus, "Recent file no longer exists.")
+        self.assertIn("no longer exists", self.controller.projectStatus)
+        self.assertEqual(self.controller.videoLoadError, self.controller.projectStatus)
 
     def test_clear_recent_files_keeps_current_video_loaded(self):
         self.controller.loadVideoFile("/tmp/a.mp4")

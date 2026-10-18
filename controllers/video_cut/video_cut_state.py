@@ -10,3 +10,4 @@ class VideoCutState:
     cut_details: str = ""
     cut_warning: str = ""
     cut_output_paths: list[str] = field(default_factory=list)
+    cut_cancelled: bool = False

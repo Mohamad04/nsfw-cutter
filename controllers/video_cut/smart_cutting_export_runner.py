@@ -62,9 +62,33 @@ class SmartCuttingExportRunner:
         worker.signals.progress.connect(self.handle_progress)
         worker.signals.finished.connect(self.handle_finished)
         worker.signals.error.connect(self.handle_error)
+        worker.signals.cancelled.connect(self.handle_cancelled)
         callbacks.on_started(0)
         self._thread_pool.start(worker)
         return True
+
+    def cancel(self) -> bool:
+        """Ask every running export worker to stop; returns True if one was running."""
+        workers = list(self._workers.values())
+        for worker in workers:
+            worker.cancel()
+        return bool(workers)
+
+    def handle_cancelled(self, job_key: str, message: str) -> None:
+        self._job_registry.finish(job_key)
+        self._workers.pop(job_key, None)
+        callbacks = self._callbacks.pop(job_key, None)
+        if not callbacks:
+            return
+        callbacks.on_error("")
+        callbacks.on_warning("")
+        callbacks.on_details("")
+        callbacks.on_output_paths([])
+        callbacks.on_progress_value(0)
+        callbacks.on_status("Video export cancelled")
+        callbacks.on_busy(False)
+        if callbacks.on_cancelled is not None:
+            callbacks.on_cancelled(message)
 
     def handle_progress(self, job_key: str, percentage: int, message: str) -> None:
         if not self._job_registry.is_running(job_key):

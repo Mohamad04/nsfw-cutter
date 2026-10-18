@@ -25,6 +25,7 @@ class VideoCutController(QObject):
     cutFinished = Signal(str)
     cutFailed = Signal(str)
     cutProgress = Signal(float)
+    exportCancelled = Signal(str)
 
     cutBusyChanged = Signal()
     cutStatusChanged = Signal()
@@ -33,6 +34,7 @@ class VideoCutController(QObject):
     cutDetailsChanged = Signal()
     cutWarningChanged = Signal()
     cutOutputPathsChanged = Signal()
+    cutCancelledChanged = Signal()
 
     def __init__(
         self,
@@ -104,6 +106,21 @@ class VideoCutController(QObject):
     def cutOutputPaths(self):
         return list(self._state.cut_output_paths)
 
+    @Property(bool, notify=cutCancelledChanged)
+    def cutCancelled(self):
+        return self._state.cut_cancelled
+
+    @Slot(result=bool)
+    def cancelExport(self) -> bool:
+        """Stop the running export: its FFmpeg process is terminated and its partial files removed."""
+        if not self._state.cut_busy:
+            return False
+        cancelled = self._cut_export_runner.cancel()
+        cancelled = self._smart_cutting_export_runner.cancel() or cancelled
+        if cancelled:
+            self._set_cut_status("Cancelling video export...")
+        return cancelled
+
     @Slot()
     def clearExportResult(self):
         if self._state.cut_busy:
@@ -114,6 +131,7 @@ class VideoCutController(QObject):
         self._set_cut_details("")
         self._set_cut_warning("")
         self._set_cut_output_paths([])
+        self._set_cut_cancelled(False)
 
     @Slot(str, float, float, str)
     def exportSingleSegment(self, input_path: str, start_seconds: float, end_seconds: float, output_dir: str):
@@ -132,6 +150,8 @@ class VideoCutController(QObject):
 
     @Slot(str, "QVariantList", str, str)
     def exportSegments(self, input_path: str, segments, output_dir: str, export_mode: str):
+        if self._refuse_while_busy():
+            return
         callbacks = self._callbacks()
         try:
             raw_segments = list(segments or [])
@@ -170,6 +190,8 @@ class VideoCutController(QObject):
         output_dir: str,
         export_mode: str,
     ):
+        if self._refuse_while_busy():
+            return
         self._cut_export_runner.start(
             input_path,
             segments,
@@ -177,6 +199,17 @@ class VideoCutController(QObject):
             export_mode,
             self._callbacks(),
         )
+
+    def _refuse_while_busy(self) -> bool:
+        if not self._state.cut_busy:
+            self._set_cut_cancelled(False)
+            return False
+        self._set_cut_status("Another video export is already running. Wait for it or cancel it.")
+        return True
+
+    def _on_export_cancelled(self, message: str) -> None:
+        self._set_cut_cancelled(True)
+        self.exportCancelled.emit(message)
 
     def _callbacks(self) -> CutExportCallbacks:
         return CutExportCallbacks(
@@ -191,6 +224,7 @@ class VideoCutController(QObject):
             on_finished=self.cutFinished.emit,
             on_failed=self.cutFailed.emit,
             on_progress=self.cutProgress.emit,
+            on_cancelled=self._on_export_cancelled,
         )
 
     def _cutting_mode_for_segments(self, segments) -> str:
@@ -262,6 +296,11 @@ class VideoCutController(QObject):
         if self._state.cut_warning != value:
             self._state.cut_warning = value
             self.cutWarningChanged.emit()
+
+    def _set_cut_cancelled(self, value: bool) -> None:
+        if self._state.cut_cancelled != value:
+            self._state.cut_cancelled = value
+            self.cutCancelledChanged.emit()
 
     def _set_cut_output_paths(self, value) -> None:
         output_paths = [str(path) for path in value or [] if str(path)]

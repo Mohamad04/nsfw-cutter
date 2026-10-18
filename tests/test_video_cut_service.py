@@ -7,11 +7,13 @@ from unittest.mock import patch
 from schemas.video_cut_schema import VideoCutRequest, VideoCutSegment
 from services.editing.cut_execution_service import (
     CutExecutionService,
+    FastCuttingAudioError,
     FastCuttingPrecisionError,
     FastCuttingVerificationError,
     make_unique_path,
 )
 from services.export.video_packet_index import VideoPacket, packets_in_range
+from services.infrastructure.ffmpeg.bounded_runner import ExportCancelledError
 from services.infrastructure.ffmpeg.cutting import FFmpegCuttingService
 from services.infrastructure.ffmpeg.runner import FFmpegNotFoundError, FFmpegService
 
@@ -107,7 +109,7 @@ class CutExecutionServiceTests(unittest.TestCase):
                 command_runner=command_runner,
                 metadata_probe=lambda path: {
                     "duration_seconds": 10 if Path(path) == input_path else 8,
-                    "has_audio": True,
+                    "has_audio": False,
                 },
                 cache_dir=temp_path / "cache",
                 packet_probe=_intra_only_packet_probe(input_path, [(0.0, 1.0), (2.0, 4.0), (5.0, 10.0)]),
@@ -198,7 +200,7 @@ class CutExecutionServiceTests(unittest.TestCase):
             service = CutExecutionService(
                 ffmpeg_service=FakeFFmpegService(),
                 command_runner=command_runner,
-                metadata_probe=lambda path: {"duration_seconds": 10, "has_audio": True},
+                metadata_probe=lambda path: {"duration_seconds": 10, "has_audio": False},
                 cache_dir=temp_path / "cache",
                 packet_probe=lambda path: _gop_packets(keyframe_every=10),
             )
@@ -245,7 +247,7 @@ class CutExecutionServiceTests(unittest.TestCase):
             service = CutExecutionService(
                 ffmpeg_service=FakeFFmpegService(),
                 command_runner=command_runner,
-                metadata_probe=lambda path: {"duration_seconds": 10, "has_audio": True},
+                metadata_probe=lambda path: {"duration_seconds": 10, "has_audio": False},
                 cache_dir=temp_path / "cache",
                 packet_probe=packet_probe,
             )
@@ -254,6 +256,88 @@ class CutExecutionServiceTests(unittest.TestCase):
                 service.export_segments(request)
 
             self.assertFalse((temp_path / "cuts" / "movie_removed_intervals.mp4").exists())
+
+    def test_fast_removal_with_audio_is_refused_before_any_ffmpeg_command(self):
+        commands = []
+
+        def command_runner(command, **_kwargs):
+            commands.append(command)
+            return subprocess.CompletedProcess(command, 0, "", "")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            input_path = temp_path / "movie.mp4"
+            input_path.touch()
+            request = VideoCutRequest(
+                input_path=input_path,
+                output_dir=temp_path / "cuts",
+                export_mode="remove_intervals",
+                cut_mode="stream_copy",
+                segments=[VideoCutSegment(index=1, start_seconds=2.0, end_seconds=4.0)],
+            )
+            service = CutExecutionService(
+                ffmpeg_service=FakeFFmpegService(),
+                command_runner=command_runner,
+                metadata_probe=lambda path: {"duration_seconds": 10, "has_audio": True},
+                cache_dir=temp_path / "cache",
+                packet_probe=lambda path: self.fail("no packet probe expected"),
+            )
+
+            with self.assertRaises(FastCuttingAudioError) as caught:
+                service.export_segments(request)
+
+            self.assertIn("Use Smart Cutting", str(caught.exception))
+            self.assertEqual(commands, [])
+            self.assertFalse((temp_path / "cuts").exists() and any((temp_path / "cuts").iterdir()))
+
+    def test_cancellation_removes_only_files_created_by_the_export(self):
+        def command_runner(command, **_kwargs):
+            output = Path(command[-1])
+            output.write_bytes(b"partial")
+            if "concat" in command:
+                raise ExportCancelledError("Video export was cancelled. No output was kept.")
+            return subprocess.CompletedProcess(command, 0, "", "")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            input_path = temp_path / "movie.mp4"
+            input_path.write_bytes(b"source")
+            output_dir = temp_path / "cuts"
+            output_dir.mkdir()
+            existing = output_dir / "movie_removed_intervals.mp4"
+            existing.write_bytes(b"older export")
+            request = VideoCutRequest(
+                input_path=input_path,
+                output_dir=output_dir,
+                export_mode="remove_intervals",
+                cut_mode="stream_copy",
+                segments=[VideoCutSegment(index=1, start_seconds=2.0, end_seconds=4.0)],
+            )
+            packets = _gop_packets(keyframe_every=10)
+
+            def packet_probe(path):
+                path = Path(path)
+                if "kept_ranges_001" in path.name:
+                    return [packet for packet in packets if packet.pts_seconds < 2.0]
+                if "kept_ranges_002" in path.name:
+                    return [packet for packet in packets if packet.pts_seconds >= 4.0]
+                return packets
+
+            service = CutExecutionService(
+                ffmpeg_service=FakeFFmpegService(),
+                command_runner=command_runner,
+                metadata_probe=lambda path: {"duration_seconds": 10, "has_audio": False},
+                cache_dir=temp_path / "cache",
+                packet_probe=packet_probe,
+            )
+
+            with self.assertRaises(ExportCancelledError):
+                service.export_segments(request)
+
+            self.assertEqual(input_path.read_bytes(), b"source")
+            self.assertEqual(existing.read_bytes(), b"older export")
+            self.assertEqual(sorted(path.name for path in output_dir.iterdir()), ["movie_removed_intervals.mp4"])
+            self.assertEqual(list((temp_path / "cache").iterdir()), [])
 
     def test_make_unique_path_adds_suffix(self):
         with tempfile.TemporaryDirectory() as temp_dir:

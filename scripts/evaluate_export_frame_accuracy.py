@@ -29,6 +29,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from evaluation import export_frame_accuracy as efa
+from services.infrastructure.ffmpeg.bounded_runner import BoundedProcessRunner, FFmpegTimeoutError
 
 
 SUBPROCESS_TIMEOUT_SECONDS = 90
@@ -56,22 +57,25 @@ CASES = [
     ("S11", SMART, "h264_aac_mkv", [(7.3, 12.7)], "exact_or_reject", "MKV H.264 (known D2)"),
     ("S12", SMART, "h264_aac_mp4", [(0.0, 1.5), (10.0, 16.3), (28.7, 30.0)], "exact_or_reject",
      "Known D1 trigger ranges (audio rebuild may hang)"),
-    ("F01", FAST, "h264_aac_mp4", [(7.3, 12.7)], "reject", "Non-keyframe cut"),
-    ("F02", FAST, "h264_aac_mp4", [(8.0, 12.0)], "exact", "Keyframe-aligned cut"),
-    ("F03", FAST, "h264_aac_gop25_mp4", TEN_KEYFRAME_ALIGNED, "exact", "Ten keyframe-aligned cuts (1 s GOP)"),
-    ("F04", FAST, "h264_aac_mp4", TEN_ALIGNED_HALF_SECOND, "reject", "Ten cuts, most not on keyframes"),
-    ("F05", FAST, "h264_aac_mp4", [(6.0, 8.0), (8.0, 10.0)], "exact", "Adjacent keyframe-aligned cuts"),
-    ("F06", FAST, "h264_aac_mp4", [(6.0, 10.0), (8.0, 12.0)], "exact", "Overlapping keyframe-aligned cuts"),
-    ("F07", FAST, "h264_aac_mp4", [(0.0, 2.0), (28.0, 30.0)], "exact", "Cuts at beginning and end"),
-    ("F08", FAST, "h264_aac_mp4", [(26.0, 40.0)], "exact", "End beyond duration (clamped)"),
-    ("F09", FAST, "h264_noaudio_mp4", [(8.0, 12.0)], "exact", "No-audio MP4, keyframe-aligned"),
-    ("F10", FAST, "h264_aac_mkv", [(8.0, 12.0)], "exact_or_reject", "MKV, keyframe-aligned (known D2 seek)"),
-    ("F11", FAST, "h264_aac_opengop_mp4", [(8.0, 12.0)], "exact_or_reject", "Open-GOP source, keyframe times"),
+    ("F01", FAST, "h264_noaudio_mp4", [(7.3, 12.7)], "reject", "Non-keyframe cut"),
+    ("F02", FAST, "h264_noaudio_mp4", [(8.0, 12.0)], "exact", "Keyframe-aligned cut"),
+    ("F03", FAST, "h264_noaudio_gop25_mp4", TEN_KEYFRAME_ALIGNED, "exact", "Ten keyframe-aligned cuts (1 s GOP)"),
+    ("F04", FAST, "h264_noaudio_mp4", TEN_ALIGNED_HALF_SECOND, "reject", "Ten cuts, most not on keyframes"),
+    ("F05", FAST, "h264_noaudio_mp4", [(6.0, 8.0), (8.0, 10.0)], "exact", "Adjacent keyframe-aligned cuts"),
+    ("F06", FAST, "h264_noaudio_mp4", [(6.0, 10.0), (8.0, 12.0)], "exact", "Overlapping keyframe-aligned cuts"),
+    ("F07", FAST, "h264_noaudio_mp4", [(0.0, 2.0), (28.0, 30.0)], "exact", "Cuts at beginning and end"),
+    ("F08", FAST, "h264_noaudio_mp4", [(26.0, 40.0)], "exact", "End beyond duration (clamped)"),
+    ("F09", FAST, "h264_aac_mp4", [(8.0, 12.0)], "reject", "Source with audio (audio cannot be cut exactly)"),
+    ("F10", FAST, "h264_noaudio_mkv", [(8.0, 12.0)], "exact_or_reject", "MKV, keyframe-aligned (known D2 seek)"),
+    ("F11", FAST, "h264_noaudio_opengop_mp4", [(8.0, 12.0)], "exact_or_reject", "Open-GOP source, keyframe times"),
 ]
 
 EXTRA_FIXTURES = {
-    "h264_aac_gop25_mp4": efa.FixtureSpec("h264_aac_gop25_mp4", gop_frames=25),
+    "h264_noaudio_gop25_mp4": efa.FixtureSpec("h264_noaudio_gop25_mp4", audio=False, gop_frames=25),
+    "h264_noaudio_mkv": efa.FixtureSpec("h264_noaudio_mkv", audio=False, container="mkv"),
+    "h264_noaudio_opengop_mp4": efa.FixtureSpec("h264_noaudio_opengop_mp4", audio=False, open_gop=True),
 }
+STALL_TIMEOUT_SECONDS = 20
 
 
 def main() -> int:
@@ -79,6 +83,8 @@ def main() -> int:
     parser.add_argument("--output-dir", required=True, type=Path)
     parser.add_argument("--label", default="run")
     parser.add_argument("--cases", nargs="*", help="Optional subset of case ids")
+    parser.add_argument("--ffmpeg-bin", type=Path,
+                        help="Directory with ffmpeg.exe/ffprobe.exe to use instead of the bundled build (comparison only)")
     parser.add_argument("--remeasure", action="store_true",
                         help="Re-score the existing outputs of <label> with the current measurement code (no export)")
     args = parser.parse_args()
@@ -87,7 +93,12 @@ def main() -> int:
     output_dir.mkdir(parents=True, exist_ok=True)
     _install_subprocess_timeout(SUBPROCESS_TIMEOUT_SECONDS)
 
+    from services.infrastructure.ffmpeg import paths
     from services.infrastructure.ffmpeg.paths import get_ffmpeg_path, get_ffprobe_path
+
+    if args.ffmpeg_bin:
+        override = args.ffmpeg_bin.resolve()
+        paths.find_executable = lambda name: override / (name if name.endswith(".exe") else f"{name}.exe")
 
     ffmpeg, ffprobe = get_ffmpeg_path(), get_ffprobe_path()
     if args.remeasure:
@@ -158,6 +169,9 @@ def run_case(case_id, engine, fixture: Path, removed, expectation, work_dir: Pat
     started = time.perf_counter()
     try:
         output_path, details = (_run_smart if engine == SMART else _run_fast)(fixture, removed, output_dir, cache_dir)
+    except FFmpegTimeoutError as exc:
+        return _finish(case_id, engine, removed, expectation, started, outcome="timeout",
+                       error=str(exc), leftovers=_leftovers(output_dir, cache_dir))
     except subprocess.TimeoutExpired as exc:
         return _finish(case_id, engine, removed, expectation, started, outcome="timeout",
                        error=f"Subprocess exceeded {exc.timeout}s: {' '.join(map(str, exc.cmd))[:300]}",
@@ -184,7 +198,8 @@ def _run_smart(fixture: Path, removed, output_dir: Path, cache_dir: Path):
         {"index": index, "requested_start_seconds": start, "requested_end_seconds": end}
         for index, (start, end) in enumerate(removed, start=1)
     ]
-    payload = SmartCuttingExportService(cache_dir=cache_dir).export(
+    runner = BoundedProcessRunner(stall_timeout_seconds=STALL_TIMEOUT_SECONDS)
+    payload = SmartCuttingExportService(cache_dir=cache_dir, process_runner=runner).export(
         {"input_path": str(fixture), "output_dir": str(output_dir), "segments": segments,
          "export_mode": "remove_intervals"}
     )
@@ -212,7 +227,8 @@ def _run_fast(fixture: Path, removed, output_dir: Path, cache_dir: Path):
             for index, (start, end) in enumerate(removed, start=1)
         ],
     )
-    result = CutExecutionService(cache_dir=cache_dir).export_segments(request)
+    runner = BoundedProcessRunner(stall_timeout_seconds=STALL_TIMEOUT_SECONDS)
+    result = CutExecutionService(cache_dir=cache_dir, command_runner=runner, probe_runner=runner).export_segments(request)
     details = {
         "ffmpeg_command_count": len(result.ffmpeg_commands),
         "duration_warning": result.duration_warning,

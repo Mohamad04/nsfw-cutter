@@ -56,14 +56,14 @@ def mark_completed(db: Session, job_id: int, result: VideoCutResult) -> CutJob:
     return job
 
 
-def mark_failed(db: Session, job_id: int, error_message: str) -> CutJob:
+def mark_failed(db: Session, job_id: int, error_message: str, status: str = "failed") -> CutJob:
     job = _get_job(db, job_id)
-    job.status = "failed"
+    job.status = status
     job.finished_at = utc_now()
     job.error_message = error_message
     for segment in job.segments:
         if segment.status != "completed":
-            segment.status = "failed"
+            segment.status = status
             segment.error_message = error_message
     db.flush()
     return job

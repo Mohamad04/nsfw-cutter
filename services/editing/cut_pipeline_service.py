@@ -4,12 +4,18 @@ from database.session import SessionLocal
 from repositories.cut_job_repository import create_job, mark_completed, mark_failed, mark_running
 from schemas.video_cut_schema import VideoCutRequest
 from services.editing.cut_execution_service import CutExecutionService
+from services.infrastructure.ffmpeg.bounded_runner import BoundedProcessRunner, ExportCancelledError
 
 
 logger = logging.getLogger(__name__)
 
 
-def run_video_cut_job(request_data: dict, progress_callback=None, service_factory=CutExecutionService) -> dict:
+def run_video_cut_job(
+    request_data: dict,
+    progress_callback=None,
+    service_factory=CutExecutionService,
+    cancel_token=None,
+) -> dict:
     request = VideoCutRequest.model_validate(request_data)
 
     with SessionLocal() as db:
@@ -25,7 +31,11 @@ def run_video_cut_job(request_data: dict, progress_callback=None, service_factor
             mark_running(db, job_id)
             db.commit()
 
-        result = service_factory().export_segments(request, progress_callback=progress_callback)
+        runner = BoundedProcessRunner(cancel_token=cancel_token)
+        result = service_factory(command_runner=runner, probe_runner=runner).export_segments(
+            request,
+            progress_callback=progress_callback,
+        )
 
         with SessionLocal() as db:
             mark_completed(db, job_id, result)
@@ -38,7 +48,7 @@ def run_video_cut_job(request_data: dict, progress_callback=None, service_factor
         }
     except Exception as exc:
         with SessionLocal() as db:
-            mark_failed(db, job_id, str(exc))
+            mark_failed(db, job_id, str(exc), status="cancelled" if isinstance(exc, ExportCancelledError) else "failed")
             db.commit()
         logger.exception("Video cut job failed: id=%s", job_id)
         raise

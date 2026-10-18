@@ -1,5 +1,6 @@
 import shutil
 import uuid
+from functools import partial
 from pathlib import Path
 
 from core.paths import get_cuts_cache_dir
@@ -37,6 +38,9 @@ from services.export.video_segment_renderer import (
     VideoSegmentRenderer,
     VideoSegmentVerificationError,
 )
+from services.infrastructure.ffmpeg.bounded_runner import ExportCancelledError, FFmpegTimeoutError
+from services.infrastructure.ffmpeg.subtitles import probe_subtitle_streams
+from services.subtitles.inspection_service import get_embedded_subtitle_streams
 from services.subtitles.processing_service import SubtitleService
 
 
@@ -63,18 +67,31 @@ class SmartCuttingExportService:
         packet_index_service: VideoPacketIndexService | None = None,
         cache_dir: str | Path | None = None,
         debug_keep_temp: bool = False,
+        process_runner=None,
     ):
-        self.media_probe_service = media_probe_service or MediaProbeService()
-        self.keyframe_service = keyframe_service or ExportKeyframeService()
+        # process_runner (e.g. BoundedProcessRunner) runs every FFmpeg/ffprobe call of the default services.
+        runner = process_runner
+        self.media_probe_service = media_probe_service or MediaProbeService(probe_runner=runner)
+        self.keyframe_service = keyframe_service or ExportKeyframeService(probe_runner=runner)
         self.planner = planner or SmartCutPlanner()
-        self.video_renderer = video_renderer or VideoSegmentRenderer()
-        self.video_concat_service = video_concat_service or VideoConcatService()
-        self.audio_rebuild_service = audio_rebuild_service or AudioRebuildService()
-        self.subtitle_service = subtitle_service or SubtitleService()
+        self.packet_index_service = packet_index_service or VideoPacketIndexService(probe_runner=runner)
+        self.video_renderer = video_renderer or VideoSegmentRenderer(
+            command_runner=runner,
+            packet_index_service=VideoPacketIndexService(probe_runner=runner),
+        )
+        self.video_concat_service = video_concat_service or VideoConcatService(command_runner=runner)
+        self.audio_rebuild_service = audio_rebuild_service or AudioRebuildService(command_runner=runner)
+        self.subtitle_service = subtitle_service or SubtitleService(
+            embedded_inspection=partial(
+                get_embedded_subtitle_streams,
+                subtitle_probe=partial(probe_subtitle_streams, probe_runner=runner),
+            )
+        )
         self.subtitle_rebuild_service = subtitle_rebuild_service or SubtitleRebuildService()
-        self.embedded_subtitle_extract_service = embedded_subtitle_extract_service or EmbeddedSubtitleExtractService()
-        self.mux_service = mux_service or MuxService()
-        self.packet_index_service = packet_index_service or VideoPacketIndexService()
+        self.embedded_subtitle_extract_service = embedded_subtitle_extract_service or EmbeddedSubtitleExtractService(
+            command_runner=runner
+        )
+        self.mux_service = mux_service or MuxService(command_runner=runner)
         self.cache_dir = Path(cache_dir) if cache_dir else get_cuts_cache_dir()
         self.debug_keep_temp = debug_keep_temp
 
@@ -165,18 +182,19 @@ class SmartCuttingExportService:
             )
 
             output_path = make_unique_path(output_dir / f"{input_path.stem}_smart_cut{input_path.suffix}")
-            _emit(progress_callback, 88, "Muxing final output")
-            mux_result = self.mux_service.mux(
-                video_only_path,
-                audio_path,
-                subtitle_inputs,
-                output_path,
-                progress_callback=_scaled_progress(progress_callback, 88, 96),
-            )
-
-            _emit(progress_callback, 98, "Validating output")
             final_output_verified = False
             try:
+                # output_path did not exist before this export, so a partial file is ours to delete.
+                _emit(progress_callback, 88, "Muxing final output")
+                mux_result = self.mux_service.mux(
+                    video_only_path,
+                    audio_path,
+                    subtitle_inputs,
+                    output_path,
+                    progress_callback=_scaled_progress(progress_callback, 88, 96),
+                )
+
+                _emit(progress_callback, 98, "Validating output")
                 final_info = self.media_probe_service.probe(mux_result.output_path)
                 validate_final_output(
                     final_info,
@@ -192,7 +210,7 @@ class SmartCuttingExportService:
                 final_output_verified = True
             finally:
                 if not final_output_verified:
-                    mux_result.output_path.unlink(missing_ok=True)
+                    output_path.unlink(missing_ok=True)
 
             result = {
                 "input_path": str(input_path),
@@ -251,6 +269,8 @@ class SmartCuttingExportService:
         subtitle_status: list[dict] = []
         try:
             candidates = self.subtitle_service.discover_subtitles(input_path)
+        except (ExportCancelledError, FFmpegTimeoutError):
+            raise
         except Exception as exc:
             return [], [{"status": "warning", "message": f"Subtitle discovery failed: {exc}"}]
 

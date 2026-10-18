@@ -38,6 +38,13 @@ class FixtureSpec:
     open_gop: bool = False
     container: str = "mp4"
     gop_frames: int = GOP_FRAMES
+    # When set, audio is digital silence except a 3 kHz marker tone inside these source intervals.
+    marker_intervals: tuple[tuple[float, float], ...] = ()
+
+
+def marker_audio_source(intervals: tuple[tuple[float, float], ...]) -> str:
+    inside = "+".join(f"between(t,{start},{end})" for start, end in intervals)
+    return f"aevalsrc='if({inside},0.5*sin(2*PI*3000*t),0)':s=48000:d={DURATION_SECONDS}"
 
 
 FIXTURES = {
@@ -63,7 +70,8 @@ def generate_fixture(ffmpeg: Path, spec: FixtureSpec, output_dir: Path) -> Path:
         "-f", "lavfi", "-i", PATTERN,
     ]
     if spec.audio:
-        command += ["-f", "lavfi", "-i", CLICKS]
+        audio_source = marker_audio_source(spec.marker_intervals) if spec.marker_intervals else CLICKS
+        command += ["-f", "lavfi", "-i", audio_source]
     command += [
         "-c:v", "libx264", "-preset", "veryfast", "-crf", "16", "-pix_fmt", "yuv420p",
         "-g", str(spec.gop_frames), "-keyint_min", str(spec.gop_frames), "-sc_threshold", "0", "-bf", "2",
@@ -195,3 +203,50 @@ def _runs(values: list[int]) -> list[str]:
         else:
             runs.append([value, value])
     return [f"{first}-{last} (src {first / FPS:.2f}s, {(last - first + 1) / FPS:.2f}s)" for first, last in runs][:10]
+
+
+def audible_runs(ffmpeg: Path, path: Path, threshold_db: float = -60.0, window_ms: int = 1) -> dict:
+    """Decoded-sample measurement of where the output audio is not silent.
+
+    Used with marker fixtures: everything kept is digital silence in the source, so any audible
+    window in an export is sound that came from a removed interval (or codec spreading of it).
+    """
+    import array
+    import math
+
+    raw = run([str(ffmpeg), "-v", "error", "-nostdin", "-i", str(path), "-map", "0:a:0", "-ac", "1",
+               "-ar", "48000", "-f", "f32le", "-"], text=False).stdout
+    samples = array.array("f")
+    samples.frombytes(raw[: len(raw) - len(raw) % 4])
+    window = 48 * window_ms
+    threshold = 10 ** (threshold_db / 20)
+    runs: list[list[float]] = []
+    for start in range(0, len(samples), window):
+        block = samples[start:start + window]
+        rms = math.sqrt(sum(value * value for value in block) / len(block)) if block else 0.0
+        if rms > threshold:
+            begin, end = start / 48000, (start + len(block)) / 48000
+            if runs and abs(runs[-1][1] - begin) < 1e-9:
+                runs[-1][1] = end
+            else:
+                runs.append([begin, end])
+    return {
+        "audio_seconds": round(len(samples) / 48000, 4),
+        "audible_ms": round(sum(end - begin for begin, end in runs) * 1000, 1),
+        "audible_runs_s": [[round(begin, 4), round(end, 4)] for begin, end in runs][:20],
+        "threshold_db": threshold_db,
+    }
+
+
+D1_REPRO_AUDIO = "aevalsrc='if(between(t,0.68,0.72),0.5*sin(2*PI*1000*t),0)':s=48000:d=1.5"
+
+
+def aac_encoder_hangs(ffmpeg: Path, output_dir: Path, timeout: float = 15.0) -> bool:
+    """Minimal reproduction of defect D1: native AAC, mono 48 kHz, 192 kb/s, tone burst after silence."""
+    output_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        run([str(ffmpeg), "-v", "error", "-nostdin", "-y", "-f", "lavfi", "-i", D1_REPRO_AUDIO,
+             "-c:a", "aac", "-b:a", "192k", str(output_dir / "d1_probe.m4a")], timeout=timeout)
+    except subprocess.TimeoutExpired:
+        return True
+    return False

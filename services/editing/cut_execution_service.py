@@ -1,4 +1,5 @@
 import logging
+import shutil
 import uuid
 from pathlib import Path
 
@@ -21,6 +22,7 @@ from services.export.video_packet_index import (
     nearest_keyframes,
     packets_in_range,
 )
+from services.infrastructure.ffmpeg.bounded_runner import ExportCancelledError, FFmpegTimeoutError
 from services.infrastructure.ffmpeg.cutting import FFmpegCuttingService
 
 
@@ -46,6 +48,7 @@ class CutExecutionService:
         self.metadata_probe = metadata_probe or self.cutting_service.probe_media
         self.packet_probe = packet_probe or self.cutting_service.probe_video_packets
         self.cache_dir = Path(cache_dir) if cache_dir else get_cuts_cache_dir()
+        self._created_paths: list[Path] = []
 
     def export_segments(self, request: VideoCutRequest, progress_callback=None) -> VideoCutResult:
         request = VideoCutRequest.model_validate(request)
@@ -58,25 +61,32 @@ class CutExecutionService:
         logger.info("Video export mode: %s cut mode: %s", request.export_mode, request.cut_mode)
         logger.info("Video export input duration: %.3f", input_duration)
         logger.info("Video export selected intervals: %s", _segment_intervals(request))
+        if _mode_value(request.export_mode) == CutExportMode.REMOVE_INTERVALS.value and input_metadata.get("has_audio"):
+            raise FastCuttingAudioError(FAST_CUTTING_AUDIO_REFUSED)
 
-        if _mode_value(request.export_mode) == CutExportMode.REMOVE_INTERVALS.value:
-            result = self.remove_selected_intervals(
-                request,
-                input_duration,
-                progress_callback=progress_callback,
-            )
-        elif _mode_value(request.export_mode) == CutExportMode.EXPORT_CLIPS_MERGED.value:
-            result = self.export_selected_clips_merged(
-                request,
-                input_duration,
-                progress_callback=progress_callback,
-            )
-        else:
-            result = self.export_selected_clips(
-                request,
-                input_duration,
-                progress_callback=progress_callback,
-            )
+        self._created_paths = []
+        try:
+            if _mode_value(request.export_mode) == CutExportMode.REMOVE_INTERVALS.value:
+                result = self.remove_selected_intervals(
+                    request,
+                    input_duration,
+                    progress_callback=progress_callback,
+                )
+            elif _mode_value(request.export_mode) == CutExportMode.EXPORT_CLIPS_MERGED.value:
+                result = self.export_selected_clips_merged(
+                    request,
+                    input_duration,
+                    progress_callback=progress_callback,
+                )
+            else:
+                result = self.export_selected_clips(
+                    request,
+                    input_duration,
+                    progress_callback=progress_callback,
+                )
+        except (ExportCancelledError, FFmpegTimeoutError):
+            self._discard_created_paths()
+            raise
 
         logger.info("Video export output files: %s", result.output_paths)
         logger.info(
@@ -99,7 +109,7 @@ class CutExecutionService:
         output_paths = []
 
         for offset, segment in enumerate(request.segments, start=1):
-            output_path = make_unique_path(
+            output_path = self._new_output_path(
                 request.output_dir
                 / _clip_output_name(request.input_path, segment.index, segment.start_seconds, segment.end_seconds)
             )
@@ -135,7 +145,7 @@ class CutExecutionService:
     ) -> VideoCutResult:
         selected_intervals = _segment_intervals(request)
         merged_name = request.merged_output_name or f"{request.input_path.stem}_selected_clips_merged{request.input_path.suffix}"
-        merged_path = make_unique_path(request.output_dir / Path(merged_name).name)
+        merged_path = self._new_output_path(request.output_dir / Path(merged_name).name)
 
         temporary_segments = self._export_temporary_ranges(
             request.input_path,
@@ -186,7 +196,7 @@ class CutExecutionService:
             copy_ranges.append((start_seconds, end_seconds, packets))
 
         output_name = request.merged_output_name or f"{request.input_path.stem}_removed_intervals{request.input_path.suffix}"
-        output_path = make_unique_path(request.output_dir / Path(output_name).name)
+        output_path = self._new_output_path(request.output_dir / Path(output_name).name)
         temporary_segments = self._export_temporary_ranges(
             request.input_path,
             [(start_seconds, end_seconds) for start_seconds, end_seconds, _ in copy_ranges],
@@ -236,6 +246,7 @@ class CutExecutionService:
     ) -> list[Path]:
         job_cache_dir = self.cache_dir / f"{cache_prefix}_{uuid.uuid4().hex}"
         job_cache_dir.mkdir(parents=True, exist_ok=True)
+        self._created_paths.append(job_cache_dir)
         temporary_segments = []
 
         for offset, (start_seconds, end_seconds) in enumerate(intervals, start=1):
@@ -255,6 +266,20 @@ class CutExecutionService:
             )
 
         return temporary_segments
+
+    def _new_output_path(self, path: Path) -> Path:
+        output_path = make_unique_path(path)
+        self._created_paths.append(output_path)
+        return output_path
+
+    def _discard_created_paths(self) -> None:
+        """After a cancellation or timeout, remove only what this export created (never the source)."""
+        for path in self._created_paths:
+            if path.is_dir():
+                shutil.rmtree(path, ignore_errors=True)
+            else:
+                path.unlink(missing_ok=True)
+        self._created_paths = []
 
     def _result_with_duration_validation(
         self,
@@ -301,6 +326,19 @@ class FastCuttingPrecisionError(ValueError):
 
 class FastCuttingVerificationError(ValueError):
     pass
+
+
+class FastCuttingAudioError(ValueError):
+    pass
+
+
+# Measured on decoded samples (marker-tone fixtures): stream-copied AAC keeps about 0.1 s of the
+# removed sound at every splice, because audio is copied in whole frames around each boundary.
+FAST_CUTTING_AUDIO_REFUSED = (
+    "Fast Cutting cannot remove audio exactly: stream copy keeps whole audio frames around each cut, "
+    "so up to about 0.1 s of sound from every removed interval would remain. Nothing was exported. "
+    "Use Smart Cutting, which rebuilds the audio exactly."
+)
 
 
 def require_keyframe_aligned_removals(

@@ -220,10 +220,13 @@ class FakeVideoCutController(QObject):
     cutWarningChanged = Signal()
     cutDetailsChanged = Signal()
     cutOutputPathsChanged = Signal()
+    cutCancelledChanged = Signal()
 
     def __init__(self):
         super().__init__()
         self._cut_busy = False
+        self._cut_cancelled = False
+        self.cancel_requests = 0
         self._cut_progress_value = 0
         self._cut_status = "Video export idle"
         self._cut_error = ""
@@ -258,6 +261,39 @@ class FakeVideoCutController(QObject):
     @Property("QVariantList", notify=cutOutputPathsChanged)
     def cutOutputPaths(self):
         return list(self._cut_output_paths)
+
+    @Property(bool, notify=cutCancelledChanged)
+    def cutCancelled(self):
+        return self._cut_cancelled
+
+    @Slot(result=bool)
+    def cancelExport(self):
+        self.cancel_requests += 1
+        return self._cut_busy
+
+    def start_export(self):
+        self._cut_busy = True
+        self._cut_cancelled = False
+        self._cut_progress_value = 40
+        self._cut_status = "Exporting video chunks"
+        self.cutBusyChanged.emit()
+        self.cutCancelledChanged.emit()
+        self.cutProgressValueChanged.emit()
+        self.cutStatusChanged.emit()
+
+    def cancel_export_done(self):
+        self._cut_busy = False
+        self._cut_cancelled = True
+        self._cut_progress_value = 0
+        self._cut_status = "Video export cancelled"
+        self._cut_error = ""
+        self._cut_output_paths = []
+        self.cutBusyChanged.emit()
+        self.cutCancelledChanged.emit()
+        self.cutProgressValueChanged.emit()
+        self.cutStatusChanged.emit()
+        self.cutErrorChanged.emit()
+        self.cutOutputPathsChanged.emit()
 
     @Slot()
     def clearExportResult(self):
@@ -491,6 +527,37 @@ ApplicationWindow {{
         self.assertTrue(panel.property("visible"))
         self.assertEqual(status.property("text"), "Export failed")
         self.assertEqual(error.property("text"), "FFmpeg could not write the output file.")
+        self.assertIsNotNone(engine)
+
+    def test_cancel_button_is_offered_while_exporting_and_calls_the_controller(self):
+        engine, page, _app_controller, video_cut_controller = self._load_page()
+        cancel_button = page.findChild(QObject, "cancelExportButton")
+        self.assertIsNotNone(cancel_button)
+        self.assertFalse(cancel_button.property("visible"))
+
+        video_cut_controller.start_export()
+        self.app.processEvents()
+
+        self.assertTrue(cancel_button.property("visible"))
+        self.assertTrue(QMetaObject.invokeMethod(cancel_button, "click"))
+        self.app.processEvents()
+        self.assertEqual(video_cut_controller.cancel_requests, 1)
+        self.assertIsNotNone(engine)
+
+    def test_cancelled_export_is_reported_distinctly_from_failure(self):
+        engine, page, _app_controller, video_cut_controller = self._load_page()
+        video_cut_controller.start_export()
+        self.app.processEvents()
+
+        video_cut_controller.cancel_export_done()
+        self.app.processEvents()
+
+        panel = page.findChild(QObject, "exportResultPanel")
+        status = page.findChild(QObject, "exportResultStatusText")
+        cancel_button = page.findChild(QObject, "cancelExportButton")
+        self.assertTrue(panel.property("visible"))
+        self.assertEqual(status.property("text"), "Export cancelled. No file was kept.")
+        self.assertFalse(cancel_button.property("visible"))
         self.assertIsNotNone(engine)
 
     def test_switching_video_clears_terminal_export_result(self):

@@ -39,7 +39,35 @@ class _MemorySettingsService:
 
 
 class RealFFmpegVideoCutIntegrationTests(unittest.TestCase):
-    def test_controller_remove_intervals_exports_probeable_h264_mp4_with_audio(self):
+    def test_controller_remove_intervals_exports_probeable_h264_mp4_without_audio(self):
+        run = self._run_fast_export(audio=False)
+
+        self.assertEqual(run.failures, [])
+        self.assertEqual(len(run.completions), 1)
+        self.assertFalse(run.controller.cutBusy)
+        self.assertEqual(run.controller.cutError, "")
+        self.assertEqual(len(run.controller.cutOutputPaths), 1)
+        self.assertIn("FFmpeg commands: 3", run.controller.cutDetails)
+        self.assertIn("-f concat", run.controller.cutDetails)
+
+        output_info = run.output_info
+        self.assertIsNotNone(output_info.video_stream)
+        self.assertEqual(output_info.video_stream.codec_name, "h264")
+        self.assertEqual(output_info.video_stream.pix_fmt, "yuv420p")
+        self.assertFalse(output_info.has_audio)
+        self.assertAlmostEqual(output_info.duration_seconds, 3.0, delta=0.35)
+
+    def test_controller_refuses_fast_removal_of_a_source_with_audio(self):
+        run = self._run_fast_export(audio=True)
+
+        self.assertEqual(run.completions, [])
+        self.assertEqual(len(run.failures), 1)
+        self.assertIn("Fast Cutting cannot remove audio exactly", run.controller.cutError)
+        self.assertFalse(run.controller.cutBusy)
+        self.assertEqual(run.controller.cutOutputPaths, [])
+        self.assertEqual(run.output_files, [])
+
+    def _run_fast_export(self, audio: bool) -> SimpleNamespace:
         try:
             ffmpeg_path = get_ffmpeg_path()
             ffprobe_path = get_ffprobe_path()
@@ -65,14 +93,14 @@ class RealFFmpegVideoCutIntegrationTests(unittest.TestCase):
                 root = Path(temp_dir)
                 input_path = root / "compatible-input.mp4"
                 output_dir = root / "exports"
-                _generate_compatible_fixture(ffmpeg_path, input_path)
+                _generate_compatible_fixture(ffmpeg_path, input_path, audio=audio)
 
                 ffmpeg_service = FFmpegService(ffmpeg_path, ffprobe_path)
                 media_probe = MediaProbeService(ffmpeg_service=ffmpeg_service)
                 source_info = media_probe.probe(input_path)
                 self.assertEqual(source_info.video_stream.codec_name, "h264")
                 self.assertEqual(source_info.video_stream.pix_fmt, "yuv420p")
-                self.assertTrue(source_info.has_audio)
+                self.assertEqual(source_info.has_audio, audio)
 
                 controller = VideoCutController(
                     thread_pool=_SynchronousThreadPool(),
@@ -103,31 +131,26 @@ class RealFFmpegVideoCutIntegrationTests(unittest.TestCase):
                         "remove_intervals",
                     )
 
-                self.assertEqual(failures, [])
-                self.assertEqual(len(completions), 1)
-                self.assertFalse(controller.cutBusy)
-                self.assertEqual(controller.cutError, "")
-                self.assertEqual(len(controller.cutOutputPaths), 1)
-                self.assertIn("FFmpeg commands: 3", controller.cutDetails)
-                self.assertIn("-f concat", controller.cutDetails)
-
-                output_path = Path(controller.cutOutputPaths[0])
-                self.assertTrue(output_path.is_file())
-                self.assertGreater(output_path.stat().st_size, 0)
-
-                output_info = media_probe.probe(output_path)
-                self.assertIsNotNone(output_info.video_stream)
-                self.assertEqual(output_info.video_stream.codec_name, "h264")
-                self.assertEqual(output_info.video_stream.pix_fmt, "yuv420p")
-                self.assertTrue(output_info.has_audio)
-                self.assertEqual(output_info.audio_streams[0].codec_name, "aac")
-                self.assertAlmostEqual(output_info.duration_seconds, 3.0, delta=0.35)
+                output_info = None
+                if controller.cutOutputPaths:
+                    output_path = Path(controller.cutOutputPaths[0])
+                    self.assertTrue(output_path.is_file())
+                    self.assertGreater(output_path.stat().st_size, 0)
+                    output_info = media_probe.probe(output_path)
+                output_files = sorted(path.name for path in output_dir.glob("*")) if output_dir.exists() else []
+                return SimpleNamespace(
+                    controller=controller,
+                    failures=failures,
+                    completions=completions,
+                    output_info=output_info,
+                    output_files=output_files,
+                )
         finally:
             Base.metadata.drop_all(bind=engine)
             engine.dispose()
 
 
-def _generate_compatible_fixture(ffmpeg_path: Path, output_path: Path) -> None:
+def _generate_compatible_fixture(ffmpeg_path: Path, output_path: Path, audio: bool = True) -> None:
     command = [
         str(ffmpeg_path),
         "-hide_banner",
@@ -167,6 +190,11 @@ def _generate_compatible_fixture(ffmpeg_path: Path, output_path: Path) -> None:
         "-y",
         str(output_path),
     ]
+    if not audio:
+        audio_map = command.index("1:a:0")
+        del command[audio_map - 1 : audio_map + 1]
+        audio_codec = command.index("-c:a")
+        command[audio_codec : audio_codec + 4] = ["-an"]
     completed = subprocess.run(
         command,
         capture_output=True,

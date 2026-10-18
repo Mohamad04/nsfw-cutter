@@ -25,7 +25,8 @@ Rectangle {
     readonly property string outputPathsText: root.joinOutputPaths(videoCutController.cutOutputPaths)
     readonly property bool exportFailed: !videoCutController.cutBusy && videoCutController.cutError.length > 0
     readonly property bool exportCompleted: !videoCutController.cutBusy && root.outputPathsText.length > 0
-    readonly property bool hasExportResult: root.exportFailed || root.exportCompleted
+    readonly property bool exportCancelled: !videoCutController.cutBusy && videoCutController.cutCancelled
+    readonly property bool hasExportResult: root.exportFailed || root.exportCompleted || root.exportCancelled
 
     implicitHeight: 66 + (root.hasExportResult ? exportResultPanel.implicitHeight + 8 : 0)
 
@@ -203,6 +204,20 @@ Rectangle {
         }
 
         AppButton {
+            objectName: "cancelExportButton"
+            text: qsTr("Cancel")
+            variant: "danger"
+            size: "sm"
+            lightMode: root.lightMode
+            visible: videoCutController.cutBusy
+            Layout.preferredWidth: videoCutController.cutBusy ? 112 : 0
+            Layout.preferredHeight: 40
+            ToolTip.visible: hovered
+            ToolTip.text: qsTr("Stop the export; no partial file is kept")
+            onClicked: videoCutController.cancelExport()
+        }
+
+        AppButton {
             text: qsTr("Export Clean Video")
             iconName: "export"
             variant: "success"
@@ -248,8 +263,12 @@ Rectangle {
             Text {
                 objectName: "exportResultStatusText"
                 Layout.fillWidth: true
-                text: root.exportFailed ? qsTr("Export failed") : qsTr("Export completed")
-                color: root.exportFailed
+                text: root.exportCancelled
+                    ? qsTr("Export cancelled. No file was kept.")
+                    : (root.exportFailed ? qsTr("Export failed") : qsTr("Export completed"))
+                color: root.exportCancelled
+                    ? root.mutedTextColor
+                    : root.exportFailed
                     ? (root.lightMode ? "#B91C1C" : "#FCA5A5")
                     : (root.lightMode ? "#166534" : "#86EFAC")
                 font.pixelSize: 12

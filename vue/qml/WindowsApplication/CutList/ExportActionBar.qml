@@ -218,6 +218,7 @@ Rectangle {
         }
 
         AppButton {
+            objectName: "exportCleanVideoButton"
             text: qsTr("Export Clean Video")
             iconName: "export"
             variant: "success"

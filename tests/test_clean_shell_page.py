@@ -237,9 +237,19 @@ class FakeSettingsController(QObject):
     def theme(self):
         return "dark"
 
+    def __init__(self):
+        super().__init__()
+        self.last_export_mode_reads = 0
+
     @Slot(result=str)
     def getExportDir(self):
         return ""
+
+    @Slot(result=str)
+    def getLastExportMode(self):
+        # A value saved by an older version, when the settings window offered clip export.
+        self.last_export_mode_reads += 1
+        return "export_clips_separate"
 
 
 class FakeVideoCutController(QObject):
@@ -382,6 +392,11 @@ class FakeVideoCutController(QObject):
     def keyframeCutInfo(self, _input_path, _start, _end, _duration=0.0):
         return {"valid": False}
 
+    @Slot(str, "QVariant", str, str)
+    def exportSegments(self, input_path, segments, output_dir, export_mode):
+        self.export_requests = [*getattr(self, "export_requests", []),
+                                {"input_path": input_path, "segments": segments, "export_mode": export_mode}]
+
 
 class CleanShellPageTests(unittest.TestCase):
     @classmethod
@@ -411,7 +426,7 @@ class CleanShellPageTests(unittest.TestCase):
         page = engine.rootObjects()[0]
         return engine, page, app_controller, video_cut_controller
 
-    def _load_windowed_page(self, width=1200, height=800):
+    def _load_windowed_page(self, width=1200, height=800, helpers=""):
         app_controller = FakeAppController()
         settings_controller = FakeSettingsController()
         video_cut_controller = FakeVideoCutController()
@@ -436,9 +451,11 @@ ApplicationWindow {{
     width: {width}
     height: {height}
     AppShell.CleanShellPage {{
+        id: page
         objectName: "windowedCleanShellPage"
         anchors.fill: parent
     }}
+    {helpers}
 }}
 '''
         engine.loadData(
@@ -450,6 +467,7 @@ ApplicationWindow {{
         engine._test_window = window
         page = window.findChild(QObject, "windowedCleanShellPage")
         self.assertIsNotNone(page)
+        engine._test_settings_controller = settings_controller
         return engine, page, app_controller, video_cut_controller
 
     def test_rejected_video_shows_a_dismissible_notice(self):
@@ -469,6 +487,92 @@ ApplicationWindow {{
         self.app.processEvents()
         self.assertFalse(banner.property("visible"))
         engine.deleteLater()
+
+    def test_export_clean_video_always_removes_the_cuts(self):
+        helpers = """
+    function addRemovalCut() {
+        page.appendCut({"start": "00:00:02", "end": "00:00:04", "safeStart": "00:00:02", "safeEnd": "00:00:04",
+                        "safeStartSeconds": 2.0, "safeEndSeconds": 4.0,
+                        "requestedStartSeconds": 2.0, "requestedEndSeconds": 4.0})
+    }
+"""
+        engine, page, app_controller, video_cut_controller = self._load_windowed_page(helpers=helpers)
+        settings_controller = engine._test_settings_controller
+        app_controller.activate_video("C:/videos/movie.mp4")
+        self.assertTrue(QMetaObject.invokeMethod(engine._test_window, "addRemovalCut"))
+        self.app.processEvents()
+
+        button = page.findChild(QObject, "exportCleanVideoButton")
+        self.assertTrue(button.property("enabled"))
+        self.assertTrue(QMetaObject.invokeMethod(button, "click"))
+        self.app.processEvents()
+
+        # Whatever an older version saved, the visible action exports the cut list as removals.
+        self.assertEqual(len(video_cut_controller.export_requests), 1)
+        request = video_cut_controller.export_requests[0]
+        self.assertEqual(request["export_mode"], "remove_intervals")
+        self.assertEqual(request["input_path"], "C:/videos/movie.mp4")
+        self.assertEqual(settings_controller.last_export_mode_reads, 0)
+        engine.deleteLater()
+
+    def test_settings_window_offers_only_the_connected_export_mode(self):
+        import tempfile
+
+        from controllers.settings_controller import SettingsController
+        from controllers.update_controller import UpdateController
+        from services.i18n.translation_service import TranslationService
+        from services.settings_service import SettingsService
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            settings_path = Path(temp_dir) / "settings.json"
+            service = SettingsService(settings_path=settings_path)
+            service.update(last_export_mode="export_clips_merged")  # saved by an older version
+
+            engine = QQmlApplicationEngine()
+            root_dir = Path(__file__).resolve().parents[1]
+            translation = TranslationService(engine, root_dir / "resources" / "i18n", parent=engine)
+            settings_controller = SettingsController(settings_service=service, translation_service=translation)
+            update_controller = UpdateController()
+            context = engine.rootContext()
+            context.setContextProperty("translationService", translation)
+            context.setContextProperty("settingsController", settings_controller)
+            context.setContextProperty("updateController", update_controller)
+            settings_dir = root_dir / "vue" / "qml" / "WindowsApplication" / "Settings"
+            qml = f'''import QtQuick
+import QtQuick.Controls
+import "{settings_dir.as_uri()}" as Settings
+
+ApplicationWindow {{
+    visible: true
+    width: 900
+    height: 900
+    Settings.SettingsDialog {{ objectName: "settingsDialog" }}
+}}
+'''
+            engine.loadData(qml.encode("utf-8"), QUrl.fromLocalFile(str(Path(__file__).resolve())))
+            self.assertTrue(engine.rootObjects())
+            window = engine.rootObjects()[0]
+            dialog = window.findChild(QObject, "settingsDialog")
+            self.assertIsNotNone(dialog)
+            self.assertTrue(QMetaObject.invokeMethod(dialog, "openWithCurrentSettings"))
+            self.app.processEvents()
+
+            description = dialog.findChild(QObject, "exportModeDescription")
+            self.assertIsNotNone(description)
+            self.assertIn("removes every cut", description.property("text"))
+            visible_text = " ".join(str(item.property(name) or "") for item in dialog.findChildren(QObject)
+                                     for name in ("text", "displayText"))
+            for advertised in ("clips separately", "merged clips", "remove intervals"):
+                self.assertNotIn(advertised, visible_text.casefold())
+
+            save = next(item for item in dialog.findChildren(QObject) if item.property("text") == "Save")
+            self.assertTrue(QMetaObject.invokeMethod(save, "click"))
+            self.app.processEvents()
+            # Saving does not rewrite the old value; nothing reads it for exports.
+            self.assertEqual(SettingsService(settings_path=settings_path).load().last_export_mode,
+                             "export_clips_merged")
+            engine.deleteLater()
+            self.app.processEvents()
 
     def test_video_check_in_progress_is_visible_and_cancellable(self):
         engine, page, app_controller, _video_cut_controller = self._load_windowed_page()

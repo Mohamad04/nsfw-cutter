@@ -56,16 +56,10 @@ causes pour le journal (`logs/video-cut.log`). Il est utilisé par l'ouverture, 
 Un dossier de sortie qui est un fichier est refusé avant toute commande FFmpeg
 (`OutputPreferences.resolve_output_dir`).
 
-## Option « Export clips separately » (non modifiée)
+## Modes d'export
 
-- `SettingsDialog.qml` écrit `last_export_mode` via `settingsController.setLastExportMode`.
-- Rien ne relit ce réglage : `CleanShellPage.exportCleanVideo` envoie toujours `"remove_intervals"`.
-- Chaque export appelle `OutputPreferences.remember(..., export_mode)`, qui réécrit
-  `last_export_mode` avec le mode utilisé : le choix fait dans les réglages est écrasé au premier export.
-- Pour le brancher : lire `settingsController.getLastExportMode()` dans `exportCleanVideo`. Il faut
-  aussi présenter les coupes comme des plages **à garder** dans les modes clips (elles sont des plages
-  **à supprimer** dans l'interface actuelle). Enfin, Smart Cutting n'accepte que `remove_intervals` :
-  les modes clips n'existent qu'en Fast Cutting, sans audio et avec des bornes sur des keyframes.
+La fenêtre des réglages ne propose plus les modes clips, qui n'étaient pas branchés : voir
+`docs/export_modes.md`.
 
 ## Enregistrement en base après validation
 

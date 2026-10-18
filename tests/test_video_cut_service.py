@@ -5,7 +5,13 @@ from pathlib import Path
 from unittest.mock import patch
 
 from schemas.video_cut_schema import VideoCutRequest, VideoCutSegment
-from services.editing.cut_execution_service import CutExecutionService, make_unique_path
+from services.editing.cut_execution_service import (
+    CutExecutionService,
+    FastCuttingPrecisionError,
+    FastCuttingVerificationError,
+    make_unique_path,
+)
+from services.export.video_packet_index import VideoPacket, packets_in_range
 from services.infrastructure.ffmpeg.cutting import FFmpegCuttingService
 from services.infrastructure.ffmpeg.runner import FFmpegNotFoundError, FFmpegService
 
@@ -104,12 +110,14 @@ class CutExecutionServiceTests(unittest.TestCase):
                     "has_audio": True,
                 },
                 cache_dir=temp_path / "cache",
+                packet_probe=_intra_only_packet_probe(input_path, [(0.0, 1.0), (2.0, 4.0), (5.0, 10.0)]),
             ).export_segments(request)
 
             concat_command = commands[-1]
             self.assertEqual(len(commands), 4)
             self.assertEqual(commands[0][commands[0].index("-ss") + 1], "00:00:00.000")
             self.assertEqual(commands[0][commands[0].index("-t") + 1], "00:00:01.000")
+            self.assertEqual([command[command.index("-frames:v") + 1] for command in commands[:3]], ["10", "20", "50"])
             self.assertEqual(commands[1][commands[1].index("-ss") + 1], "00:00:02.000")
             self.assertEqual(commands[1][commands[1].index("-t") + 1], "00:00:02.000")
             self.assertEqual(commands[2][commands[2].index("-ss") + 1], "00:00:05.000")
@@ -169,6 +177,84 @@ class CutExecutionServiceTests(unittest.TestCase):
                 self.assertEqual(command[command.index("-c") + 1], "copy")
                 self.assertTrue(forbidden.isdisjoint(command))
 
+    def test_fast_removal_off_keyframe_is_refused_before_any_ffmpeg_command(self):
+        commands = []
+
+        def command_runner(command, **_kwargs):
+            commands.append(command)
+            return subprocess.CompletedProcess(command, 0, "", "")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            input_path = temp_path / "movie.mp4"
+            input_path.touch()
+            request = VideoCutRequest(
+                input_path=input_path,
+                output_dir=temp_path / "cuts",
+                export_mode="remove_intervals",
+                cut_mode="stream_copy",
+                segments=[VideoCutSegment(index=1, start_seconds=1.3, end_seconds=4.0)],
+            )
+            service = CutExecutionService(
+                ffmpeg_service=FakeFFmpegService(),
+                command_runner=command_runner,
+                metadata_probe=lambda path: {"duration_seconds": 10, "has_audio": True},
+                cache_dir=temp_path / "cache",
+                packet_probe=lambda path: _gop_packets(keyframe_every=10),
+            )
+
+            with self.assertRaises(FastCuttingPrecisionError) as caught:
+                service.export_segments(request)
+
+            message = str(caught.exception)
+            self.assertIn("00:00:01.300 (nearest keyframes 00:00:01.000 and 00:00:02.000)", message)
+            self.assertNotIn("00:00:04.000 (", message)
+            self.assertIn("Use Smart Cutting", message)
+            self.assertEqual(commands, [])
+            self.assertFalse((temp_path / "cuts" / "movie_removed_intervals.mp4").exists())
+
+    def test_fast_removal_deletes_output_that_fails_verification(self):
+        def command_runner(command, **_kwargs):
+            Path(command[-1]).write_bytes(b"x")
+            return subprocess.CompletedProcess(command, 0, "", "")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            input_path = temp_path / "movie.mp4"
+            input_path.touch()
+            packets = _gop_packets(keyframe_every=10)
+            kept = [packet for packet in packets if not 2.0 <= packet.pts_seconds < 4.0]
+
+            def packet_probe(path):
+                path = Path(path)
+                if path == input_path:
+                    return packets
+                if "kept_ranges_001" in path.name:
+                    return [packet for packet in packets if packet.pts_seconds < 2.0]
+                if "kept_ranges_002" in path.name:
+                    return [packet for packet in packets if packet.pts_seconds >= 4.0]
+                return kept[:-1]  # joined output lost a frame
+
+            request = VideoCutRequest(
+                input_path=input_path,
+                output_dir=temp_path / "cuts",
+                export_mode="remove_intervals",
+                cut_mode="stream_copy",
+                segments=[VideoCutSegment(index=1, start_seconds=2.0, end_seconds=4.0)],
+            )
+            service = CutExecutionService(
+                ffmpeg_service=FakeFFmpegService(),
+                command_runner=command_runner,
+                metadata_probe=lambda path: {"duration_seconds": 10, "has_audio": True},
+                cache_dir=temp_path / "cache",
+                packet_probe=packet_probe,
+            )
+
+            with self.assertRaises(FastCuttingVerificationError):
+                service.export_segments(request)
+
+            self.assertFalse((temp_path / "cuts" / "movie_removed_intervals.mp4").exists())
+
     def test_make_unique_path_adds_suffix(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             path = Path(temp_dir) / "clip.mp4"
@@ -180,6 +266,25 @@ class CutExecutionServiceTests(unittest.TestCase):
             with patch("services.infrastructure.ffmpeg.paths.shutil.which", return_value=None):
                 with self.assertRaisesRegex(FFmpegNotFoundError, "FFmpeg executable was not found"):
                     FFmpegService()
+
+
+def _gop_packets(keyframe_every: int, frame_count: int = 100, fps: int = 10) -> list[VideoPacket]:
+    return [VideoPacket(round(index / fps, 3), index % keyframe_every == 0, f"h{index}") for index in range(frame_count)]
+
+
+def _intra_only_packet_probe(input_path: Path, kept_ranges: list[tuple[float, float]]):
+    packets = _gop_packets(keyframe_every=1)
+
+    def probe(path):
+        path = Path(path)
+        if path == input_path:
+            return packets
+        if "kept_ranges_" in path.name:
+            start, end = kept_ranges[int(path.stem[-3:]) - 1]
+            return packets_in_range(packets, start, end)
+        return [packet for start, end in kept_ranges for packet in packets_in_range(packets, start, end)]
+
+    return probe
 
 
 if __name__ == "__main__":

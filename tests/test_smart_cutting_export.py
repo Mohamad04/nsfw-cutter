@@ -17,11 +17,13 @@ from services.export.smart_cut_planner import (
     SmartCutPlanner,
     SmartCutPlanSegment,
 )
+from services.export.smart_cutting_export_service import _frame_aligned_audio_ranges
 from services.export.subtitle_rebuild_service import (
     EmbeddedSubtitleExtractService,
     map_original_timestamp_to_final,
     process_subtitle_event,
 )
+from services.export.video_packet_index import VideoPacket
 from services.export.video_segment_renderer import VideoSegmentRenderer
 
 
@@ -92,6 +94,14 @@ class SmartCutCommandTests(unittest.TestCase):
         self.assertIn("-sn", command)
         self.assertEqual(command[command.index("-c:v") + 1], "copy")
 
+    def test_verified_copy_chunk_is_limited_to_the_exact_frame_count(self):
+        renderer = VideoSegmentRenderer(ffmpeg_service=_FakeFFmpegService())
+
+        command = renderer.build_copy_command(Path("in.mp4"), Path("out.mp4"), 0.0, 6.0, frame_count=150)
+
+        self.assertEqual(command[command.index("-frames:v") + 1], "150")
+        self.assertEqual(command[-1], "out.mp4")
+
     def test_renderer_excludes_successful_ffmpeg_output_with_no_video_frames(self):
         def command_runner(command, **_kwargs):
             stderr = "Output file is empty, nothing was encoded" if "chunk_0002" in command[-1] else ""
@@ -125,6 +135,22 @@ class SmartCutCommandTests(unittest.TestCase):
         self.assertIn("atrim=start=0.000:end=12.000", filter_graph)
         self.assertIn("atrim=start=23.000:end=40.000", filter_graph)
         self.assertIn("concat=n=2:v=0:a=1[a]", filter_graph)
+
+    def test_audio_rebuild_pads_each_piece_with_silence_when_requested(self):
+        service = AudioRebuildService(ffmpeg_service=_FakeFFmpegService())
+
+        filter_graph, _ = service.build_filter_graph([(0.0, 7.3), (12.72, 30.0)], [7.32, 17.28])
+
+        self.assertIn("atrim=start=0.000:end=7.300,asetpts=PTS-STARTPTS,apad=whole_dur=7.320000[a0]", filter_graph)
+        self.assertIn("atrim=start=12.720:end=30.000,asetpts=PTS-STARTPTS,apad=whole_dur=17.280000[a1]", filter_graph)
+
+    def test_audio_follows_the_first_and_next_kept_frames(self):
+        packets = [VideoPacket(round(index * 0.04, 2), index % 50 == 0, f"h{index}") for index in range(750)]
+
+        ranges, durations = _frame_aligned_audio_ranges([(0.0, 7.3), (12.7, 30.0)], packets)
+
+        self.assertEqual(ranges, [(0.0, 7.3), (12.72, 30.0)])
+        self.assertEqual([round(value, 3) for value in durations], [7.32, 17.28])
 
 
 class SmartSubtitleTests(unittest.TestCase):

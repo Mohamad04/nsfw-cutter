@@ -18,7 +18,7 @@ from services.export.export_validation_service import (
 from services.export.keyframe_service import ExportKeyframeService
 from services.export.media_probe_service import MediaProbeService
 from services.export.mux_service import MuxService, SubtitleMuxInput
-from services.export.smart_cut_planner import SmartCutPlanner
+from services.export.smart_cut_planner import COPY_SEGMENT, SmartCutPlanner
 from services.export.subtitle_rebuild_service import (
     EmbeddedSubtitleExtractError,
     EmbeddedSubtitleExtractService,
@@ -26,7 +26,17 @@ from services.export.subtitle_rebuild_service import (
     SubtitleRebuildService,
 )
 from services.export.video_concat_service import VideoConcatService
-from services.export.video_segment_renderer import VideoSegmentRenderer
+from services.export.video_packet_index import (
+    VideoPacket,
+    VideoPacketIndexService,
+    first_frame_at_or_after,
+    frame_signature,
+    packets_in_range,
+)
+from services.export.video_segment_renderer import (
+    VideoSegmentRenderer,
+    VideoSegmentVerificationError,
+)
 from services.subtitles.processing_service import SubtitleService
 
 
@@ -50,6 +60,7 @@ class SmartCuttingExportService:
         subtitle_rebuild_service: SubtitleRebuildService | None = None,
         embedded_subtitle_extract_service: EmbeddedSubtitleExtractService | None = None,
         mux_service: MuxService | None = None,
+        packet_index_service: VideoPacketIndexService | None = None,
         cache_dir: str | Path | None = None,
         debug_keep_temp: bool = False,
     ):
@@ -63,6 +74,7 @@ class SmartCuttingExportService:
         self.subtitle_rebuild_service = subtitle_rebuild_service or SubtitleRebuildService()
         self.embedded_subtitle_extract_service = embedded_subtitle_extract_service or EmbeddedSubtitleExtractService()
         self.mux_service = mux_service or MuxService()
+        self.packet_index_service = packet_index_service or VideoPacketIndexService()
         self.cache_dir = Path(cache_dir) if cache_dir else get_cuts_cache_dir()
         self.debug_keep_temp = debug_keep_temp
 
@@ -100,6 +112,8 @@ class SmartCuttingExportService:
             kept_intervals = invert_removed_intervals(delete_intervals, media_info.duration_seconds)
             expected_duration = expected_edited_duration(media_info.duration_seconds, delete_intervals)
             plan = self.planner.build_plan(delete_intervals, keyframes, media_info.duration_seconds)
+            source_packets = self.packet_index_service.probe(input_path)
+            expected_frames = sum(len(packets_in_range(source_packets, start, end)) for start, end in kept_intervals)
 
             _emit(progress_callback, 22, "Exporting video chunks")
             chunks = self.video_renderer.render_plan(
@@ -107,7 +121,14 @@ class SmartCuttingExportService:
                 plan,
                 chunks_dir,
                 progress_callback=_scaled_progress(progress_callback, 22, 55),
+                source_packets=source_packets,
             )
+            chunk_signature = [item for chunk in chunks for item in chunk.frame_signature]
+            if len(chunk_signature) != expected_frames:
+                raise VideoSegmentVerificationError(
+                    f"Smart Cutting stopped: rendered chunks hold {len(chunk_signature)} frames, "
+                    f"expected {expected_frames} kept frames. Nothing was exported."
+                )
 
             _emit(progress_callback, 58, "Concatenating video")
             video_only_path = self.video_concat_service.concat_chunks(
@@ -118,15 +139,22 @@ class SmartCuttingExportService:
             )
             video_only_info = self.media_probe_service.probe(video_only_path)
             validate_video_only_output(video_only_info, expected_duration)
+            if frame_signature(self.packet_index_service.probe(video_only_path)) != chunk_signature:
+                raise VideoSegmentVerificationError(
+                    "Smart Cutting stopped: the concatenated video does not match the verified chunks. "
+                    "Nothing was exported."
+                )
 
             audio_path = None
             if media_info.has_audio:
                 _emit(progress_callback, 68, "Rebuilding audio")
+                audio_ranges, audio_durations = _frame_aligned_audio_ranges(kept_intervals, source_packets)
                 audio_path = self.audio_rebuild_service.rebuild_audio(
                     input_path,
-                    kept_intervals,
+                    audio_ranges,
                     temp_dir / "smart_audio.m4a",
                     progress_callback=_scaled_progress(progress_callback, 68, 78),
+                    pad_durations=audio_durations,
                 )
 
             _emit(progress_callback, 80, "Rebuilding subtitles")
@@ -147,13 +175,24 @@ class SmartCuttingExportService:
             )
 
             _emit(progress_callback, 98, "Validating output")
-            final_info = self.media_probe_service.probe(mux_result.output_path)
-            validate_final_output(
-                final_info,
-                expected_duration,
-                input_had_audio=media_info.has_audio,
-                expected_subtitle_stream=bool(subtitle_inputs),
-            )
+            final_output_verified = False
+            try:
+                final_info = self.media_probe_service.probe(mux_result.output_path)
+                validate_final_output(
+                    final_info,
+                    expected_duration,
+                    input_had_audio=media_info.has_audio,
+                    expected_subtitle_stream=bool(subtitle_inputs),
+                )
+                if frame_signature(self.packet_index_service.probe(mux_result.output_path)) != chunk_signature:
+                    raise VideoSegmentVerificationError(
+                        "Smart Cutting stopped: the final file's video does not match the verified chunks. "
+                        "The output was deleted."
+                    )
+                final_output_verified = True
+            finally:
+                if not final_output_verified:
+                    mux_result.output_path.unlink(missing_ok=True)
 
             result = {
                 "input_path": str(input_path),
@@ -170,6 +209,25 @@ class SmartCuttingExportService:
                 "normalized_intervals": delete_intervals,
                 "kept_intervals": kept_intervals,
                 "plan": plan.to_dict(),
+                "video_fallbacks": [
+                    {
+                        "start_seconds": chunk.start_seconds,
+                        "end_seconds": chunk.end_seconds,
+                        "reason": chunk.fallback_reason,
+                    }
+                    for chunk in chunks
+                    if chunk.fallback_reason
+                ],
+                "verification": {
+                    "expected_video_frames": expected_frames,
+                    "final_video_packets": len(chunk_signature),
+                    "copy_chunks_hash_verified": sum(
+                        1 for chunk in chunks if chunk.segment_type == COPY_SEGMENT and not chunk.fallback_reason
+                    ),
+                    "reencoded_chunks_frame_count_verified": sum(
+                        1 for chunk in chunks if chunk.segment_type != COPY_SEGMENT or chunk.fallback_reason
+                    ),
+                },
                 "subtitles": subtitle_status,
                 "ffmpeg_commands": self._commands(),
                 "ffmpeg_stderr": self._stderr(),
@@ -350,6 +408,29 @@ class SmartCuttingExportService:
             + list(getattr(self.embedded_subtitle_extract_service, "stderr", []))
             + list(getattr(self.mux_service, "stderr", []))
         )
+
+
+def _frame_aligned_audio_ranges(
+    kept_intervals: list[tuple[float, float]],
+    source_packets: list[VideoPacket],
+) -> tuple[list[tuple[float, float]], list[float]]:
+    """Audio pieces that follow the frames actually kept.
+
+    A kept range [start, end) shows its frames from the first frame at or after ``start`` until the
+    first frame at or after ``end``. Each audio piece starts with that first kept frame and is padded
+    with silence (never with removed audio) up to the next frame position, so audio and video stay
+    aligned across any number of off-grid cuts.
+    """
+    ranges = []
+    durations = []
+    for start, end in kept_intervals:
+        first_frame = first_frame_at_or_after(source_packets, start)
+        if first_frame is None or first_frame >= end:
+            continue
+        video_end = first_frame_at_or_after(source_packets, end)
+        ranges.append((first_frame, end))
+        durations.append((video_end if video_end is not None else end) - first_frame)
+    return ranges, durations
 
 
 def _subtitle_title(candidate: dict) -> str | None:

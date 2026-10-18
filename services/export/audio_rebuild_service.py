@@ -37,12 +37,13 @@ class AudioRebuildService:
         kept_ranges: list[tuple[float, float]],
         output_path: str | Path,
         progress_callback=None,
+        pad_durations: list[float] | None = None,
     ) -> Path:
         if not kept_ranges:
             raise ValueError("Smart Cutting has no kept audio ranges to rebuild.")
         output_path = Path(output_path)
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        self._run_command(self.build_audio_command(Path(input_path), kept_ranges, output_path))
+        self._run_command(self.build_audio_command(Path(input_path), kept_ranges, output_path, pad_durations))
         _emit(progress_callback, 100, "Rebuilt smart cut audio")
         return output_path
 
@@ -51,8 +52,9 @@ class AudioRebuildService:
         input_path: Path,
         kept_ranges: list[tuple[float, float]],
         output_path: Path,
+        pad_durations: list[float] | None = None,
     ) -> list[str]:
-        filter_graph, output_label = self.build_filter_graph(kept_ranges)
+        filter_graph, output_label = self.build_filter_graph(kept_ranges, pad_durations)
         return [
             str(self.ffmpeg_service.ffmpeg_path),
             "-y",
@@ -72,15 +74,23 @@ class AudioRebuildService:
             str(output_path),
         ]
 
-    def build_filter_graph(self, kept_ranges: list[tuple[float, float]]) -> tuple[str, str]:
+    def build_filter_graph(
+        self,
+        kept_ranges: list[tuple[float, float]],
+        pad_durations: list[float] | None = None,
+    ) -> tuple[str, str]:
+        """Trim each kept range; with ``pad_durations`` each piece is padded with silence to that length."""
+        if pad_durations is not None and len(pad_durations) != len(kept_ranges):
+            raise ValueError("Smart Cutting audio padding does not match the kept ranges.")
         parts = []
         labels = []
         for index, (start_seconds, end_seconds) in enumerate(kept_ranges):
             label = f"a{index}"
+            pad = f",apad=whole_dur={pad_durations[index]:.6f}" if pad_durations is not None else ""
             parts.append(
                 (
                     f"[0:a:0]atrim=start={start_seconds:.3f}:end={end_seconds:.3f},"
-                    f"asetpts=PTS-STARTPTS[{label}]"
+                    f"asetpts=PTS-STARTPTS{pad}[{label}]"
                 )
             )
             labels.append(f"[{label}]")

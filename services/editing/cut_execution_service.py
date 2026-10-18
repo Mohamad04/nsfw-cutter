@@ -11,6 +11,16 @@ from schemas.video_cut_schema import (
     VideoCutRequest,
     VideoCutResult,
 )
+from services.export.video_packet_index import (
+    VideoPacket,
+    VideoPacketIndexError,
+    copyable_range,
+    frame_signature,
+    hashes,
+    is_clean_cut_point,
+    nearest_keyframes,
+    packets_in_range,
+)
 from services.infrastructure.ffmpeg.cutting import FFmpegCuttingService
 
 
@@ -26,6 +36,7 @@ class CutExecutionService:
         metadata_probe=None,
         cache_dir=None,
         cutting_service: FFmpegCuttingService | None = None,
+        packet_probe=None,
     ):
         self.cutting_service = cutting_service or FFmpegCuttingService(
             ffmpeg_service=ffmpeg_service,
@@ -33,6 +44,7 @@ class CutExecutionService:
             probe_runner=probe_runner,
         )
         self.metadata_probe = metadata_probe or self.cutting_service.probe_media
+        self.packet_probe = packet_probe or self.cutting_service.probe_video_packets
         self.cache_dir = Path(cache_dir) if cache_dir else get_cuts_cache_dir()
 
     def export_segments(self, request: VideoCutRequest, progress_callback=None) -> VideoCutResult:
@@ -159,15 +171,48 @@ class CutExecutionService:
         logger.info("Video export normalized removed intervals: %s", normalized_removed)
         logger.info("Video export computed kept intervals: %s", kept_intervals)
 
+        source_packets = self.packet_probe(request.input_path)
+        require_keyframe_aligned_removals(normalized_removed, source_packets)
+        copy_ranges = []
+        for start_seconds, end_seconds in kept_intervals:
+            if not packets_in_range(source_packets, start_seconds, end_seconds):
+                continue
+            packets = copyable_range(source_packets, start_seconds, end_seconds)
+            if packets is None:
+                raise FastCuttingPrecisionError(
+                    f"Fast Cutting cannot stream-copy {seconds_to_ffmpeg_time(start_seconds)}-"
+                    f"{seconds_to_ffmpeg_time(end_seconds)} exactly. {FAST_CUTTING_NOTHING_EXPORTED}"
+                )
+            copy_ranges.append((start_seconds, end_seconds, packets))
+
         output_name = request.merged_output_name or f"{request.input_path.stem}_removed_intervals{request.input_path.suffix}"
         output_path = make_unique_path(request.output_dir / Path(output_name).name)
         temporary_segments = self._export_temporary_ranges(
             request.input_path,
-            kept_intervals,
+            [(start_seconds, end_seconds) for start_seconds, end_seconds, _ in copy_ranges],
             cache_prefix="kept_ranges",
             progress_callback=progress_callback,
+            video_frame_counts=[len(packets) for _, _, packets in copy_ranges],
         )
+        for segment_path, (start_seconds, end_seconds, packets) in zip(temporary_segments, copy_ranges):
+            if hashes(self.packet_probe(segment_path)) != hashes(packets):
+                raise FastCuttingVerificationError(
+                    "Fast Cutting could not verify that the stream copy of "
+                    f"{seconds_to_ffmpeg_time(start_seconds)}-{seconds_to_ffmpeg_time(end_seconds)} contains exactly "
+                    f"the kept frames (FFmpeg started or stopped on another frame). {FAST_CUTTING_NOTHING_EXPORTED}"
+                )
         self.cutting_service.concat_stream_copy_segments(temporary_segments, output_path)
+        expected_signature = frame_signature([packet for _, _, packets in copy_ranges for packet in packets])
+        try:
+            verified = frame_signature(self.packet_probe(output_path)) == expected_signature
+        except (VideoPacketIndexError, OSError):
+            verified = False
+        if not verified:
+            output_path.unlink(missing_ok=True)
+            raise FastCuttingVerificationError(
+                "Fast Cutting could not verify the joined video against the kept frames. The output was deleted. "
+                "Use Smart Cutting for frame-exact removal."
+            )
 
         _emit_progress(progress_callback, 100, "Removed selected intervals")
         return self._result_with_duration_validation(
@@ -187,6 +232,7 @@ class CutExecutionService:
         intervals: list[tuple[float, float]],
         cache_prefix: str,
         progress_callback=None,
+        video_frame_counts: list[int] | None = None,
     ) -> list[Path]:
         job_cache_dir = self.cache_dir / f"{cache_prefix}_{uuid.uuid4().hex}"
         job_cache_dir.mkdir(parents=True, exist_ok=True)
@@ -199,6 +245,7 @@ class CutExecutionService:
                 temp_output_path,
                 start_seconds,
                 end_seconds,
+                video_frame_count=video_frame_counts[offset - 1] if video_frame_counts else None,
             )
             temporary_segments.append(temp_output_path)
             _emit_progress(
@@ -241,6 +288,50 @@ class CutExecutionService:
             ffmpeg_commands=list(self.cutting_service.commands),
             ffmpeg_stderr=list(self.cutting_service.stderr),
         )
+
+
+FAST_CUTTING_NOTHING_EXPORTED = (
+    "Nothing was exported and the cuts were not changed. Use Smart Cutting for frame-exact removal."
+)
+
+
+class FastCuttingPrecisionError(ValueError):
+    pass
+
+
+class FastCuttingVerificationError(ValueError):
+    pass
+
+
+def require_keyframe_aligned_removals(
+    removed_intervals: list[tuple[float, float]],
+    source_packets: list[VideoPacket],
+) -> None:
+    """Refuse a Fast Cutting removal unless stream copy can honour every boundary exactly.
+
+    Stream copy can only start or stop where a keyframe opens a group of frames that does not depend
+    on earlier frames. Any other boundary would keep frames of the removed interval (or drop kept
+    ones); the intervals are never widened silently.
+    """
+    boundaries = sorted({value for interval in removed_intervals for value in interval})
+    unaligned = [value for value in boundaries if not is_clean_cut_point(source_packets, value)]
+    if not unaligned:
+        return
+    details = "; ".join(_boundary_detail(source_packets, value) for value in unaligned)
+    raise FastCuttingPrecisionError(
+        "Fast Cutting cannot remove the selected intervals exactly: stream copy can only cut on a keyframe "
+        f"that starts an independent group of frames, and these cut boundaries are not on one: {details}. "
+        "Nothing was exported and the cuts were not changed. Use Smart Cutting for frame-exact removal, "
+        "or move these boundaries onto the listed keyframes."
+    )
+
+
+def _boundary_detail(source_packets: list[VideoPacket], seconds: float) -> str:
+    previous_keyframe, next_keyframe = nearest_keyframes(source_packets, seconds)
+    if previous_keyframe is not None and previous_keyframe == next_keyframe:
+        return f"{seconds_to_ffmpeg_time(seconds)} (keyframe of an open GOP: earlier frames depend on it)"
+    keyframes = [seconds_to_ffmpeg_time(value) for value in (previous_keyframe, next_keyframe) if value is not None]
+    return f"{seconds_to_ffmpeg_time(seconds)} (nearest keyframes {' and '.join(keyframes)})"
 
 
 def make_unique_path(path: Path) -> Path:

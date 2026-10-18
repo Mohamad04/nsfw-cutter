@@ -4,6 +4,7 @@ import subprocess
 from pathlib import Path
 
 from core.time_utils import duration_seconds, seconds_to_ffmpeg_time
+from services.export.video_packet_index import VideoPacket, VideoPacketIndexService
 from services.infrastructure.ffmpeg.runner import FFmpegService
 
 
@@ -43,10 +44,11 @@ class FFmpegCuttingService:
         output_path: Path,
         start_seconds: float,
         end_seconds: float,
+        video_frame_count: int | None = None,
     ) -> Path:
         output_path.parent.mkdir(parents=True, exist_ok=True)
         self._run_command(
-            self.build_cut_command(input_path, output_path, start_seconds, end_seconds)
+            self.build_cut_command(input_path, output_path, start_seconds, end_seconds, video_frame_count)
         )
         return output_path
 
@@ -68,8 +70,9 @@ class FFmpegCuttingService:
         output_path: Path,
         start_seconds: float,
         end_seconds: float,
+        video_frame_count: int | None = None,
     ) -> list[str]:
-        return [
+        command = [
             str(self.ffmpeg_service.ffmpeg_path),
             "-y",
             "-hide_banner",
@@ -83,10 +86,12 @@ class FFmpegCuttingService:
             "0",
             "-c",
             "copy",
-            "-avoid_negative_ts",
-            "make_zero",
-            str(output_path),
         ]
+        if video_frame_count is not None:
+            # -t stops on decoding timestamps: with B-frames the next GOP's keyframe would be copied too.
+            command.extend(["-frames:v", str(video_frame_count)])
+        command.extend(["-avoid_negative_ts", "make_zero", str(output_path)])
+        return command
 
     def build_concat_command(self, concat_list_path: Path, output_path: Path) -> list[str]:
         return [
@@ -105,6 +110,12 @@ class FFmpegCuttingService:
             "copy",
             str(output_path),
         ]
+
+    def probe_video_packets(self, media_path: str | Path) -> list[VideoPacket]:
+        return VideoPacketIndexService(
+            ffmpeg_service=self.ffmpeg_service,
+            probe_runner=self.probe_runner,
+        ).probe(media_path)
 
     def probe_media(self, media_path: str | Path) -> dict:
         command = [

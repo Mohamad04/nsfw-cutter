@@ -176,6 +176,21 @@ if ($null -eq $bundledFfmpeg -or $null -eq $bundledFfprobe) {
     throw "Bundled FFmpeg binaries were not found in the PyInstaller output."
 }
 
+$ffmpegPin = Get-Content -LiteralPath (Join-Path $ProjectRoot "scripts\ffmpeg-pin.json") -Raw | ConvertFrom-Json
+foreach ($bundledBinary in @($bundledFfmpeg, $bundledFfprobe)) {
+    $binaryName = Split-Path -Leaf $bundledBinary
+    $actualHash = (Get-FileHash -LiteralPath $bundledBinary -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($actualHash -ne $ffmpegPin.binaries.$binaryName) {
+        throw "Bundled $binaryName is not the pinned FFmpeg $($ffmpegPin.version) (SHA-256 $actualHash)."
+    }
+}
+$bundledLicense = Join-Path (Split-Path -Parent (Split-Path -Parent $bundledFfmpeg)) $ffmpegPin.documents.LICENSE.target
+if (-not (Test-Path -LiteralPath $bundledLicense -PathType Leaf) -or
+    (Get-FileHash -LiteralPath $bundledLicense -Algorithm SHA256).Hash.ToLowerInvariant() -ne $ffmpegPin.documents.LICENSE.sha256) {
+    throw "The FFmpeg GPL license text is missing from the PyInstaller output: $bundledLicense"
+}
+Write-Host "Bundled FFmpeg verified: $($ffmpegPin.version), SHA-256 pinned, license included"
+
 function Find-FirstExistingRuntimePath {
     param(
         [Parameter(Mandatory = $true)]

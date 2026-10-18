@@ -1,0 +1,30 @@
+{
+  "name": "FFmpeg 8.1.1 full_build (www.gyan.dev)",
+  "version": "8.1.1-full_build-www.gyan.dev",
+  "source_commit": "239f2c733d",
+  "source_url": "https://github.com/FFmpeg/FFmpeg/commit/239f2c733d",
+  "license": "GPL-3.0",
+  "build_provider": "https://www.gyan.dev/ffmpeg/builds/",
+  "winget_package_id": "Gyan.FFmpeg",
+  "winget_package_folder": "ffmpeg-8.1.1-full_build",
+  "archive_name": "ffmpeg-8.1.1-full_build.zip",
+  "download_url": "https://github.com/GyanD/codexffmpeg/releases/download/8.1.1/ffmpeg-8.1.1-full_build.zip",
+  "download_url_note": "Not used by default; only with -AllowDownload. The extracted executables must still match the hashes below.",
+  "binaries": {
+    "ffmpeg.exe": "09948d4cdd0650da6ff5a87577469f2a218dc2615ae379f8f734d24c49de0f73",
+    "ffprobe.exe": "a6618e99bb58869ded3c6f37b53aa1a8d701c3591dbb7b5b317d47369c112be2"
+  },
+  "documents": {
+    "LICENSE": {
+      "target": "LICENSE.txt",
+      "sha256": "8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903"
+    },
+    "README.txt": {
+      "target": "README-ffmpeg-build.txt",
+      "sha256": "35ef02f329d062a1b49397a2869718264b5f12776517791c02126f0efd323528"
+    }
+  },
+  "rejected_builds": {
+    "N-125954-g9862dd83b1-20260804": "Nightly (BtbN master). Native AAC encoder hangs (defect D1)."
+  }
+}

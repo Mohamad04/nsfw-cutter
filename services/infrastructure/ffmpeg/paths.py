@@ -1,3 +1,4 @@
+import logging
 import shutil
 import sys
 from pathlib import Path
@@ -6,6 +7,8 @@ from core.paths import PROJECT_ROOT
 
 
 VENDOR_FFMPEG_BIN = Path("vendor") / "ffmpeg" / "bin"
+_logger = logging.getLogger(__name__)
+_warned_system_binaries: set[str] = set()
 
 
 class FFmpegNotFoundError(RuntimeError):
@@ -31,6 +34,14 @@ def find_executable(name: str) -> Path:
     for system_name in _system_binary_names(executable_name):
         system_binary = shutil.which(system_name)
         if system_binary:
+            if system_binary not in _warned_system_binaries:
+                _warned_system_binaries.add(system_binary)
+                _logger.warning(
+                    "Using %s from PATH; it is not the verified bundled FFmpeg build. "
+                    "Run scripts/prepare_ffmpeg.ps1 to install the pinned build in %s.",
+                    system_binary,
+                    VENDOR_FFMPEG_BIN,
+                )
             return Path(system_binary)
 
     raise FFmpegNotFoundError(_missing_binary_message(executable_name))

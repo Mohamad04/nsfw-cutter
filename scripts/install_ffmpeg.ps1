@@ -7,18 +7,23 @@
 # Run with (one command, no admin required):
 #   irm https://raw.githubusercontent.com/Mohamad04/nsfw-cutter/master/scripts/install_ffmpeg.ps1 | iex
 #
-# Installs to : %LOCALAPPDATA%\NSFWCutter\ffmpeg\bin  (ffmpeg.exe + ffprobe.exe)
+# Installs the pinned, verified FFmpeg 8.1.1 build (www.gyan.dev, GPL v3) - never a moving "latest"
+# nightly. Both executables must match the SHA-256 values below (kept identical to
+# scripts/ffmpeg-pin.json by tests/test_ffmpeg_pin.py).
+#
+# Installs to : %LOCALAPPDATA%\NSFWCutter\ffmpeg\bin  (ffmpeg.exe + ffprobe.exe + LICENSE.txt)
 # PATH        : adds that folder to the current user's PATH if missing
 #
 # Optional switches (when invoked via -File):
-#   -Force   re-download even if already installed
-#   -NoPath  do not modify the user PATH
+#   -Force       reinstall even if the pinned build is already installed
+#   -NoPath      do not modify the user PATH
+#   -SourceDir   use a local copy of the pinned build instead of downloading
 
 [CmdletBinding()]
 param(
     [switch]$Force,
     [switch]$NoPath,
-    [string]$ReleaseApiUrl = 'https://api.github.com/repos/BtbN/FFmpeg-Builds/releases/latest'
+    [string]$SourceDir = ''
 )
 
 Set-StrictMode -Version Latest
@@ -26,62 +31,83 @@ $ErrorActionPreference = 'Stop'
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 $ProgressPreference = 'SilentlyContinue'
 
+$PinnedVersion = '8.1.1-full_build-www.gyan.dev'
+$PinnedArchiveUrl = 'https://github.com/GyanD/codexffmpeg/releases/download/8.1.1/ffmpeg-8.1.1-full_build.zip'
+$PinnedHashes = @{
+    'ffmpeg.exe'  = '09948d4cdd0650da6ff5a87577469f2a218dc2615ae379f8f734d24c49de0f73'
+    'ffprobe.exe' = 'a6618e99bb58869ded3c6f37b53aa1a8d701c3591dbb7b5b317d47369c112be2'
+}
+
 $BinDir     = Join-Path $env:LOCALAPPDATA 'NSFWCutter\ffmpeg\bin'
 $FfmpegExe  = Join-Path $BinDir 'ffmpeg.exe'
 $FfprobeExe = Join-Path $BinDir 'ffprobe.exe'
 
 function Write-Step([string]$msg) { Write-Host "`n>> $msg" -ForegroundColor Cyan }
 function Write-OK([string]$msg)   { Write-Host "   OK  $msg" -ForegroundColor Green }
-function Write-Warn([string]$msg) { Write-Host "   !! $msg" -ForegroundColor Yellow }
 
-function Test-Installed {
-    return (Test-Path -LiteralPath $FfmpegExe) -and (Test-Path -LiteralPath $FfprobeExe)
+function Test-PinnedFolder([string]$Folder) {
+    foreach ($name in $PinnedHashes.Keys) {
+        $path = Join-Path $Folder $name
+        if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { return $false }
+        if ((Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant() -ne $PinnedHashes[$name]) { return $false }
+    }
+    return $true
 }
 
-if ((Test-Installed) -and -not $Force) {
-    Write-OK "FFmpeg already installed in $BinDir (use -Force to reinstall)."
-} else {
-    Write-Step "Resolving latest Windows FFmpeg build from BtbN/FFmpeg-Builds..."
-    $release = Invoke-RestMethod -Uri $ReleaseApiUrl -Headers @{ 'User-Agent' = 'NSFWCutter-Installer' } -UseBasicParsing
-    $asset = $release.assets |
-        Where-Object { $_.name -match 'win64-gpl.*\.zip$' -and $_.name -notmatch 'shared' } |
-        Sort-Object name |
-        Select-Object -First 1
-    if (-not $asset) {
-        Write-Error "Could not find a static win64 GPL FFmpeg zip in the latest release."
-        exit 1
+function Find-PinnedBinDir([string]$Root) {
+    $candidates = @(Get-ChildItem -LiteralPath $Root -Recurse -File -Filter 'ffmpeg.exe' -ErrorAction SilentlyContinue |
+        ForEach-Object { $_.DirectoryName } | Select-Object -Unique)
+    foreach ($candidate in $candidates) {
+        if (Test-PinnedFolder $candidate) { return $candidate }
     }
-    Write-OK "Asset: $($asset.name)  ($([math]::Round($asset.size/1MB,1)) MB)"
+    return $null
+}
 
-    $TmpZip     = Join-Path $env:TEMP 'ffmpeg_nsfwcutter.zip'
+if ((Test-PinnedFolder $BinDir) -and -not $Force) {
+    Write-OK "Pinned FFmpeg $PinnedVersion already installed in $BinDir (use -Force to reinstall)."
+} else {
     $TmpExtract = Join-Path $env:TEMP 'ffmpeg_nsfwcutter_extract'
-
-    Write-Step "Downloading FFmpeg..."
-    Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $TmpZip -Headers @{ 'User-Agent' = 'NSFWCutter-Installer' } -UseBasicParsing
-
-    Write-Step "Extracting..."
-    if (Test-Path $TmpExtract) { Remove-Item $TmpExtract -Recurse -Force }
-    Expand-Archive -LiteralPath $TmpZip -DestinationPath $TmpExtract -Force
-
-    $srcFfmpeg  = Get-ChildItem -LiteralPath $TmpExtract -Recurse -File -Filter 'ffmpeg.exe'  | Select-Object -First 1
-    $srcFfprobe = Get-ChildItem -LiteralPath $TmpExtract -Recurse -File -Filter 'ffprobe.exe' | Select-Object -First 1
-    if (-not $srcFfmpeg -or -not $srcFfprobe) {
-        Write-Error "The archive did not contain both ffmpeg.exe and ffprobe.exe."
+    $sourceBin = $null
+    if ($SourceDir) {
+        $sourceBin = Find-PinnedBinDir $SourceDir
+    } else {
+        $winget = Join-Path $env:LOCALAPPDATA 'Microsoft\WinGet\Packages'
+        if (Test-Path -LiteralPath $winget) {
+            foreach ($package in Get-ChildItem -LiteralPath $winget -Directory -Filter 'Gyan.FFmpeg_*') {
+                $sourceBin = Find-PinnedBinDir $package.FullName
+                if ($sourceBin) { break }
+            }
+        }
+        if (-not $sourceBin) {
+            $TmpZip = Join-Path $env:TEMP 'ffmpeg_nsfwcutter_8.1.1.zip'
+            Write-Step "Downloading pinned FFmpeg $PinnedVersion..."
+            Invoke-WebRequest -Uri $PinnedArchiveUrl -OutFile $TmpZip -Headers @{ 'User-Agent' = 'NSFWCutter-Installer' } -UseBasicParsing
+            if (Test-Path $TmpExtract) { Remove-Item $TmpExtract -Recurse -Force }
+            Expand-Archive -LiteralPath $TmpZip -DestinationPath $TmpExtract -Force
+            Remove-Item $TmpZip -Force -ErrorAction SilentlyContinue
+            $sourceBin = Find-PinnedBinDir $TmpExtract
+        }
+    }
+    if (-not $sourceBin) {
+        Write-Error ("No copy of the pinned FFmpeg $PinnedVersion was found (expected SHA-256 ffmpeg.exe " +
+            "$($PinnedHashes['ffmpeg.exe'])). Nothing was installed. Install it with " +
+            "'winget install --id Gyan.FFmpeg --version 8.1.1' or pass -SourceDir.")
         exit 1
     }
 
     New-Item -Path $BinDir -ItemType Directory -Force | Out-Null
-    Copy-Item -LiteralPath $srcFfmpeg.FullName  -Destination $FfmpegExe  -Force
-    Copy-Item -LiteralPath $srcFfprobe.FullName -Destination $FfprobeExe -Force
+    foreach ($name in $PinnedHashes.Keys) {
+        Copy-Item -LiteralPath (Join-Path $sourceBin $name) -Destination (Join-Path $BinDir $name) -Force
+    }
+    $license = Join-Path (Split-Path -Parent $sourceBin) 'LICENSE'
+    if (Test-Path -LiteralPath $license) { Copy-Item -LiteralPath $license -Destination (Join-Path $BinDir 'LICENSE.txt') -Force }
+    if (Test-Path $TmpExtract) { Remove-Item $TmpExtract -Recurse -Force -ErrorAction SilentlyContinue }
 
-    Remove-Item $TmpZip -Force -ErrorAction SilentlyContinue
-    Remove-Item $TmpExtract -Recurse -Force -ErrorAction SilentlyContinue
-
-    if (-not (Test-Installed)) {
-        Write-Error "FFmpeg installation failed: expected binaries were not created."
+    if (-not (Test-PinnedFolder $BinDir)) {
+        Write-Error "FFmpeg installation failed: the installed binaries do not match the pinned SHA-256."
         exit 1
     }
-    Write-OK "Installed FFmpeg to $BinDir"
+    Write-OK "Installed pinned FFmpeg $PinnedVersion to $BinDir"
 }
 
 # -- Add to user PATH ----------------------------------------------------------

@@ -1,138 +1,244 @@
+<#
+.SYNOPSIS
+    Prepare the project-local FFmpeg (vendor\ffmpeg) from the pinned, verified stable build.
+
+.DESCRIPTION
+    The pinned build is described in scripts\ffmpeg-pin.json (version, SHA-256 of ffmpeg.exe and
+    ffprobe.exe, license documents). Nothing is accepted unless both executables match those hashes
+    and report the pinned version.
+
+    Sources, in order:
+      1. Existing vendor\ffmpeg\bin binaries: kept if they match; refused (left untouched) if they do not,
+         unless -Replace is given.
+      2. -SourceDir: a local folder of the pinned build (containing bin\ffmpeg.exe, or ffmpeg.exe directly).
+      3. -ArchivePath: a local copy of the pinned zip archive.
+      4. The pinned WinGet package folder, if already installed for this user (Gyan.FFmpeg 8.1.1).
+      5. -AllowDownload only: the pinned archive URL. Never used implicitly.
+
+    The script never changes PATH and never installs anything system-wide.
+
+.EXAMPLE
+    powershell -NoProfile -ExecutionPolicy Bypass -File scripts\prepare_ffmpeg.ps1
+.EXAMPLE
+    powershell -NoProfile -ExecutionPolicy Bypass -File scripts\prepare_ffmpeg.ps1 -Replace -SourceDir C:\tools\ffmpeg-8.1.1-full_build
+#>
 [CmdletBinding()]
 param(
     [string]$ProjectRoot = "",
-    [string]$FfmpegZipUrl = "",
-    [string]$ReleaseApiUrl = "https://api.github.com/repos/BtbN/FFmpeg-Builds/releases/latest"
+    [string]$SourceDir = "",
+    [string]$ArchivePath = "",
+    [switch]$Replace,
+    [switch]$AllowDownload,
+    [switch]$NoAutoDetect
 )
 
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 
-[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-$ProgressPreference = "SilentlyContinue"
-
 if ([string]::IsNullOrWhiteSpace($ProjectRoot)) {
-    $scriptRoot = if (-not [string]::IsNullOrWhiteSpace($PSScriptRoot)) {
-        $PSScriptRoot
-    } else {
-        Split-Path -Parent $PSCommandPath
-    }
-
+    $scriptRoot = if (-not [string]::IsNullOrWhiteSpace($PSScriptRoot)) { $PSScriptRoot } else { Split-Path -Parent $PSCommandPath }
     $ProjectRoot = (Resolve-Path (Join-Path $scriptRoot "..")).Path
 }
 
-$vendorBinDir = Join-Path $ProjectRoot "vendor\ffmpeg\bin"
-$ffmpegExe = Join-Path $vendorBinDir "ffmpeg.exe"
-$ffprobeExe = Join-Path $vendorBinDir "ffprobe.exe"
-$downloadRoot = Join-Path $ProjectRoot "vendor\ffmpeg\.download"
-$zipPath = Join-Path $downloadRoot "ffmpeg-windows.zip"
-$extractRoot = Join-Path $downloadRoot "extract"
+$pinPath = Join-Path $PSScriptRoot "ffmpeg-pin.json"
+if (-not (Test-Path -LiteralPath $pinPath -PathType Leaf)) {
+    throw "FFmpeg pin file not found: $pinPath"
+}
+$pin = Get-Content -LiteralPath $pinPath -Raw | ConvertFrom-Json
 
-function Test-PreparedFfmpeg {
-    return (Test-Path -LiteralPath $ffmpegExe -PathType Leaf) -and (Test-Path -LiteralPath $ffprobeExe -PathType Leaf)
+$vendorDir = Join-Path $ProjectRoot "vendor\ffmpeg"
+$vendorBinDir = Join-Path $vendorDir "bin"
+$workDir = Join-Path $ProjectRoot "vendor\ffmpeg-prepare.tmp"
+$binaryNames = @("ffmpeg.exe", "ffprobe.exe")
+
+function Get-Sha256([string]$Path) {
+    return (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant()
 }
 
-function Invoke-VersionCheck {
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$ExecutablePath
-    )
-
-    $output = & $ExecutablePath -version 2>&1
-    if ($LASTEXITCODE -ne 0) {
-        throw "Version check failed for $ExecutablePath.`n$($output -join [Environment]::NewLine)"
-    }
-
-    Write-Host ($output | Select-Object -First 1)
+function Get-PinnedHash([string]$Name) {
+    return [string]$pin.binaries.$Name
 }
 
-function Resolve-FfmpegZipUrl {
-    if (-not [string]::IsNullOrWhiteSpace($FfmpegZipUrl)) {
-        return $FfmpegZipUrl
-    }
-
-    Write-Host "Resolving latest Windows FFmpeg release from $ReleaseApiUrl"
-    $release = Invoke-RestMethod -Uri $ReleaseApiUrl -Headers @{ "User-Agent" = "VideoCutter-build" }
-    $asset = $release.assets |
-        Where-Object {
-            $_.name -match "win64-gpl.*\.zip$" -and
-            $_.name -notmatch "shared" -and
-            $_.browser_download_url
-        } |
-        Sort-Object name |
-        Select-Object -First 1
-
-    if ($null -eq $asset) {
-        throw "Unable to find a static Windows win64 GPL FFmpeg zip in the latest release metadata."
-    }
-
-    return $asset.browser_download_url
+function Get-RecoveryText {
+    return @"
+Recovery:
+  - Use an existing copy of the pinned build: -SourceDir <folder of $($pin.winget_package_folder)> or -ArchivePath <$($pin.archive_name)>
+  - Or install it for the current user only: winget install --id $($pin.winget_package_id) --version 8.1.1 (then rerun this script)
+  - Or allow the pinned download explicitly: -AllowDownload ($($pin.download_url))
+Expected SHA-256: ffmpeg.exe $(Get-PinnedHash 'ffmpeg.exe'), ffprobe.exe $(Get-PinnedHash 'ffprobe.exe')
+"@
 }
 
-function Save-RemoteFile {
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$Uri,
-        [Parameter(Mandatory = $true)]
-        [string]$OutputPath
-    )
-
-    $curl = Get-Command curl.exe -ErrorAction SilentlyContinue
-    if ($null -ne $curl) {
-        & $curl.Source -L --fail --output $OutputPath $Uri
-        if ($LASTEXITCODE -eq 0) {
-            return
+function Test-BuildFolder([string]$BinDir) {
+    # Returns a list of problems; empty when both executables are the pinned build.
+    $problems = @()
+    foreach ($name in $binaryNames) {
+        $path = Join-Path $BinDir $name
+        if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+            $problems += "$name is missing in $BinDir"
+            continue
         }
-
-        Write-Warning "curl.exe failed with exit code $LASTEXITCODE. Falling back to Invoke-WebRequest."
+        $actual = Get-Sha256 $path
+        if ($actual -ne (Get-PinnedHash $name)) {
+            $problems += "$name SHA-256 is $actual, expected $(Get-PinnedHash $name)"
+            continue
+        }
+        $versionLine = (& $path -hide_banner -version 2>&1 | Select-Object -First 1) -as [string]
+        if ($versionLine -notmatch [regex]::Escape($pin.version)) {
+            $problems += "$name reports '$versionLine', expected version $($pin.version)"
+        }
     }
-
-    Invoke-WebRequest -Uri $Uri -OutFile $OutputPath -UseBasicParsing
+    return ,$problems
 }
 
-New-Item -ItemType Directory -Force -Path $vendorBinDir | Out-Null
+function Find-BinDir([string]$Root) {
+    foreach ($candidate in @((Join-Path $Root "bin"), $Root)) {
+        if (Test-Path -LiteralPath (Join-Path $candidate "ffmpeg.exe") -PathType Leaf) {
+            return $candidate
+        }
+    }
+    $found = Get-ChildItem -LiteralPath $Root -Recurse -File -Filter "ffmpeg.exe" -ErrorAction SilentlyContinue |
+        Select-Object -First 1
+    if ($null -ne $found) { return $found.DirectoryName }
+    return $null
+}
 
-if (Test-PreparedFfmpeg) {
-    Write-Host "FFmpeg binaries already exist in $vendorBinDir. Skipping download."
-    Invoke-VersionCheck -ExecutablePath $ffmpegExe
-    Invoke-VersionCheck -ExecutablePath $ffprobeExe
+function Install-FromBinDir([string]$BinDir, [string]$Origin) {
+    $problems = Test-BuildFolder $BinDir
+    if ($problems.Count -gt 0) {
+        throw "Refusing FFmpeg from ${Origin}:`n  - $($problems -join "`n  - ")`n$(Get-RecoveryText)"
+    }
+    $buildRoot = Split-Path -Parent $BinDir
+    New-Item -ItemType Directory -Force -Path $vendorBinDir | Out-Null
+
+    if ($Replace) {
+        $existing = @($binaryNames | ForEach-Object { Join-Path $vendorBinDir $_ } | Where-Object { Test-Path -LiteralPath $_ })
+        if ($existing.Count -gt 0) {
+            $backupDir = Join-Path $ProjectRoot ("artifacts\ffmpeg-previous-" + (Get-Date -Format "yyyyMMdd-HHmmss"))
+            New-Item -ItemType Directory -Force -Path $backupDir | Out-Null
+            $existing | ForEach-Object { Copy-Item -LiteralPath $_ -Destination $backupDir -Force }
+            Write-Host "Previous binaries kept in $backupDir (Git-ignored)"
+        }
+    }
+
+    foreach ($name in $binaryNames) {
+        $staged = Join-Path $vendorBinDir "$name.new"
+        Copy-Item -LiteralPath (Join-Path $BinDir $name) -Destination $staged -Force
+        if ((Get-Sha256 $staged) -ne (Get-PinnedHash $name)) {
+            Remove-Item -LiteralPath $staged -Force
+            throw "Copy of $name was corrupted; vendor\ffmpeg was not changed."
+        }
+    }
+    foreach ($name in $binaryNames) {
+        Move-Item -LiteralPath (Join-Path $vendorBinDir "$name.new") -Destination (Join-Path $vendorBinDir $name) -Force
+    }
+    Install-Documents $buildRoot
+    Write-Host "FFmpeg $($pin.version) installed in $vendorBinDir from $Origin"
+}
+
+function Install-Documents([string]$BuildRoot) {
+    foreach ($property in $pin.documents.PSObject.Properties) {
+        $sourceName = $property.Name
+        $target = Join-Path $vendorDir $property.Value.target
+        $source = Join-Path $BuildRoot $sourceName
+        if ((Test-Path -LiteralPath $source -PathType Leaf) -and (Get-Sha256 $source) -eq $property.Value.sha256) {
+            Copy-Item -LiteralPath $source -Destination $target -Force
+        }
+    }
+    Copy-Item -LiteralPath $pinPath -Destination (Join-Path $vendorDir "BUILD-PIN.json") -Force
+}
+
+function Assert-Documents {
+    foreach ($property in $pin.documents.PSObject.Properties) {
+        $target = Join-Path $vendorDir $property.Value.target
+        if (-not (Test-Path -LiteralPath $target -PathType Leaf) -or (Get-Sha256 $target) -ne $property.Value.sha256) {
+            throw "Required FFmpeg document $($property.Value.target) is missing or modified in $vendorDir (GPL redistribution needs it).`n$(Get-RecoveryText)"
+        }
+    }
+}
+
+function Get-WinGetBuildRoots {
+    $packages = Join-Path $env:LOCALAPPDATA "Microsoft\WinGet\Packages"
+    if (-not (Test-Path -LiteralPath $packages)) { return @() }
+    return @(Get-ChildItem -LiteralPath $packages -Directory -Filter "$($pin.winget_package_id)_*" -ErrorAction SilentlyContinue |
+        ForEach-Object { Join-Path $_.FullName $pin.winget_package_folder } |
+        Where-Object { Test-Path -LiteralPath $_ -PathType Container })
+}
+
+function Expand-PinnedArchive([string]$ZipPath) {
+    if (Test-Path -LiteralPath $workDir) { Remove-Item -LiteralPath $workDir -Recurse -Force }
+    $extractDir = Join-Path $workDir "extract"
+    New-Item -ItemType Directory -Force -Path $extractDir | Out-Null
+    Expand-Archive -LiteralPath $ZipPath -DestinationPath $extractDir -Force
+    $binDir = Find-BinDir $extractDir
+    if ($null -eq $binDir) { throw "The archive $ZipPath does not contain ffmpeg.exe." }
+    return $binDir
+}
+
+try {
+    # 1. Existing project-local binaries.
+    $existingProblems = Test-BuildFolder $vendorBinDir
+    $hasExisting = @($binaryNames | Where-Object { Test-Path -LiteralPath (Join-Path $vendorBinDir $_) }).Count -gt 0
+    if ($existingProblems.Count -eq 0) {
+        $sameAsPin = (Test-Path -LiteralPath (Join-Path $vendorDir "BUILD-PIN.json")) -and
+            ((Get-Sha256 (Join-Path $vendorDir "BUILD-PIN.json")) -eq (Get-Sha256 $pinPath))
+        if (-not $sameAsPin) { Copy-Item -LiteralPath $pinPath -Destination (Join-Path $vendorDir "BUILD-PIN.json") -Force }
+        $documentRoots = @()
+        if (-not [string]::IsNullOrWhiteSpace($SourceDir)) { $documentRoots += (Resolve-Path -LiteralPath $SourceDir).Path }
+        if (-not $NoAutoDetect) { $documentRoots += Get-WinGetBuildRoots }
+        foreach ($root in $documentRoots) { Install-Documents $root }
+        Assert-Documents
+        Write-Host "FFmpeg $($pin.version) already prepared and verified in $vendorBinDir"
+        exit 0
+    }
+    if ($hasExisting -and -not $Replace) {
+        throw "vendor\ffmpeg\bin does not hold the pinned FFmpeg build and was left unchanged:`n  - $($existingProblems -join "`n  - ")`nRerun with -Replace to install the pinned build (the current binaries are kept under artifacts\).`n$(Get-RecoveryText)"
+    }
+
+    # 2-5. Pinned sources, never an unpinned 'latest'.
+    if (-not [string]::IsNullOrWhiteSpace($SourceDir)) {
+        $binDir = Find-BinDir (Resolve-Path -LiteralPath $SourceDir).Path
+        if ($null -eq $binDir) { throw "No ffmpeg.exe found under -SourceDir $SourceDir" }
+        Install-FromBinDir $binDir "-SourceDir $SourceDir"
+    } elseif (-not [string]::IsNullOrWhiteSpace($ArchivePath)) {
+        Install-FromBinDir (Expand-PinnedArchive (Resolve-Path -LiteralPath $ArchivePath).Path) "-ArchivePath $ArchivePath"
+    } else {
+        $installed = $false
+        if (-not $NoAutoDetect) {
+            foreach ($root in Get-WinGetBuildRoots) {
+                $binDir = Find-BinDir $root
+                if ($null -eq $binDir) { continue }
+                $candidateProblems = Test-BuildFolder $binDir
+                if ($candidateProblems.Count -eq 0) {
+                    Install-FromBinDir $binDir "WinGet package $root"
+                    $installed = $true
+                    break
+                }
+            }
+        }
+        if (-not $installed) {
+            if (-not $AllowDownload) {
+                throw "The pinned FFmpeg build $($pin.version) was not found locally and downloading is not allowed.`n$(Get-RecoveryText)"
+            }
+            New-Item -ItemType Directory -Force -Path $workDir | Out-Null
+            $zip = Join-Path $workDir $pin.archive_name
+            Write-Host "Downloading pinned archive $($pin.download_url)"
+            Invoke-WebRequest -Uri $pin.download_url -OutFile $zip -UseBasicParsing
+            Install-FromBinDir (Expand-PinnedArchive $zip) "pinned download $($pin.download_url)"
+        }
+    }
+
+    $finalProblems = Test-BuildFolder $vendorBinDir
+    if ($finalProblems.Count -gt 0) { throw "Verification after installation failed:`n  - $($finalProblems -join "`n  - ")" }
+    Assert-Documents
+    Write-Host "Verified: ffmpeg.exe and ffprobe.exe are $($pin.version) (SHA-256 pinned in $pinPath)"
     exit 0
 }
-
-if (Test-Path -LiteralPath $downloadRoot) {
-    Remove-Item -LiteralPath $downloadRoot -Recurse -Force
+catch {
+    [Console]::Error.WriteLine("FFmpeg preparation failed: " + $_.Exception.Message)
+    exit 1
 }
-
-New-Item -ItemType Directory -Force -Path $extractRoot | Out-Null
-
-$resolvedZipUrl = Resolve-FfmpegZipUrl
-Write-Host "Downloading FFmpeg from $resolvedZipUrl"
-Save-RemoteFile -Uri $resolvedZipUrl -OutputPath $zipPath
-
-Write-Host "Extracting FFmpeg archive"
-Expand-Archive -LiteralPath $zipPath -DestinationPath $extractRoot -Force
-
-$foundFfmpeg = Get-ChildItem -LiteralPath $extractRoot -Recurse -File -Filter "ffmpeg.exe" |
-    Where-Object { $_.DirectoryName -match "\\bin$" } |
-    Select-Object -First 1
-
-$foundFfprobe = Get-ChildItem -LiteralPath $extractRoot -Recurse -File -Filter "ffprobe.exe" |
-    Where-Object { $_.DirectoryName -match "\\bin$" } |
-    Select-Object -First 1
-
-if ($null -eq $foundFfmpeg -or $null -eq $foundFfprobe) {
-    throw "FFmpeg archive did not contain both ffmpeg.exe and ffprobe.exe under a bin directory."
+finally {
+    if (Test-Path -LiteralPath $workDir) { Remove-Item -LiteralPath $workDir -Recurse -Force -ErrorAction SilentlyContinue }
+    Get-ChildItem -LiteralPath $vendorBinDir -Filter "*.new" -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
 }
-
-Copy-Item -LiteralPath $foundFfmpeg.FullName -Destination $ffmpegExe -Force
-Copy-Item -LiteralPath $foundFfprobe.FullName -Destination $ffprobeExe -Force
-
-if (-not (Test-PreparedFfmpeg)) {
-    throw "FFmpeg preparation failed: expected binaries were not created in $vendorBinDir."
-}
-
-Remove-Item -LiteralPath $downloadRoot -Recurse -Force
-
-Write-Host "FFmpeg prepared in $vendorBinDir"
-Invoke-VersionCheck -ExecutablePath $ffmpegExe
-Invoke-VersionCheck -ExecutablePath $ffprobeExe

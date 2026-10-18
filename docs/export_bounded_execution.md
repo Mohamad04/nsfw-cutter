@@ -31,14 +31,9 @@ la référence du code source `239f2c733d`.
 | ffmpeg.exe | `09948d4cdd0650da6ff5a87577469f2a218dc2615ae379f8f734d24c49de0f73` |
 | ffprobe.exe | `a6618e99bb58869ded3c6f37b53aa1a8d701c3591dbb7b5b317d47369c112be2` |
 
-À noter :
-
-- `scripts/prepare_ffmpeg.ps1` télécharge encore la release « latest » de
-  `BtbN/FFmpeg-Builds` (nightly master) lorsque `vendor/ffmpeg/bin` est vide. Sur une
-  machine vierge, il réintroduirait donc un build nightly : il faut l'épingler sur une
-  version stable.
-- Le test `test_bundled_aac_encoder_does_not_hang` échoue si un build touché par D1 est
-  de nouveau embarqué.
+La préparation est épinglée et vérifiée par hash : voir `docs/ffmpeg_distribution.md`.
+Le test `test_bundled_aac_encoder_does_not_hang` échoue si un build touché par D1 est de
+nouveau embarqué.
 
 ## Exécution bornée
 

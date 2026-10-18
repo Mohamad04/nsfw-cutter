@@ -66,6 +66,7 @@ class CutExecutionService:
                 raise FastCuttingAudioError(FAST_CUTTING_AUDIO_REFUSED)
             if _mode_value(request.export_mode) == CutExportMode.EXPORT_CLIPS_MERGED.value:
                 raise FastCuttingAudioError(FAST_CUTTING_MERGED_AUDIO_REFUSED)
+            raise FastCuttingAudioError(FAST_CUTTING_CLIPS_AUDIO_REFUSED)
 
         self._created_paths = []
         self._temporary_dirs = []
@@ -115,19 +116,29 @@ class CutExecutionService:
         input_duration: float,
         progress_callback=None,
     ) -> VideoCutResult:
+        """One verified file per requested clip, in request order; clips are independent (never merged).
+
+        The batch is all-or-nothing: every clip is checked before any FFmpeg command, and if one clip
+        fails, the files already written for this batch are deleted by ``export_segments``.
+        """
+        clip_ranges = _clip_ranges(request, input_duration)
+        source_packets = self.packet_probe(request.input_path)
+        require_keyframe_aligned_removals(clip_ranges, source_packets, action="export the selected clips")
+
         segment_results = []
         output_paths = []
-
-        for offset, segment in enumerate(request.segments, start=1):
+        for offset, (segment, (start_seconds, end_seconds)) in enumerate(zip(request.segments, clip_ranges), start=1):
             output_path = self._new_output_path(
                 request.output_dir
                 / _clip_output_name(request.input_path, segment.index, segment.start_seconds, segment.end_seconds)
             )
-            self.cutting_service.export_interval(
+            self._export_verified_kept_ranges(
                 request.input_path,
+                [(start_seconds, end_seconds)],
                 output_path,
-                segment.start_seconds,
-                segment.end_seconds,
+                cache_prefix=f"clip_{segment.index:03d}",
+                action="export the selected clips",
+                source_packets=source_packets,
             )
             output_paths.append(output_path)
             segment_results.append(_segment_result(segment, output_path))
@@ -137,14 +148,13 @@ class CutExecutionService:
                 f"Exported selected clip {offset}",
             )
 
-        expected_duration = sum(segment.duration_seconds for segment in segment_results)
         return self._result_with_duration_validation(
             request,
             output_paths,
             segment_results,
             input_duration,
-            expected_duration,
-            normalized_intervals=_segment_intervals(request),
+            intervals_duration(clip_ranges),
+            normalized_intervals=clip_ranges,
         )
 
     def export_selected_clips_merged(
@@ -154,14 +164,7 @@ class CutExecutionService:
         progress_callback=None,
     ) -> VideoCutResult:
         """Keep the union of the selected clips, once each, in source order (README: "stitch the kept ranges")."""
-        selected_intervals = _segment_intervals(request)
-        for index, (start_seconds, _end_seconds) in enumerate(selected_intervals, start=1):
-            if start_seconds >= input_duration:
-                raise ValueError(
-                    f"Clip {index} starts at {seconds_to_ffmpeg_time(start_seconds)}, after the end of the video "
-                    f"({seconds_to_ffmpeg_time(input_duration)}). Nothing was exported."
-                )
-        kept_intervals = normalize_intervals(selected_intervals, input_duration)
+        kept_intervals = normalize_intervals(_clip_ranges(request, input_duration), input_duration)
         logger.info("Video export merged clips (union, source order): %s", kept_intervals)
 
         merged_name = request.merged_output_name or f"{request.input_path.stem}_selected_clips_merged{request.input_path.suffix}"
@@ -235,13 +238,15 @@ class CutExecutionService:
         action: str,
         progress_callback=None,
         checked_intervals: list[tuple[float, float]] | None = None,
+        source_packets: list[VideoPacket] | None = None,
     ) -> None:
         """Stream-copy exactly the frames of ``kept_intervals`` into ``output_path``, or refuse.
 
         Every boundary of ``checked_intervals`` (the kept intervals by default) must be a clean keyframe
         cut point; each copied range must reproduce the source packets (hash), and so must the joined file.
         """
-        source_packets = self.packet_probe(input_path)
+        if source_packets is None:
+            source_packets = self.packet_probe(input_path)
         require_keyframe_aligned_removals(checked_intervals or kept_intervals, source_packets, action=action)
         copy_ranges = []
         for start_seconds, end_seconds in kept_intervals:
@@ -406,6 +411,11 @@ FAST_CUTTING_MERGED_AUDIO_REFUSED = (
     "so up to about 0.1 s of sound from outside the selected clips would be included. Nothing was exported. "
     "Use Smart Cutting, which rebuilds the audio exactly."
 )
+FAST_CUTTING_CLIPS_AUDIO_REFUSED = (
+    "Fast Cutting cannot export clips with exact audio: stream copy keeps whole audio frames around each clip, "
+    "so up to about 0.1 s of sound from outside every clip would be included. Nothing was exported. "
+    "Use Smart Cutting, which rebuilds the audio exactly."
+)
 FAST_CUTTING_AUDIO_REFUSED = (
     "Fast Cutting cannot remove audio exactly: stream copy keeps whole audio frames around each cut, "
     "so up to about 0.1 s of sound from every removed interval would remain. Nothing was exported. "
@@ -488,6 +498,19 @@ def _required_duration(metadata: dict, path: Path) -> float:
     if duration is None or float(duration) <= 0:
         raise ValueError(f"Unable to read a positive duration for {path}.")
     return float(duration)
+
+
+def _clip_ranges(request: VideoCutRequest, input_duration: float) -> list[tuple[float, float]]:
+    """Requested keep ranges in request order, ends clamped to the video; a clip past the end is refused."""
+    ranges = []
+    for segment in request.segments:
+        if segment.start_seconds >= input_duration:
+            raise ValueError(
+                f"Clip {segment.index} starts at {seconds_to_ffmpeg_time(segment.start_seconds)}, after the end of "
+                f"the video ({seconds_to_ffmpeg_time(input_duration)}). Nothing was exported."
+            )
+        ranges.append((segment.start_seconds, min(segment.end_seconds, input_duration)))
+    return ranges
 
 
 def _segment_intervals(request: VideoCutRequest) -> list[tuple[float, float]]:

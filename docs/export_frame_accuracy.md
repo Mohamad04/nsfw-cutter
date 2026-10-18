@@ -67,3 +67,22 @@ dans l'ordre.
 - **Refus explicites.** Un clip qui commence après la fin de la vidéo est refusé. Un clip
   vide ou inversé est refusé par la validation des segments.
 - **Mode `export_clips_separate`.** Non modifié.
+
+## Clips séparés en Fast Cutting
+
+`export_clips_separate` produit un fichier indépendant par clip demandé, dans l'ordre de
+la requête. Les clips ne sont jamais fusionnés : deux clips qui se chevauchent donnent
+deux fichiers qui contiennent chacun la partie commune.
+
+- **Contenu de chaque fichier.** Il contient exactement les images de son intervalle,
+  dans l'ordre de la source. Il passe par le même chemin vérifié que la suppression
+  d'intervalles et les clips fusionnés : copie au nombre exact d'images, puis vérification
+  par hash. Avant la correction, chaque clip contenait 2 images après sa fin, et un clip
+  dont le début ne tombait pas sur un keyframe démarrait au keyframe précédent.
+- **Mêmes restrictions.** Les bornes doivent tomber sur des keyframes exploitables, et les
+  sources avec audio sont refusées. Une fin au-delà de la vidéo est ramenée à la durée de
+  la vidéo ; un clip qui commence après la fin est refusé.
+- **Lot tout ou rien.** Tous les clips sont contrôlés avant la première commande FFmpeg.
+  Si un clip échoue, ou si le lot est annulé ou dépasse son délai, aucun fichier du lot
+  n'est conservé. Les fichiers qui existaient déjà ne sont jamais supprimés ni écrasés :
+  chaque nouveau fichier reçoit un nom unique.

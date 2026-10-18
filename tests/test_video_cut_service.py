@@ -68,13 +68,15 @@ class CutExecutionServiceTests(unittest.TestCase):
                 command_runner=command_runner,
                 metadata_probe=lambda path: {
                     "duration_seconds": 20 if Path(path) == input_path else 5,
-                    "has_audio": True,
+                    "has_audio": False,
                 },
                 cache_dir=temp_path / "cache",
+                packet_probe=_intra_only_packet_probe(input_path, [(0.0, 5.0)], frame_count=200),
             ).export_segments(request)
 
             self.assertEqual(result.output_paths[0].name, "movie_clip_001_00-00-00_to_00-00-05_1.mp4")
-            self.assertEqual(commands[0][-1], str(result.output_paths[0]))
+            self.assertEqual(commands[-1][-1], str(result.output_paths[0]))
+            self.assertEqual((output_dir / "movie_clip_001_00-00-00_to_00-00-05.mp4").read_bytes(), b"")
             self.assertEqual(result.export_mode, "export_clips_separate")
 
     def test_stream_copy_remove_export_keeps_video_around_marked_cuts(self):
@@ -429,8 +431,9 @@ def _intra_only_packet_probe(input_path: Path, kept_ranges: list[tuple[float, fl
         if path == input_path:
             return packets
         chunk = re.search(r"_(?:kept_ranges|selected_clips)_(\d{3})$", path.stem)
-        if chunk:
-            start, end = kept_ranges[int(chunk.group(1)) - 1]
+        clip = re.search(r"_clip_(\d{3})_\d{3}$", path.stem)
+        if chunk or clip:
+            start, end = kept_ranges[int((chunk or clip).group(1)) - 1]
             return packets_in_range(packets, start, end)
         return [packet for start, end in kept_ranges for packet in packets_in_range(packets, start, end)]
 

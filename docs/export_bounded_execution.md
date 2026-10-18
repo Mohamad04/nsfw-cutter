@@ -73,3 +73,17 @@ l'intervalle supprimé : la copie de flux AAC conserve 97 ms de son supprimé po
 jonction, et 271 ms pour 3 coupes. Fast Cutting refuse donc désormais la suppression
 d'intervalles sur une source avec audio (`FastCuttingAudioError`) et oriente vers
 Smart Cutting, qui donne 0 ms de résidu.
+
+## Fichiers temporaires de Fast Cutting (D5)
+
+Chaque export Fast copie ses segments dans un dossier qui lui est propre,
+`cache/<préfixe>_<uuid>` (ce dossier contient aussi `concat_list.txt`). La sortie finale est
+écrite dans le dossier de sortie, jamais dans ce dossier temporaire.
+
+- **Export réussi** : l'export supprime son propre dossier temporaire. Si la suppression
+  échoue, le message `Temporary files could not be removed: …` est ajouté à
+  l'avertissement du résultat et au journal. La sortie, déjà vérifiée, est conservée.
+- **Échec, annulation ou délai dépassé** : l'export supprime son dossier temporaire et les
+  sorties qu'il a lui-même créées.
+- **Exports simultanés** : un export ne touche jamais aux dossiers des autres exports
+  (nom unique), ni à la source, ni aux fichiers qui existaient déjà.

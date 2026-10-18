@@ -22,7 +22,6 @@ from services.export.video_packet_index import (
     nearest_keyframes,
     packets_in_range,
 )
-from services.infrastructure.ffmpeg.bounded_runner import ExportCancelledError, FFmpegTimeoutError
 from services.infrastructure.ffmpeg.cutting import FFmpegCuttingService
 
 
@@ -49,6 +48,7 @@ class CutExecutionService:
         self.packet_probe = packet_probe or self.cutting_service.probe_video_packets
         self.cache_dir = Path(cache_dir) if cache_dir else get_cuts_cache_dir()
         self._created_paths: list[Path] = []
+        self._temporary_dirs: list[Path] = []
 
     def export_segments(self, request: VideoCutRequest, progress_callback=None) -> VideoCutResult:
         request = VideoCutRequest.model_validate(request)
@@ -65,6 +65,7 @@ class CutExecutionService:
             raise FastCuttingAudioError(FAST_CUTTING_AUDIO_REFUSED)
 
         self._created_paths = []
+        self._temporary_dirs = []
         try:
             if _mode_value(request.export_mode) == CutExportMode.REMOVE_INTERVALS.value:
                 result = self.remove_selected_intervals(
@@ -84,9 +85,15 @@ class CutExecutionService:
                     input_duration,
                     progress_callback=progress_callback,
                 )
-        except (ExportCancelledError, FFmpegTimeoutError):
+        except Exception:
+            # Failure, cancellation or timeout: nothing this export created is kept.
             self._discard_created_paths()
             raise
+
+        leftovers = self._remove_temporary_dirs()
+        if leftovers:
+            cleanup_warning = f"Temporary files could not be removed: {', '.join(str(path) for path in leftovers)}"
+            result.duration_warning = "\n".join(filter(None, [result.duration_warning, cleanup_warning]))
 
         logger.info("Video export output files: %s", result.output_paths)
         logger.info(
@@ -247,6 +254,7 @@ class CutExecutionService:
         job_cache_dir = self.cache_dir / f"{cache_prefix}_{uuid.uuid4().hex}"
         job_cache_dir.mkdir(parents=True, exist_ok=True)
         self._created_paths.append(job_cache_dir)
+        self._temporary_dirs.append(job_cache_dir)
         temporary_segments = []
 
         for offset, (start_seconds, end_seconds) in enumerate(intervals, start=1):
@@ -273,13 +281,31 @@ class CutExecutionService:
         return output_path
 
     def _discard_created_paths(self) -> None:
-        """After a cancellation or timeout, remove only what this export created (never the source)."""
+        """After a failure, cancellation or timeout, remove only what this export created (never the source)."""
         for path in self._created_paths:
-            if path.is_dir():
-                shutil.rmtree(path, ignore_errors=True)
-            else:
-                path.unlink(missing_ok=True)
+            try:
+                if path.is_dir():
+                    shutil.rmtree(path, ignore_errors=True)
+                else:
+                    path.unlink(missing_ok=True)
+            except OSError as exc:
+                logger.warning("Could not remove %s after a failed export: %s", path, exc)
+            if path.exists():
+                logger.warning("Could not remove %s after a failed export", path)
         self._created_paths = []
+        self._temporary_dirs = []
+
+    def _remove_temporary_dirs(self) -> list[Path]:
+        """After a successful export, remove this job's own temporary folders; return those that remain."""
+        leftovers = []
+        for path in self._temporary_dirs:
+            shutil.rmtree(path, ignore_errors=True)
+            if path.exists():
+                logger.warning("Could not remove temporary export folder %s", path)
+                leftovers.append(path)
+        self._temporary_dirs = []
+        self._created_paths = []
+        return leftovers
 
     def _result_with_duration_validation(
         self,

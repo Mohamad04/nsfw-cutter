@@ -61,8 +61,11 @@ class CutExecutionService:
         logger.info("Video export mode: %s cut mode: %s", request.export_mode, request.cut_mode)
         logger.info("Video export input duration: %.3f", input_duration)
         logger.info("Video export selected intervals: %s", _segment_intervals(request))
-        if _mode_value(request.export_mode) == CutExportMode.REMOVE_INTERVALS.value and input_metadata.get("has_audio"):
-            raise FastCuttingAudioError(FAST_CUTTING_AUDIO_REFUSED)
+        if input_metadata.get("has_audio"):
+            if _mode_value(request.export_mode) == CutExportMode.REMOVE_INTERVALS.value:
+                raise FastCuttingAudioError(FAST_CUTTING_AUDIO_REFUSED)
+            if _mode_value(request.export_mode) == CutExportMode.EXPORT_CLIPS_MERGED.value:
+                raise FastCuttingAudioError(FAST_CUTTING_MERGED_AUDIO_REFUSED)
 
         self._created_paths = []
         self._temporary_dirs = []
@@ -150,17 +153,27 @@ class CutExecutionService:
         input_duration: float,
         progress_callback=None,
     ) -> VideoCutResult:
+        """Keep the union of the selected clips, once each, in source order (README: "stitch the kept ranges")."""
         selected_intervals = _segment_intervals(request)
+        for index, (start_seconds, _end_seconds) in enumerate(selected_intervals, start=1):
+            if start_seconds >= input_duration:
+                raise ValueError(
+                    f"Clip {index} starts at {seconds_to_ffmpeg_time(start_seconds)}, after the end of the video "
+                    f"({seconds_to_ffmpeg_time(input_duration)}). Nothing was exported."
+                )
+        kept_intervals = normalize_intervals(selected_intervals, input_duration)
+        logger.info("Video export merged clips (union, source order): %s", kept_intervals)
+
         merged_name = request.merged_output_name or f"{request.input_path.stem}_selected_clips_merged{request.input_path.suffix}"
         merged_path = self._new_output_path(request.output_dir / Path(merged_name).name)
-
-        temporary_segments = self._export_temporary_ranges(
+        self._export_verified_kept_ranges(
             request.input_path,
-            selected_intervals,
+            kept_intervals,
+            merged_path,
             cache_prefix="selected_clips",
+            action="export the selected clips",
             progress_callback=progress_callback,
         )
-        self.cutting_service.concat_stream_copy_segments(temporary_segments, merged_path)
 
         _emit_progress(progress_callback, 100, "Merged selected clips")
         return self._result_with_duration_validation(
@@ -168,9 +181,10 @@ class CutExecutionService:
             [merged_path],
             [_segment_result(segment, merged_path) for segment in request.segments],
             input_duration,
-            intervals_duration(selected_intervals),
+            intervals_duration(kept_intervals),
             merged_output_path=merged_path,
-            normalized_intervals=selected_intervals,
+            normalized_intervals=kept_intervals,
+            kept_intervals=kept_intervals,
         )
 
     def remove_selected_intervals(
@@ -188,8 +202,47 @@ class CutExecutionService:
         logger.info("Video export normalized removed intervals: %s", normalized_removed)
         logger.info("Video export computed kept intervals: %s", kept_intervals)
 
-        source_packets = self.packet_probe(request.input_path)
-        require_keyframe_aligned_removals(normalized_removed, source_packets)
+        output_name = request.merged_output_name or f"{request.input_path.stem}_removed_intervals{request.input_path.suffix}"
+        output_path = self._new_output_path(request.output_dir / Path(output_name).name)
+        self._export_verified_kept_ranges(
+            request.input_path,
+            kept_intervals,
+            output_path,
+            cache_prefix="kept_ranges",
+            action="remove the selected intervals",
+            progress_callback=progress_callback,
+            checked_intervals=normalized_removed,
+        )
+
+        _emit_progress(progress_callback, 100, "Removed selected intervals")
+        return self._result_with_duration_validation(
+            request,
+            [output_path],
+            [_segment_result(segment, output_path) for segment in request.segments],
+            input_duration,
+            intervals_duration(kept_intervals),
+            merged_output_path=output_path,
+            normalized_intervals=normalized_removed,
+            kept_intervals=kept_intervals,
+        )
+
+    def _export_verified_kept_ranges(
+        self,
+        input_path: Path,
+        kept_intervals: list[tuple[float, float]],
+        output_path: Path,
+        cache_prefix: str,
+        action: str,
+        progress_callback=None,
+        checked_intervals: list[tuple[float, float]] | None = None,
+    ) -> None:
+        """Stream-copy exactly the frames of ``kept_intervals`` into ``output_path``, or refuse.
+
+        Every boundary of ``checked_intervals`` (the kept intervals by default) must be a clean keyframe
+        cut point; each copied range must reproduce the source packets (hash), and so must the joined file.
+        """
+        source_packets = self.packet_probe(input_path)
+        require_keyframe_aligned_removals(checked_intervals or kept_intervals, source_packets, action=action)
         copy_ranges = []
         for start_seconds, end_seconds in kept_intervals:
             if not packets_in_range(source_packets, start_seconds, end_seconds):
@@ -201,13 +254,13 @@ class CutExecutionService:
                     f"{seconds_to_ffmpeg_time(end_seconds)} exactly. {FAST_CUTTING_NOTHING_EXPORTED}"
                 )
             copy_ranges.append((start_seconds, end_seconds, packets))
+        if not copy_ranges:
+            raise ValueError(f"The selected intervals contain no video frames. {FAST_CUTTING_NOTHING_EXPORTED}")
 
-        output_name = request.merged_output_name or f"{request.input_path.stem}_removed_intervals{request.input_path.suffix}"
-        output_path = self._new_output_path(request.output_dir / Path(output_name).name)
         temporary_segments = self._export_temporary_ranges(
-            request.input_path,
+            input_path,
             [(start_seconds, end_seconds) for start_seconds, end_seconds, _ in copy_ranges],
-            cache_prefix="kept_ranges",
+            cache_prefix=cache_prefix,
             progress_callback=progress_callback,
             video_frame_counts=[len(packets) for _, _, packets in copy_ranges],
         )
@@ -230,18 +283,6 @@ class CutExecutionService:
                 "Fast Cutting could not verify the joined video against the kept frames. The output was deleted. "
                 "Use Smart Cutting for frame-exact removal."
             )
-
-        _emit_progress(progress_callback, 100, "Removed selected intervals")
-        return self._result_with_duration_validation(
-            request,
-            [output_path],
-            [_segment_result(segment, output_path) for segment in request.segments],
-            input_duration,
-            intervals_duration(kept_intervals),
-            merged_output_path=output_path,
-            normalized_intervals=normalized_removed,
-            kept_intervals=kept_intervals,
-        )
 
     def _export_temporary_ranges(
         self,
@@ -360,6 +401,11 @@ class FastCuttingAudioError(ValueError):
 
 # Measured on decoded samples (marker-tone fixtures): stream-copied AAC keeps about 0.1 s of the
 # removed sound at every splice, because audio is copied in whole frames around each boundary.
+FAST_CUTTING_MERGED_AUDIO_REFUSED = (
+    "Fast Cutting cannot merge clips with exact audio: stream copy keeps whole audio frames around each clip, "
+    "so up to about 0.1 s of sound from outside the selected clips would be included. Nothing was exported. "
+    "Use Smart Cutting, which rebuilds the audio exactly."
+)
 FAST_CUTTING_AUDIO_REFUSED = (
     "Fast Cutting cannot remove audio exactly: stream copy keeps whole audio frames around each cut, "
     "so up to about 0.1 s of sound from every removed interval would remain. Nothing was exported. "
@@ -370,6 +416,7 @@ FAST_CUTTING_AUDIO_REFUSED = (
 def require_keyframe_aligned_removals(
     removed_intervals: list[tuple[float, float]],
     source_packets: list[VideoPacket],
+    action: str = "remove the selected intervals",
 ) -> None:
     """Refuse a Fast Cutting removal unless stream copy can honour every boundary exactly.
 
@@ -383,7 +430,7 @@ def require_keyframe_aligned_removals(
         return
     details = "; ".join(_boundary_detail(source_packets, value) for value in unaligned)
     raise FastCuttingPrecisionError(
-        "Fast Cutting cannot remove the selected intervals exactly: stream copy can only cut on a keyframe "
+        f"Fast Cutting cannot {action} exactly: stream copy can only cut on a keyframe "
         f"that starts an independent group of frames, and these cut boundaries are not on one: {details}. "
         "Nothing was exported and the cuts were not changed. Use Smart Cutting for frame-exact removal, "
         "or move these boundaries onto the listed keyframes."

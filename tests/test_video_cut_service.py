@@ -1,3 +1,4 @@
+import re
 import subprocess
 import tempfile
 import unittest
@@ -161,12 +162,14 @@ class CutExecutionServiceTests(unittest.TestCase):
                 command_runner=command_runner,
                 metadata_probe=lambda path: {
                     "duration_seconds": 72 if Path(path) == input_path else 14,
-                    "has_audio": True,
+                    "has_audio": False,
                 },
                 cache_dir=temp_path / "cache",
+                packet_probe=_intra_only_packet_probe(input_path, [(33.0, 42.0), (50.0, 55.0)], frame_count=720),
             ).export_segments(request)
 
             self.assertEqual(len(commands), 3)
+            self.assertEqual([command[command.index("-frames:v") + 1] for command in commands[:2]], ["90", "50"])
             self.assertEqual(commands[0][commands[0].index("-ss") + 1], "00:00:33.000")
             self.assertEqual(commands[0][commands[0].index("-t") + 1], "00:00:09.000")
             self.assertEqual(commands[1][commands[1].index("-ss") + 1], "00:00:50.000")
@@ -178,6 +181,68 @@ class CutExecutionServiceTests(unittest.TestCase):
             for command in commands:
                 self.assertEqual(command[command.index("-c") + 1], "copy")
                 self.assertTrue(forbidden.isdisjoint(command))
+
+    def test_merged_clips_export_the_union_of_overlapping_clips_once_in_source_order(self):
+        commands = []
+
+        def command_runner(command, **_kwargs):
+            commands.append(command)
+            return subprocess.CompletedProcess(command, 0, "", "")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            input_path = temp_path / "movie.mp4"
+            input_path.touch()
+            request = VideoCutRequest(
+                input_path=input_path,
+                output_dir=temp_path / "cuts",
+                export_mode="export_clips_merged",
+                cut_mode="stream_copy",
+                segments=[
+                    VideoCutSegment(index=1, start_seconds=6, end_seconds=8),
+                    VideoCutSegment(index=2, start_seconds=1, end_seconds=4),
+                    VideoCutSegment(index=3, start_seconds=3, end_seconds=5),
+                    VideoCutSegment(index=4, start_seconds=7, end_seconds=8),
+                ],
+            )
+
+            result = CutExecutionService(
+                ffmpeg_service=FakeFFmpegService(),
+                command_runner=command_runner,
+                metadata_probe=lambda path: {"duration_seconds": 10, "has_audio": False},
+                cache_dir=temp_path / "cache",
+                packet_probe=_intra_only_packet_probe(input_path, [(1.0, 5.0), (6.0, 8.0)]),
+            ).export_segments(request)
+
+            self.assertEqual(result.normalized_intervals, [(1.0, 5.0), (6.0, 8.0)])
+            self.assertEqual(result.expected_output_duration_seconds, 6.0)
+            self.assertEqual([command[command.index("-ss") + 1] for command in commands[:2]], ["00:00:01.000", "00:00:06.000"])
+
+    def test_merged_clip_starting_after_the_end_of_the_video_is_refused(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            input_path = temp_path / "movie.mp4"
+            input_path.touch()
+            request = VideoCutRequest(
+                input_path=input_path,
+                output_dir=temp_path / "cuts",
+                export_mode="export_clips_merged",
+                cut_mode="stream_copy",
+                segments=[
+                    VideoCutSegment(index=1, start_seconds=1, end_seconds=2),
+                    VideoCutSegment(index=2, start_seconds=12, end_seconds=14),
+                ],
+            )
+            service = CutExecutionService(
+                ffmpeg_service=FakeFFmpegService(),
+                command_runner=lambda command, **_kwargs: self.fail("no FFmpeg command expected"),
+                metadata_probe=lambda path: {"duration_seconds": 10, "has_audio": False},
+                cache_dir=temp_path / "cache",
+                packet_probe=lambda path: self.fail("no packet probe expected"),
+            )
+
+            with self.assertRaisesRegex(ValueError, "Clip 2 starts at 00:00:12.000, after the end of the video"):
+                service.export_segments(request)
 
     def test_fast_removal_off_keyframe_is_refused_before_any_ffmpeg_command(self):
         commands = []
@@ -356,15 +421,16 @@ def _gop_packets(keyframe_every: int, frame_count: int = 100, fps: int = 10) -> 
     return [VideoPacket(round(index / fps, 3), index % keyframe_every == 0, f"h{index}") for index in range(frame_count)]
 
 
-def _intra_only_packet_probe(input_path: Path, kept_ranges: list[tuple[float, float]]):
-    packets = _gop_packets(keyframe_every=1)
+def _intra_only_packet_probe(input_path: Path, kept_ranges: list[tuple[float, float]], frame_count: int = 100):
+    packets = _gop_packets(keyframe_every=1, frame_count=frame_count)
 
     def probe(path):
         path = Path(path)
         if path == input_path:
             return packets
-        if "kept_ranges_" in path.name:
-            start, end = kept_ranges[int(path.stem[-3:]) - 1]
+        chunk = re.search(r"_(?:kept_ranges|selected_clips)_(\d{3})$", path.stem)
+        if chunk:
+            start, end = kept_ranges[int(chunk.group(1)) - 1]
             return packets_in_range(packets, start, end)
         return [packet for start, end in kept_ranges for packet in packets_in_range(packets, start, end)]
 

@@ -48,3 +48,22 @@ dans l'ordre.
 - D10 : trou d'horodatage de 80 à 96 ms à chaque jonction Fast.
 - Fast Cutting : l'audio est copié par trames AAC entières, et peut donc contenir du
   son de l'intervalle supprimé au voisinage des bornes.
+
+## Clips fusionnés en Fast Cutting (D7)
+
+`export_clips_merged` conserve les plages sélectionnées, comme l'indique le README :
+« stitch the kept ranges into one file ».
+
+- **Union des clips.** Les clips sont fusionnés en une seule union, triée dans l'ordre de
+  la source. Un passage commun à plusieurs clips (chevauchement, clips imbriqués,
+  doublons, clips adjacents) n'apparaît qu'une fois. Avant la correction, il était copié
+  autant de fois (52 images en double sur le cas FX06).
+- **Mêmes garanties que la suppression.** Les plages passent par le même chemin vérifié :
+  copie au nombre exact d'images, vérification par hash de chaque plage et du fichier
+  assemblé.
+- **Mêmes restrictions que la suppression.** Les bornes doivent tomber sur des keyframes
+  exploitables, et les sources avec audio sont refusées. Avant, des images situées hors
+  des clips étaient incluses (début au keyframe précédent, +2 images en fin de copie).
+- **Refus explicites.** Un clip qui commence après la fin de la vidéo est refusé. Un clip
+  vide ou inversé est refusé par la validation des segments.
+- **Mode `export_clips_separate`.** Non modifié.

@@ -205,18 +205,35 @@ Current demo limitations:
 .\scripts\build_windows.ps1
 ```
 
-`build_windows.ps1` prepares bundled FFmpeg, compiles translations, and runs PyInstaller
-(onedir). The output `.zip` is exactly what the release workflow publishes and what the
-installer consumes. PyInstaller generates its temporary `.spec` file during the build;
-generated spec files are ignored by Git.
+`build_windows.ps1` prepares bundled FFmpeg and the CUDA 12 cuBLAS runtime, compiles
+translations, and runs PyInstaller (onedir). The output `.zip` is exactly what the release
+workflow publishes and what the installer consumes. PyInstaller generates its temporary
+`.spec` file during the build; generated spec files are ignored by Git.
 
-The existing build script verifies that `ffmpeg.exe`, `ffprobe.exe`, Qt Multimedia
-plugins, and the QML runtime are present in the onedir output. The Windows workflow,
-however, installs only `requirements.txt`; it does not install or explicitly collect
-`requirements-ai.txt`, and model weights are intentionally not bundled. Therefore the
-source launch above is currently the reliable AI-demo path. Treat packaged AI analysis
-as unverified until a build produced with the optional AI stack passes the same vertical
-smoke.
+The build needs two pinned, hash-verified binaries prepared beforehand in Git-ignored
+`vendor\` folders; neither preparation script downloads anything unless asked to:
+
+```powershell
+.\scripts\prepare_ffmpeg.ps1 -ArchivePath C:\path\ffmpeg-8.1.1-full_build.zip
+.\scripts\prepare_cuda12_cublas.ps1 -ArchivePath C:\path\libcublas-windows-x86_64-12.8.4.1-archive.zip
+# or, explicitly allowing the pinned official downloads: -AllowDownload
+```
+
+Whisper (faster-whisper / CTranslate2 4.8.1) is built for CUDA 12 and loads
+`cublas64_12.dll` at run time, while PyTorch (Qwen, Marqo) keeps its own CUDA 13 libraries.
+The build therefore bundles NVIDIA cuBLAS 12.8.4.1 next to `ctranslate2.dll` only, adding
+about 788 MB. Without it, Whisper silently falls back to the CPU. A source run from the
+virtual environment still uses that CPU fallback for Whisper. See
+[CUDA 12 cuBLAS distribution](docs/cuda12_cublas_distribution.md) for the pin, the
+verification, the GPU smoke-test protocol, rollback, resource needs, and the open NVIDIA
+redistribution obligations, and [FFmpeg distribution](docs/ffmpeg_distribution.md) for FFmpeg.
+
+The build script verifies `ffmpeg.exe`, `ffprobe.exe`, the two cuBLAS DLLs and their
+licenses against the pins, and checks that the Qt Multimedia plugins and the QML runtime are
+present in the onedir output. Model weights are intentionally not bundled. A local build with
+the AI stack passed a real, offline GPU smoke test of the packaged app on 2026-10-19. The
+`build-windows.yml` and `release.yml` workflows do not prepare cuBLAS yet, so their build
+stops at that step until a preparation step is added.
 
 ---
 
@@ -227,6 +244,7 @@ smoke.
 | `scripts/install.ps1`         | Users      | Install / update the app to `%LOCALAPPDATA%\NSFWCutter` + shortcuts. No admin. |
 | `scripts/install_ffmpeg.ps1`  | Users      | *Optional.* Install FFmpeg to the user profile and add it to PATH.           |
 | `scripts/prepare_ffmpeg.ps1`  | Developers | Download FFmpeg into `vendor\ffmpeg` so the build can bundle it.             |
+| `scripts/prepare_cuda12_cublas.ps1` | Developers | Verify and extract the pinned NVIDIA cuBLAS 12 into `vendor\cuda12-cublas` for Whisper GPU. |
 | `scripts/build_windows.ps1`   | Developers | Build the Windows onedir app and release zip.                               |
 
 `install.ps1` accepts `-Force` (reinstall), `-NoLaunch`, and `-NoDesktop` when invoked
@@ -273,7 +291,8 @@ nsfw-cutter/
 │   │   └── update/            # GitHub-release version check + installer launcher
 │   ├── editing/ · export/ · media/ · subtitles/ · i18n/
 ├── vue/qml/                    # QML UI
-├── scripts/                    # install.ps1, install_ffmpeg.ps1, prepare_ffmpeg.ps1, build_windows.ps1
+├── scripts/                    # install.ps1, install_ffmpeg.ps1, prepare_ffmpeg.ps1, prepare_cuda12_cublas.ps1, build_windows.ps1
 ├── vendor/ffmpeg/              # Bundled FFmpeg (populated by prepare_ffmpeg.ps1)
+├── vendor/cuda12-cublas/       # Bundled CUDA 12 cuBLAS for Whisper (populated by prepare_cuda12_cublas.ps1)
 └── .github/workflows/          # CI (test), Build Windows, Release
 ```

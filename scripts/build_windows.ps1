@@ -19,6 +19,7 @@ if ([string]::IsNullOrWhiteSpace($ProjectRoot)) {
 }
 
 $prepareScript = Join-Path $ProjectRoot "scripts\prepare_ffmpeg.ps1"
+$prepareCublasScript = Join-Path $ProjectRoot "scripts\prepare_cuda12_cublas.ps1"
 $pythonExe = Join-Path $ProjectRoot ".venv\Scripts\python.exe"
 $entryFile = Join-Path $ProjectRoot "main.py"
 $buildDir = Join-Path $ProjectRoot "build"
@@ -38,6 +39,12 @@ Write-Host "Preparing bundled FFmpeg"
 & powershell -NoProfile -ExecutionPolicy Bypass -File $prepareScript -ProjectRoot $ProjectRoot
 if ($LASTEXITCODE -ne 0) {
     throw "FFmpeg preparation failed."
+}
+
+Write-Host "Preparing bundled CUDA 12 cuBLAS for CTranslate2"
+& powershell -NoProfile -ExecutionPolicy Bypass -File $prepareCublasScript -ProjectRoot $ProjectRoot
+if ($LASTEXITCODE -ne 0) {
+    throw "CUDA 12 cuBLAS preparation failed."
 }
 
 Write-Host "Checking PyInstaller"
@@ -141,6 +148,17 @@ Add-DataDirectoryIfExists -SourceRelativePath "vue\qml" -DestinationRelativePath
 Add-DataDirectoryIfExists -SourceRelativePath "assets" -DestinationRelativePath "assets"
 Add-DataDirectoryIfExists -SourceRelativePath "resources" -DestinationRelativePath "resources"
 
+# CTranslate2 adds its own package folder to the DLL search path, so its CUDA 12 cuBLAS goes there,
+# apart from PyTorch's CUDA 13 libraries. Only the license and pin go under vendor\.
+$cublasPin = Get-Content -LiteralPath (Join-Path $ProjectRoot "scripts\cuda12-cublas-pin.json") -Raw | ConvertFrom-Json
+$cublasVendorDir = Join-Path $ProjectRoot "vendor\cuda12-cublas"
+foreach ($cublasName in $cublasPin.binaries.PSObject.Properties.Name) {
+    $pyinstallerArgs += @("--add-binary", "$(Join-Path $cublasVendorDir $cublasName);$($cublasPin.bundle_destination)")
+}
+foreach ($cublasDocument in @($cublasPin.documents.LICENSE.target, "BUILD-PIN.json")) {
+    $pyinstallerArgs += @("--add-data", "$(Join-Path $cublasVendorDir $cublasDocument);vendor\cuda12-cublas")
+}
+
 $pyinstallerArgs += $entryFile
 
 Push-Location $ProjectRoot
@@ -190,6 +208,34 @@ if (-not (Test-Path -LiteralPath $bundledLicense -PathType Leaf) -or
     throw "The FFmpeg GPL license text is missing from the PyInstaller output: $bundledLicense"
 }
 Write-Host "Bundled FFmpeg verified: $($ffmpegPin.version), SHA-256 pinned, license included"
+
+$internalDir = Join-Path $appDistDir "_internal"
+foreach ($cublasName in $cublasPin.binaries.PSObject.Properties.Name) {
+    # Dependency analysis (cublas64_12 -> cublasLt64_12, and the unused CUDA 12 bitsandbytes variants)
+    # also copies the pinned DLL into the top-level _internal folder, which is on the DLL search path
+    # of the whole process. Only the copy beside ctranslate2.dll is wanted.
+    $topLevelCopy = Join-Path $internalDir $cublasName
+    if ((Test-Path -LiteralPath $topLevelCopy -PathType Leaf) -and
+        (Get-FileHash -LiteralPath $topLevelCopy -Algorithm SHA256).Hash.ToLowerInvariant() -eq $cublasPin.binaries.$cublasName.sha256) {
+        Remove-Item -LiteralPath $topLevelCopy -Force
+        Write-Host "Removed the top-level duplicate of $cublasName added by dependency analysis"
+    }
+    $bundledCublas = Join-Path $internalDir (Join-Path $cublasPin.bundle_destination $cublasName)
+    if (-not (Test-Path -LiteralPath $bundledCublas -PathType Leaf) -or
+        (Get-FileHash -LiteralPath $bundledCublas -Algorithm SHA256).Hash.ToLowerInvariant() -ne $cublasPin.binaries.$cublasName.sha256) {
+        throw "Bundled $cublasName is missing or is not the pinned cuBLAS $($cublasPin.version): $bundledCublas"
+    }
+    $copies = @(Get-ChildItem -LiteralPath $internalDir -Recurse -File -Filter $cublasName | Where-Object { $_.FullName -ne $bundledCublas })
+    if ($copies.Count -gt 0) {
+        throw "Unexpected extra copies of ${cublasName}: $($copies.FullName -join ', ')"
+    }
+}
+$bundledCublasLicense = Join-Path $internalDir "vendor\cuda12-cublas\$($cublasPin.documents.LICENSE.target)"
+if (-not (Test-Path -LiteralPath $bundledCublasLicense -PathType Leaf) -or
+    (Get-FileHash -LiteralPath $bundledCublasLicense -Algorithm SHA256).Hash.ToLowerInvariant() -ne $cublasPin.documents.LICENSE.sha256) {
+    throw "The NVIDIA cuBLAS license text is missing from the PyInstaller output: $bundledCublasLicense"
+}
+Write-Host "Bundled CUDA 12 cuBLAS verified: $($cublasPin.version) in _internal\$($cublasPin.bundle_destination), SHA-256 pinned, license included"
 
 function Find-FirstExistingRuntimePath {
     param(

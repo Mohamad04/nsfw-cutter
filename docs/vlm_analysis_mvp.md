@@ -86,7 +86,9 @@ bitsandbytes initialization becomes a clear error rather than a fallback. Settin
 **GPU + CPU offload**, or **CPU**, together with the quantization name once Qwen is
 loaded. The lightweight Marqo prefilter uses FP16 CUDA when available and FP32 CPU as a
 fallback. Whisper independently uses CTranslate2 CUDA when its runtime is available and
-otherwise retries with int8 CPU inference.
+otherwise retries with int8 CPU inference. CTranslate2 needs CUDA 12 cuBLAS, which PyTorch
+(CUDA 13) does not provide: the packaged app bundles it, while a source run from the virtual
+environment uses the CPU fallback (see [CUDA 12 cuBLAS distribution](cuda12_cublas_distribution.md)).
 
 ## Compact, reliable structured output
 

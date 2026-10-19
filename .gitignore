@@ -21,6 +21,8 @@ dist/
 sqlalchemy_database/
 tools/ffmpeg/
 vendor/ffmpeg/
+vendor/cuda12-cublas/
+vendor/cuda12-cublas-prepare.tmp/
 tools/sqlite/
 data
 artifacts/

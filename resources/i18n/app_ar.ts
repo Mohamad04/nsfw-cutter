@@ -228,6 +228,16 @@
         <source>Close</source>
         <translation>إغلاق</translation>
     </message>
+    <message>
+        <location filename="../../vue/qml/WindowsApplication/AppShell/CleanShellPage.qml" line="453"/>
+        <source>Checking %1…</source>
+        <translation>جارٍ التحقق من %1…</translation>
+    </message>
+    <message>
+        <location filename="../../vue/qml/WindowsApplication/AppShell/CleanShellPage.qml" line="499"/>
+        <source>Dismiss</source>
+        <translation>إغلاق</translation>
+    </message>
 </context>
 <context>
     <name>CompactAppHeader</name>
@@ -1330,17 +1340,17 @@ then select Add Cut.</source>
     <message>
         <location filename="../../vue/qml/WindowsApplication/Settings/SettingsDialog.qml" line="32"/>
         <source>Remove intervals</source>
-        <translation>إزالة الفواصل</translation>
+        <translation type="vanished">إزالة الفواصل</translation>
     </message>
     <message>
         <location filename="../../vue/qml/WindowsApplication/Settings/SettingsDialog.qml" line="33"/>
         <source>Export clips separately</source>
-        <translation>تصدير المقاطع بشكل منفصل</translation>
+        <translation type="vanished">تصدير المقاطع بشكل منفصل</translation>
     </message>
     <message>
         <location filename="../../vue/qml/WindowsApplication/Settings/SettingsDialog.qml" line="34"/>
         <source>Export merged clips</source>
-        <translation>تصدير المقاطع المدمجة</translation>
+        <translation type="vanished">تصدير المقاطع المدمجة</translation>
     </message>
     <message>
         <location filename="../../vue/qml/WindowsApplication/Settings/SettingsDialog.qml" line="37"/>
@@ -1481,6 +1491,11 @@ then select Add Cut.</source>
         <location filename="../../vue/qml/WindowsApplication/Settings/SettingsDialog.qml" line="341"/>
         <source>Save</source>
         <translation>حفظ</translation>
+    </message>
+    <message>
+        <location filename="../../vue/qml/WindowsApplication/Settings/SettingsDialog.qml" line="202"/>
+        <source>Export Clean Video removes every cut in the list and keeps the rest of the video.</source>
+        <translation>يزيل «تصدير فيديو نظيف» كل القصوص الموجودة في القائمة ويحتفظ ببقية الفيديو.</translation>
     </message>
 </context>
 <context>

@@ -574,6 +574,74 @@ ApplicationWindow {{
             engine.deleteLater()
             self.app.processEvents()
 
+    def test_export_explanation_and_loading_notice_are_translated(self):
+        import subprocess
+        import sys
+        import tempfile
+
+        from controllers.settings_controller import SettingsController
+        from controllers.update_controller import UpdateController
+        from services.i18n.translation_service import TranslationService
+        from services.settings_service import SettingsService
+
+        lrelease = Path(sys.executable).parent / "pyside6-lrelease.exe"
+        if not lrelease.is_file():
+            self.skipTest("pyside6-lrelease is not available")
+        root_dir = Path(__file__).resolve().parents[1]
+        expected = {
+            "fr": ("supprime toutes les coupes de la liste", "Vérification de movie.mkv…"),
+            "ar": ("يزيل «تصدير فيديو نظيف» كل القصوص", "جارٍ التحقق من movie.mkv…"),
+        }
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Compile the tracked catalogs, so the test checks them rather than a stale local .qm.
+            for language in expected:
+                completed = subprocess.run(
+                    [str(lrelease), str(root_dir / "resources" / "i18n" / f"app_{language}.ts"),
+                     "-qm", str(Path(temp_dir) / f"app_{language}.qm")],
+                    capture_output=True, text=True, timeout=60, check=False,
+                )
+                self.assertEqual(completed.returncode, 0, completed.stderr)
+
+            for language, (settings_fragment, loading_text) in expected.items():
+                with self.subTest(language=language):
+                    engine = QQmlApplicationEngine()
+                    translation = TranslationService(engine, temp_dir, parent=engine)
+                    self.assertTrue(translation.setLanguage(language))
+                    try:
+                        service = SettingsService(settings_path=Path(temp_dir) / "settings.json")
+                        context = engine.rootContext()
+                        context.setContextProperty("translationService", translation)
+                        context.setContextProperty(
+                            "settingsController", SettingsController(settings_service=service,
+                                                                     translation_service=translation))
+                        context.setContextProperty("updateController", UpdateController())
+                        settings_dir = root_dir / "vue" / "qml" / "WindowsApplication" / "Settings"
+                        qml = f'''import QtQuick
+import QtQuick.Controls
+import "{settings_dir.as_uri()}" as Settings
+
+ApplicationWindow {{
+    visible: true
+    width: 900
+    height: 900
+    Settings.SettingsDialog {{ objectName: "settingsDialog" }}
+}}
+'''
+                        engine.loadData(qml.encode("utf-8"), QUrl.fromLocalFile(str(Path(__file__).resolve())))
+                        window = engine.rootObjects()[0]
+                        description = window.findChild(QObject, "exportModeDescription")
+                        self.assertIn(settings_fragment, description.property("text"))
+
+                        page_engine, page, app_controller, _cut = self._load_windowed_page()
+                        app_controller.set_video_loading("movie.mkv")
+                        self.app.processEvents()
+                        self.assertEqual(page.findChild(QObject, "videoLoadingText").property("text"), loading_text)
+                        page_engine.deleteLater()
+                        engine.deleteLater()
+                        self.app.processEvents()
+                    finally:
+                        translation.setLanguage("en")
+
     def test_video_check_in_progress_is_visible_and_cancellable(self):
         engine, page, app_controller, _video_cut_controller = self._load_windowed_page()
         banner = page.findChild(QObject, "videoLoadingBanner")

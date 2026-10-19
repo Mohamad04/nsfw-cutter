@@ -228,6 +228,16 @@
         <source>Close</source>
         <translation type="unfinished"></translation>
     </message>
+    <message>
+        <location filename="../../vue/qml/WindowsApplication/AppShell/CleanShellPage.qml" line="453"/>
+        <source>Checking %1…</source>
+        <translation>Vérification de %1…</translation>
+    </message>
+    <message>
+        <location filename="../../vue/qml/WindowsApplication/AppShell/CleanShellPage.qml" line="499"/>
+        <source>Dismiss</source>
+        <translation>Fermer</translation>
+    </message>
 </context>
 <context>
     <name>CompactAppHeader</name>
@@ -1330,17 +1340,17 @@ puis sélectionnez Ajouter une coupe.</translation>
     <message>
         <location filename="../../vue/qml/WindowsApplication/Settings/SettingsDialog.qml" line="32"/>
         <source>Remove intervals</source>
-        <translation>Supprimer les intervalles</translation>
+        <translation type="vanished">Supprimer les intervalles</translation>
     </message>
     <message>
         <location filename="../../vue/qml/WindowsApplication/Settings/SettingsDialog.qml" line="33"/>
         <source>Export clips separately</source>
-        <translation>Exporter les clips séparément</translation>
+        <translation type="vanished">Exporter les clips séparément</translation>
     </message>
     <message>
         <location filename="../../vue/qml/WindowsApplication/Settings/SettingsDialog.qml" line="34"/>
         <source>Export merged clips</source>
-        <translation>Exporter les clips fusionnés</translation>
+        <translation type="vanished">Exporter les clips fusionnés</translation>
     </message>
     <message>
         <location filename="../../vue/qml/WindowsApplication/Settings/SettingsDialog.qml" line="37"/>
@@ -1481,6 +1491,11 @@ puis sélectionnez Ajouter une coupe.</translation>
         <location filename="../../vue/qml/WindowsApplication/Settings/SettingsDialog.qml" line="341"/>
         <source>Save</source>
         <translation>Enregistrer</translation>
+    </message>
+    <message>
+        <location filename="../../vue/qml/WindowsApplication/Settings/SettingsDialog.qml" line="202"/>
+        <source>Export Clean Video removes every cut in the list and keeps the rest of the video.</source>
+        <translation>« Exporter la vidéo nettoyée » supprime toutes les coupes de la liste et conserve le reste de la vidéo.</translation>
     </message>
 </context>
 <context>

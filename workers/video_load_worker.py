@@ -4,6 +4,7 @@ from PySide6.QtCore import QRunnable, Slot
 
 from services.infrastructure.ffmpeg.bounded_runner import ExportCancellationToken, ExportCancelledError
 from services.user_errors import is_cancellation, technical_details, user_message
+from services.user_messages import localized_text, translated
 from workers.worker_signals import WorkerSignals
 
 
@@ -44,13 +45,14 @@ class VideoLoadWorker(QRunnable):
                 return
             except ValueError as exc:
                 logger.warning("Video not loaded: %s\n%s", file_path, technical_details(exc))
-                outcomes.append({"path": file_path, "error": str(exc)})
+                outcomes.append({"path": file_path, "error": localized_text(exc)})
             except Exception as exc:
                 if is_cancellation(exc):
                     self._emit("cancelled", "Video loading was cancelled.")
                     return
                 logger.exception("Unexpected error while checking video: %s\n%s", file_path, technical_details(exc))
-                outcomes.append({"path": file_path, "error": f"Could not open the video. {user_message(exc)}"})
+                outcomes.append({"path": file_path,
+                                 "error": translated("media.could_not_open", reason=user_message(exc))})
         self._emit("finished", outcomes)
 
     def _emit(self, signal_name: str, payload) -> None:

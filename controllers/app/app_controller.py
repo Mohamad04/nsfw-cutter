@@ -41,6 +41,7 @@ from services.media.import_service import VideoImportService
 from services.settings_service import SettingsService
 from services.subtitles.processing_service import SubtitleService
 from services.user_errors import technical_details, user_message
+from services.user_messages import localized_text, translated
 from services.subtitles.selection_service import (
     OFF_SUBTITLE_OPTION_ID,
     analysis_subtitle_status_text,
@@ -551,7 +552,7 @@ class AppController(QObject):
             logger.exception("Unable to start video validation: %s\n%s", file_paths, technical_details(exc))
             self._video_load_workers.pop(job_token, None)
             self._finish_video_load()
-            self._reject_video_file(f"Could not open the video. {user_message(exc)}")
+            self._reject_video_file(translated("media.could_not_open", reason=user_message(exc)))
             return False
         return True
 
@@ -609,7 +610,7 @@ class AppController(QObject):
 
         if not multiple:
             if not valid_videos:
-                self._reject_video_file(first_error or "Could not open the video.")
+                self._reject_video_file(first_error or translated("media.could_not_open", reason="").strip())
                 return
             self._register_and_apply_video(valid_videos[0]["path"])
             return
@@ -618,7 +619,7 @@ class AppController(QObject):
             if len(errors) == 1:
                 message = first_error
             elif first_error:
-                message = f"None of the selected files could be opened. {first_error}"
+                message = translated("media.none_opened", reason=first_error)
             else:
                 message = "No supported videos selected."
             self._reject_video_file(message)
@@ -655,11 +656,11 @@ class AppController(QObject):
             return True
         except ValueError as exc:
             logger.warning("Video not loaded: %s\n%s", video_path, technical_details(exc))
-            self._reject_video_file(str(exc))
+            self._reject_video_file(localized_text(exc))
             return False
         except Exception as exc:
             logger.exception("Unexpected error while loading video: %s\n%s", video_path, technical_details(exc))
-            self._reject_video_file(f"Could not open the video. {user_message(exc)}")
+            self._reject_video_file(translated("media.could_not_open", reason=user_message(exc)))
             return False
 
     def _reject_video_file(self, message: str) -> None:
@@ -676,7 +677,7 @@ class AppController(QObject):
         if not video_path.is_file():
             self.settings_service.remove_recent_video(video_path)
             self.recentFilesChanged.emit()
-            self._reject_video_file(f"\"{video_path.name}\" no longer exists. It was removed from the recent files.")
+            self._reject_video_file(translated("media.recent_missing", name=video_path.name))
             return
 
         self.loadVideoFile(str(video_path))

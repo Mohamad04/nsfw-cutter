@@ -25,6 +25,7 @@ from pathlib import Path
 
 from services.infrastructure.ffmpeg.bounded_runner import BoundedProcessRunner, ExportCancellationToken, FFmpegTimeoutError
 from services.infrastructure.ffmpeg.paths import FFmpegNotFoundError, get_ffprobe_path
+from services.user_messages import english
 
 
 logger = logging.getLogger(__name__)
@@ -46,12 +47,22 @@ DAMAGE_MARKERS = (
 
 
 class MediaValidationError(ValueError):
-    """A file that cannot be loaded; ``str()`` is the user-facing message, ``detail`` is technical."""
+    """A file that cannot be loaded; ``str()`` is the user-facing message, ``detail`` is technical.
 
-    def __init__(self, category: str, message: str, detail: str = ""):
+    ``code`` and ``params`` select the translated message shown in the interface
+    (``services.user_messages``); without a code, ``message`` is shown as it is.
+    """
+
+    def __init__(self, category: str, message: str = "", detail: str = "", *, code: str = "", params=None):
         self.category = category
         self.detail = detail
-        super().__init__(message)
+        self.message_code = code
+        self.message_params = dict(params or {})
+        super().__init__(english(code, **self.message_params) if code else message)
+
+
+def _rejected(category: str, code: str, detail: str = "", **params) -> MediaValidationError:
+    return MediaValidationError(category, detail=detail, code=code, params=params)
 
 
 @dataclass(frozen=True)
@@ -90,37 +101,24 @@ def validate_media_file(
 def _validate(path: Path, run, ffprobe_path) -> MediaCheck:
     name = path.name or str(path)
     if not path.exists():
-        raise MediaValidationError(
-            "missing_file", f"\"{name}\" cannot be found. It may have been moved, renamed or deleted."
-        )
+        raise _rejected("missing_file", "media.missing_file", name=name)
     if not path.is_file():
-        raise MediaValidationError("not_a_file", f"\"{name}\" is a folder, not a video file.")
+        raise _rejected("not_a_file", "media.not_a_file", name=name)
     if path.suffix.lower() not in SUPPORTED_CONTAINERS:
-        raise MediaValidationError(
-            "unsupported_format", f"\"{name}\" is not a supported video. Open an MP4 or MKV file."
-        )
+        raise _rejected("unsupported_format", "media.unsupported_extension", name=name)
     try:
         size = path.stat().st_size
         with path.open("rb") as handle:
             handle.read(16)
     except OSError as exc:
-        raise MediaValidationError(
-            "access_denied",
-            f"\"{name}\" cannot be read. Check that you have access to it and that no other program is locking it.",
-            repr(exc),
-        ) from exc
+        raise _rejected("access_denied", "media.access_denied", repr(exc), name=name) from exc
     if size == 0:
-        raise MediaValidationError("corrupted_media", f"\"{name}\" is empty (0 bytes). It is not a usable video.")
+        raise _rejected("corrupted_media", "media.empty", name=name)
 
     try:
         ffprobe = str(ffprobe_path or get_ffprobe_path())
     except FFmpegNotFoundError as exc:
-        raise MediaValidationError(
-            "ffmpeg_unavailable",
-            "FFmpeg is not available, so the video cannot be checked. Reinstall the application "
-            "or run scripts/prepare_ffmpeg.ps1.",
-            str(exc),
-        ) from exc
+        raise _rejected("ffmpeg_unavailable", "media.ffmpeg_unavailable", str(exc)) from exc
 
     completed = _probe(run, [ffprobe, "-v", "error", "-show_format", "-show_streams", "-of", "json", str(path)],
                        HEADER_PROBE_TIMEOUT_SECONDS, name)
@@ -137,18 +135,10 @@ def _validate(path: Path, run, ffprobe_path) -> MediaCheck:
     if container != expected:
         if container in CONTAINER_LABELS:
             label, extension = CONTAINER_LABELS[container]
-            raise MediaValidationError(
-                "wrong_extension",
-                f"\"{name}\" is actually an {label} video, not {path.suffix.lower()}. "
-                f"Rename it with the {extension} extension, then open it again.",
-                f"format_name={container}",
-            )
-        raise MediaValidationError(
-            "unsupported_format",
-            f"\"{name}\" is not an MP4 or MKV video (FFmpeg reads it as \"{container or 'unknown'}\"). "
-            "Open an MP4 or MKV file.",
-            f"format_name={container}",
-        )
+            raise _rejected("wrong_extension", "media.wrong_extension", f"format_name={container}",
+                            name=name, label=label, suffix=path.suffix.lower(), extension=extension)
+        raise _rejected("unsupported_format", "media.unsupported_container", f"format_name={container}",
+                        name=name, container=container or "unknown")
 
     streams = payload.get("streams") or []
     videos = [
@@ -158,29 +148,22 @@ def _validate(path: Path, run, ffprobe_path) -> MediaCheck:
     has_audio = any(stream.get("codec_type") == "audio" for stream in streams)
     if not videos:
         if any(stream.get("codec_type") == "video" for stream in streams):
-            reason = "only a still cover picture"
+            code = "media.no_video_cover"
         else:
-            reason = "only audio" if has_audio else "no audio or video"
-        raise MediaValidationError(
-            "no_video", f"\"{name}\" has no video to edit: it contains {reason}.", f"streams={_stream_summary(streams)}"
-        )
+            code = "media.no_video_audio_only" if has_audio else "media.no_video_empty"
+        raise _rejected("no_video", code, f"streams={_stream_summary(streams)}", name=name)
 
     video = videos[0]
     codec = str(video.get("codec_name") or "")
     if not codec or codec == "none":
-        raise MediaValidationError(
-            "unsupported_codec",
-            f"\"{name}\" uses a video codec that FFmpeg cannot identify, so it cannot be played or edited.",
-            f"stream={video}",
-        )
+        raise _rejected("unsupported_codec", "media.unknown_codec", f"stream={video}", name=name)
     width, height = _positive_int(video.get("width")), _positive_int(video.get("height"))
     duration = _positive_float(format_data.get("duration")) or _positive_float(video.get("duration"))
     if not width or not height or not duration:
-        raise MediaValidationError(
-            "corrupted_media",
-            f"\"{name}\" has missing or invalid video information (frame size or duration). "
-            "The file is probably damaged.",
+        raise _rejected(
+            "corrupted_media", "media.invalid_video_info",
             f"width={video.get('width')} height={video.get('height')} duration={format_data.get('duration')}",
+            name=name,
         )
 
     stream_index = str(video.get("index", 0))
@@ -198,11 +181,7 @@ def _validate(path: Path, run, ffprobe_path) -> MediaCheck:
     if first.returncode != 0 or not _entries(first.stdout, "frames"):
         if first.returncode != 0 and _has_damage_marker(first.stderr):
             raise _damaged(name, first.stderr)
-        raise MediaValidationError(
-            "unsupported_codec",
-            f"\"{name}\" cannot be decoded: FFmpeg could not read its first video frame ({codec}).",
-            first.stderr.strip()[-500:],
-        )
+        raise _rejected("unsupported_codec", "media.undecodable", first.stderr.strip()[-500:], name=name, codec=codec)
 
     packets = _entries(tail.stdout, "packets")
     video_duration = _stream_duration(video)
@@ -214,12 +193,11 @@ def _validate(path: Path, run, ffprobe_path) -> MediaCheck:
         or (video_duration is not None and last_end is not None and last_end < video_duration - END_TOLERANCE_SECONDS)
     )
     if incomplete:
-        raise MediaValidationError(
-            "corrupted_media",
-            f"\"{name}\" is incomplete: the end of the video is missing or damaged "
-            "(for example after an interrupted download or copy).",
+        raise _rejected(
+            "corrupted_media", "media.incomplete",
             f"tail packets={len(packets)} last_end={last_end} video_duration={video_duration} "
             f"stderr={tail.stderr.strip()[-500:]}",
+            name=name,
         )
 
     return MediaCheck(path.resolve(), container, duration, codec, width, height, has_audio)
@@ -252,28 +230,13 @@ def _probe(run, command: list[str], timeout: float, name: str) -> subprocess.Com
             creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
         )
     except subprocess.TimeoutExpired as exc:
-        raise MediaValidationError(
-            "timeout",
-            f"Checking \"{name}\" took too long (over {timeout:g} s). The drive may be very slow "
-            "or the file may be damaged.",
-            " ".join(command),
-        ) from exc
+        raise _rejected("timeout", "media.timeout", " ".join(command), name=name, seconds=f"{timeout:g}") from exc
     except OSError as exc:
-        raise MediaValidationError(
-            "ffmpeg_unavailable",
-            "FFmpeg could not be started, so the video cannot be checked. Reinstall the application "
-            "or run scripts/prepare_ffmpeg.ps1.",
-            repr(exc),
-        ) from exc
+        raise _rejected("ffmpeg_unavailable", "media.ffmpeg_not_started", repr(exc)) from exc
 
 
 def _damaged(name: str, stderr: str) -> MediaValidationError:
-    return MediaValidationError(
-        "corrupted_media",
-        f"\"{name}\" is damaged or incomplete and cannot be opened (for example after an interrupted "
-        "download or copy).",
-        (stderr or "").strip()[-500:],
-    )
+    return _rejected("corrupted_media", "media.damaged", (stderr or "").strip()[-500:], name=name)
 
 
 def _has_damage_marker(stderr: str) -> bool:

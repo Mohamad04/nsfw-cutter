@@ -56,6 +56,54 @@ causes pour le journal (`logs/video-cut.log`). Il est utilisé par l'ouverture, 
 Un dossier de sortie qui est un fichier est refusé avant toute commande FFmpeg
 (`OutputPreferences.resolve_output_dir`).
 
+### Traduction des messages (19 octobre 2026)
+
+Les messages affichés sont traduits à partir d'un **code stable**, jamais en comparant des textes.
+`services/user_messages.py` associe chaque code (`media.damaged`, `fast.keyframes_remove`,
+`export.output_not_a_folder`, `errors.disk_full`…) à son texte anglais, marqué `QT_TRANSLATE_NOOP`
+dans le contexte Qt `UserMessages`. `pyside6-lupdate` l'extrait dans `resources/i18n/app_*.ts`, avec les
+traductions de l'interface QML.
+
+- Une erreur codée (`MediaValidationError`, refus Fast, dossier de sortie invalide) porte
+  `message_code` et `message_params`. Son `str()` reste le texte anglais.
+- `localized_text` / `describe_error` rendent le message dans la langue courante, celle du
+  `QTranslator` installé par `TranslationService`. Un paramètre lui-même codé est traduit d'abord : par
+  exemple, la liste des limites hors image clé d'un refus Fast.
+- Le journal (`technical_details`, `logger`) reste en anglais.
+
+Limites :
+- Un message déjà affiché reste dans la langue du moment de l'erreur ; il n'est pas retraduit si
+  la langue change ensuite.
+- Les erreurs non codées (refus internes rares de Smart Cutting, messages de l'analyse IA) restent en
+  anglais.
+- En arabe, le texte est aligné et rendu de droite à gauche, mais la disposition de la fenêtre n'est
+  pas inversée. Les libellés de section (par exemple « مجلد التصدير ») restent placés à gauche. Le QML
+  positionne de nombreux éléments par coordonnées, notamment les barres de temps : une inversion globale
+  (`LayoutMirroring`) n'est pas une modification sûre et limitée, et elle demanderait une revue de
+  chaque composant.
+- Les messages arabes commencent par un mot arabe (« الملف «x» … », « برنامج FFmpeg … ») : Qt déduit le sens
+  du paragraphe de son premier caractère fort, et un nom de fichier latin en tête l'affichait de gauche à
+  droite. `tests/test_localized_errors.py` le vérifie.
+- Textes de l'interface encore non traduits au 19 octobre 2026 : 61 par langue, en FR comme en AR.
+  - 44 dans le panneau AI Picks : états de l'installation et du téléchargement des modèles, états de
+    l'analyse, libellés des suggestions, « Accept » et « Reject ».
+  - 16 dans les réglages IA et mises à jour : « Analysis mode », « Balanced », « Check for updates »…
+  - « Medium » dans `CompactAppHeader`.
+
+  Le contenu technique des « Détails » d'un export (mode, durées, commande FFmpeg) reste en anglais.
+  Les traductions arabes n'ont pas été relues par un locuteur natif.
+
+### Problème connu (non reproduit) : MKV valide refusé comme incomplet sous forte charge disque
+
+Le 19 octobre 2026, `test_valid_mp4_and_mkv_load_in_the_background` a échoué une fois. Il tournait pendant
+un build PyInstaller, très chargé en disque. Le contrôle de fin a rejeté un MKV valide comme
+« incomplete », avec le détail `tail packets=2 last_end=4.2 video_duration=6.0` : ffprobe n'avait lu que
+deux paquets de la fin.
+
+Le cas n'a pas été reproduit : le même fichier de test, relancé seul trois fois, et la suite complète (870
+tests) passent. La logique du contrôle n'a pas changé. À surveiller : si un utilisateur signale un « fichier
+incomplet » sur une vidéo qui se lit ailleurs, regarder ce détail dans le journal (`tail packets=…`).
+
 ## Modes d'export
 
 La fenêtre des réglages ne propose plus les modes clips, qui n'étaient pas branchés : voir

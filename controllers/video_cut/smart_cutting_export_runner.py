@@ -2,6 +2,7 @@ from pathlib import Path
 
 from controllers.video_cut.cut_export_runner import CutExportCallbacks
 from controllers.video_cut.result_formatter import format_cut_details
+from services.user_messages import coded, english, localized_text
 
 
 class SmartCuttingExportRunner:
@@ -29,14 +30,13 @@ class SmartCuttingExportRunner:
         try:
             input_file = Path(input_path)
             if not input_file.is_file():
-                raise ValueError(
-                    f"\"{input_file.name}\" can no longer be found. It may have been moved, renamed or deleted."
-                )
+                raise coded(ValueError(english("export.source_missing", name=input_file.name)),
+                            "export.source_missing", name=input_file.name)
             if not segments:
                 raise ValueError("At least one cut segment is required.")
             resolved_output_dir = self._output_preferences.resolve_output_dir(input_file, output_dir)
         except ValueError as exc:
-            error_message = str(exc)
+            error_message = localized_text(exc)
             callbacks.on_error(error_message)
             callbacks.on_status("Video export failed")
             callbacks.on_failed(error_message)

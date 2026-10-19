@@ -3,6 +3,8 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
+from services.user_messages import coded, english
+
 
 logger = logging.getLogger(__name__)
 
@@ -36,8 +38,6 @@ def _require_usable_output_dir(output_dir: Path) -> None:
     for candidate in (output_dir, *output_dir.parents):
         if candidate.exists():
             if not candidate.is_dir():
-                raise ValueError(
-                    f"The output folder cannot be used: \"{candidate.name}\" is an existing file, not a folder. "
-                    "Choose another output folder."
-                )
+                raise coded(ValueError(english("export.output_not_a_folder", name=candidate.name)),
+                            "export.output_not_a_folder", name=candidate.name)
             return

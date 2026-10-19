@@ -1,4 +1,5 @@
-"""Translation catalogs cover the texts added by the export-settings, video-loading and D8/D9 fixes."""
+"""Translation catalogs cover the texts added by the export-settings, video-loading and D8/D9 fixes,
+and the export result and empty-stage texts of the main window."""
 
 import re
 import unittest
@@ -12,6 +13,11 @@ NEW_TEXTS = {
         "Export Clean Video removes every cut in the list and keeps the rest of the video.",
     ],
     "CleanShellPage": ["Checking %1…", "Dismiss"],
+    "ExportActionBar": [
+        "Cancel", "Stop the export; no partial file is kept", "Export cancelled. No file was kept.",
+        "Export failed", "Export completed", "Output: %1", "Warning: %1", "Details: %1",
+    ],
+    "VideoStage": ["Open a video", "MP4 or MKV"],
 }
 REMOVED_TEXTS = {"SettingsDialog": ["Remove intervals", "Export clips separately", "Export merged clips"]}
 
@@ -30,6 +36,8 @@ class TranslationCatalogTests(unittest.TestCase):
         sources = {
             "SettingsDialog": (QML / "Settings" / "SettingsDialog.qml").read_text(encoding="utf-8"),
             "CleanShellPage": (QML / "AppShell" / "CleanShellPage.qml").read_text(encoding="utf-8"),
+            "ExportActionBar": (QML / "CutList" / "ExportActionBar.qml").read_text(encoding="utf-8"),
+            "VideoStage": (QML / "VideoPlayer" / "VideoStage.qml").read_text(encoding="utf-8"),
         }
         for context, texts in NEW_TEXTS.items():
             for text in texts:

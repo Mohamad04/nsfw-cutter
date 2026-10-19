@@ -16,6 +16,7 @@ from services.export.export_router_service import (
     ExportRouterService,
 )
 from services.settings_service import SettingsService
+from services.user_messages import localized_text
 from workers.smart_cutting_worker import SmartCuttingWorker
 from workers.video_cut_worker import VideoCutWorker
 
@@ -165,7 +166,7 @@ class VideoCutController(QObject):
                 callbacks,
             )
         except ValueError as exc:
-            error_message = str(exc)
+            error_message = localized_text(exc)
             self._set_cut_error(error_message)
             self._set_cut_status("Video export failed")
             self.cutFailed.emit(error_message)

@@ -23,6 +23,7 @@ from services.export.video_packet_index import (
     packets_in_range,
 )
 from services.infrastructure.ffmpeg.cutting import FFmpegCuttingService
+from services.user_messages import coded, english
 
 
 logger = logging.getLogger(__name__)
@@ -63,10 +64,10 @@ class CutExecutionService:
         logger.info("Video export selected intervals: %s", _segment_intervals(request))
         if input_metadata.get("has_audio"):
             if _mode_value(request.export_mode) == CutExportMode.REMOVE_INTERVALS.value:
-                raise FastCuttingAudioError(FAST_CUTTING_AUDIO_REFUSED)
+                raise coded(FastCuttingAudioError(FAST_CUTTING_AUDIO_REFUSED), "fast.audio_removal")
             if _mode_value(request.export_mode) == CutExportMode.EXPORT_CLIPS_MERGED.value:
-                raise FastCuttingAudioError(FAST_CUTTING_MERGED_AUDIO_REFUSED)
-            raise FastCuttingAudioError(FAST_CUTTING_CLIPS_AUDIO_REFUSED)
+                raise coded(FastCuttingAudioError(FAST_CUTTING_MERGED_AUDIO_REFUSED), "fast.audio_merged")
+            raise coded(FastCuttingAudioError(FAST_CUTTING_CLIPS_AUDIO_REFUSED), "fast.audio_clips")
 
         self._created_paths = []
         self._temporary_dirs = []
@@ -406,21 +407,14 @@ class FastCuttingAudioError(ValueError):
 
 # Measured on decoded samples (marker-tone fixtures): stream-copied AAC keeps about 0.1 s of the
 # removed sound at every splice, because audio is copied in whole frames around each boundary.
-FAST_CUTTING_MERGED_AUDIO_REFUSED = (
-    "Fast Cutting cannot merge clips with exact audio: stream copy keeps whole audio frames around each clip, "
-    "so up to about 0.1 s of sound from outside the selected clips would be included. Nothing was exported. "
-    "Use Smart Cutting, which rebuilds the audio exactly."
-)
-FAST_CUTTING_CLIPS_AUDIO_REFUSED = (
-    "Fast Cutting cannot export clips with exact audio: stream copy keeps whole audio frames around each clip, "
-    "so up to about 0.1 s of sound from outside every clip would be included. Nothing was exported. "
-    "Use Smart Cutting, which rebuilds the audio exactly."
-)
-FAST_CUTTING_AUDIO_REFUSED = (
-    "Fast Cutting cannot remove audio exactly: stream copy keeps whole audio frames around each cut, "
-    "so up to about 0.1 s of sound from every removed interval would remain. Nothing was exported. "
-    "Use Smart Cutting, which rebuilds the audio exactly."
-)
+FAST_CUTTING_MERGED_AUDIO_REFUSED = english("fast.audio_merged")
+FAST_CUTTING_CLIPS_AUDIO_REFUSED = english("fast.audio_clips")
+FAST_CUTTING_AUDIO_REFUSED = english("fast.audio_removal")
+# The two refusal wordings of require_keyframe_aligned_removals, by action.
+_KEYFRAME_REFUSAL_CODES = {
+    "remove the selected intervals": "fast.keyframes_remove",
+    "export the selected clips": "fast.keyframes_clips",
+}
 
 
 def require_keyframe_aligned_removals(
@@ -438,21 +432,29 @@ def require_keyframe_aligned_removals(
     unaligned = [value for value in boundaries if not is_clean_cut_point(source_packets, value)]
     if not unaligned:
         return
-    details = "; ".join(_boundary_detail(source_packets, value) for value in unaligned)
-    raise FastCuttingPrecisionError(
-        f"Fast Cutting cannot {action} exactly: stream copy can only cut on a keyframe "
-        f"that starts an independent group of frames, and these cut boundaries are not on one: {details}. "
-        "Nothing was exported and the cuts were not changed. Use Smart Cutting for frame-exact removal, "
-        "or move these boundaries onto the listed keyframes."
-    )
+    details = [_boundary_detail(source_packets, value) for value in unaligned]
+    code = _KEYFRAME_REFUSAL_CODES.get(action)
+    if code is None:
+        raise FastCuttingPrecisionError(
+            f"Fast Cutting cannot {action} exactly: stream copy can only cut on a keyframe "
+            "that starts an independent group of frames, and these cut boundaries are not on one: "
+            f"{'; '.join(english(code, **params) for code, params in details)}. "
+            "Nothing was exported and the cuts were not changed. Use Smart Cutting for frame-exact removal, "
+            "or move these boundaries onto the listed keyframes."
+        )
+    raise coded(FastCuttingPrecisionError(english(code, details=details)), code, details=details)
 
 
-def _boundary_detail(source_packets: list[VideoPacket], seconds: float) -> str:
+def _boundary_detail(source_packets: list[VideoPacket], seconds: float) -> tuple[str, dict]:
+    """(message code, params) describing why ``seconds`` is not a clean Fast Cutting boundary."""
+    time = seconds_to_ffmpeg_time(seconds)
     previous_keyframe, next_keyframe = nearest_keyframes(source_packets, seconds)
     if previous_keyframe is not None and previous_keyframe == next_keyframe:
-        return f"{seconds_to_ffmpeg_time(seconds)} (keyframe of an open GOP: earlier frames depend on it)"
+        return "fast.boundary_open_gop", {"time": time}
     keyframes = [seconds_to_ffmpeg_time(value) for value in (previous_keyframe, next_keyframe) if value is not None]
-    return f"{seconds_to_ffmpeg_time(seconds)} (nearest keyframes {' and '.join(keyframes)})"
+    if len(keyframes) == 2:
+        return "fast.boundary_two_keyframes", {"time": time, "first": keyframes[0], "second": keyframes[1]}
+    return "fast.boundary_one_keyframe", {"time": time, "first": keyframes[0] if keyframes else ""}
 
 
 def make_unique_path(path: Path) -> Path:

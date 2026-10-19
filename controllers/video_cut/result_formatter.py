@@ -1,12 +1,13 @@
 from pydantic import ValidationError
 
 from services.user_errors import format_validation_error as format_request_validation_error
+from services.user_messages import localized_text
 
 
 def format_validation_error(exc: Exception) -> str:
     if isinstance(exc, ValidationError):
         return format_request_validation_error(exc)
-    return str(exc)
+    return localized_text(exc)
 
 
 def start_status(export_mode) -> str:

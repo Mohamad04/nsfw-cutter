@@ -1163,6 +1163,46 @@ then select Add Cut.</source>
         <source>Export Clean Video</source>
         <translation>تصدير فيديو نظيف</translation>
     </message>
+    <message>
+        <location filename="../../vue/qml/WindowsApplication/CutList/ExportActionBar.qml" line="208"/>
+        <source>Cancel</source>
+        <translation>إلغاء</translation>
+    </message>
+    <message>
+        <location filename="../../vue/qml/WindowsApplication/CutList/ExportActionBar.qml" line="216"/>
+        <source>Stop the export; no partial file is kept</source>
+        <translation>إيقاف التصدير؛ لا يُحتفظ بأي ملف جزئي</translation>
+    </message>
+    <message>
+        <location filename="../../vue/qml/WindowsApplication/CutList/ExportActionBar.qml" line="268"/>
+        <source>Export cancelled. No file was kept.</source>
+        <translation>أُلغي التصدير. لم يُحتفظ بأي ملف.</translation>
+    </message>
+    <message>
+        <location filename="../../vue/qml/WindowsApplication/CutList/ExportActionBar.qml" line="269"/>
+        <source>Export failed</source>
+        <translation>فشل التصدير</translation>
+    </message>
+    <message>
+        <location filename="../../vue/qml/WindowsApplication/CutList/ExportActionBar.qml" line="269"/>
+        <source>Export completed</source>
+        <translation>اكتمل التصدير</translation>
+    </message>
+    <message>
+        <location filename="../../vue/qml/WindowsApplication/CutList/ExportActionBar.qml" line="283"/>
+        <source>Output: %1</source>
+        <translation>الإخراج: %1</translation>
+    </message>
+    <message>
+        <location filename="../../vue/qml/WindowsApplication/CutList/ExportActionBar.qml" line="302"/>
+        <source>Warning: %1</source>
+        <translation>تحذير: %1</translation>
+    </message>
+    <message>
+        <location filename="../../vue/qml/WindowsApplication/CutList/ExportActionBar.qml" line="343"/>
+        <source>Details: %1</source>
+        <translation>التفاصيل: %1</translation>
+    </message>
 </context>
 <context>
     <name>ForwardFiveSeekButton</name>
@@ -1540,6 +1580,255 @@ then select Add Cut.</source>
     </message>
 </context>
 <context>
+    <name>UserMessages</name>
+    <message>
+        <location filename="../../services/user_messages.py" line="16"/>
+        <source>&quot;{name}&quot; cannot be found. It may have been moved, renamed or deleted.</source>
+        <translation>الملف «{name}» غير موجود. ربما نُقل أو أُعيدت تسميته أو حُذف.</translation>
+    </message>
+    <message>
+        <location filename="../../services/user_messages.py" line="18"/>
+        <source>&quot;{name}&quot; is a folder, not a video file.</source>
+        <translation>العنصر «{name}» مجلد وليس ملف فيديو.</translation>
+    </message>
+    <message>
+        <location filename="../../services/user_messages.py" line="19"/>
+        <source>&quot;{name}&quot; is not a supported video. Open an MP4 or MKV file.</source>
+        <translation>الملف «{name}» ليس فيديو مدعومًا. افتح ملف MP4 أو MKV.</translation>
+    </message>
+    <message>
+        <location filename="../../services/user_messages.py" line="21"/>
+        <source>&quot;{name}&quot; cannot be read. Check that you have access to it and that no other program is locking it.</source>
+        <translation>تتعذّر قراءة «{name}». تحقّق من أن لديك صلاحية الوصول إليه وأن أي برنامج آخر لا يقفله.</translation>
+    </message>
+    <message>
+        <location filename="../../services/user_messages.py" line="24"/>
+        <source>&quot;{name}&quot; is empty (0 bytes). It is not a usable video.</source>
+        <translation>الملف «{name}» فارغ (0 بايت). ليس فيديو صالحًا للاستخدام.</translation>
+    </message>
+    <message>
+        <location filename="../../services/user_messages.py" line="25"/>
+        <source>FFmpeg is not available, so the video cannot be checked. Reinstall the application or run scripts/prepare_ffmpeg.ps1.</source>
+        <translation>برنامج FFmpeg غير متاح، لذا يتعذّر التحقق من الفيديو. أعد تثبيت التطبيق أو شغّل scripts/prepare_ffmpeg.ps1.</translation>
+    </message>
+    <message>
+        <location filename="../../services/user_messages.py" line="29"/>
+        <source>FFmpeg could not be started, so the video cannot be checked. Reinstall the application or run scripts/prepare_ffmpeg.ps1.</source>
+        <translation>تعذّر تشغيل FFmpeg، لذا يتعذّر التحقق من الفيديو. أعد تثبيت التطبيق أو شغّل scripts/prepare_ffmpeg.ps1.</translation>
+    </message>
+    <message>
+        <location filename="../../services/user_messages.py" line="33"/>
+        <source>&quot;{name}&quot; is damaged or incomplete and cannot be opened (for example after an interrupted download or copy).</source>
+        <translation>الملف «{name}» تالف أو غير مكتمل ولا يمكن فتحه (مثلًا بعد تنزيل أو نسخ متقطّع).</translation>
+    </message>
+    <message>
+        <location filename="../../services/user_messages.py" line="37"/>
+        <source>&quot;{name}&quot; is actually an {label} video, not {suffix}. Rename it with the {extension} extension, then open it again.</source>
+        <translation>الملف «{name}» هو في الحقيقة فيديو {label} وليس {suffix}. أعد تسميته بالامتداد {extension}، ثم افتحه مرة أخرى.</translation>
+    </message>
+    <message>
+        <location filename="../../services/user_messages.py" line="41"/>
+        <source>&quot;{name}&quot; is not an MP4 or MKV video (FFmpeg reads it as &quot;{container}&quot;). Open an MP4 or MKV file.</source>
+        <translation>الملف «{name}» ليس فيديو MP4 أو MKV (يقرأه FFmpeg على أنه «{container}»). افتح ملف MP4 أو MKV.</translation>
+    </message>
+    <message>
+        <location filename="../../services/user_messages.py" line="44"/>
+        <source>&quot;{name}&quot; has no video to edit: it contains only a still cover picture.</source>
+        <translation>الملف «{name}» لا يحتوي على فيديو للتحرير: فيه صورة غلاف ثابتة فقط.</translation>
+    </message>
+    <message>
+        <location filename="../../services/user_messages.py" line="46"/>
+        <source>&quot;{name}&quot; has no video to edit: it contains only audio.</source>
+        <translation>الملف «{name}» لا يحتوي على فيديو للتحرير: فيه صوت فقط.</translation>
+    </message>
+    <message>
+        <location filename="../../services/user_messages.py" line="48"/>
+        <source>&quot;{name}&quot; has no video to edit: it contains no audio or video.</source>
+        <translation>الملف «{name}» لا يحتوي على فيديو للتحرير: لا صوت فيه ولا فيديو.</translation>
+    </message>
+    <message>
+        <location filename="../../services/user_messages.py" line="50"/>
+        <source>&quot;{name}&quot; uses a video codec that FFmpeg cannot identify, so it cannot be played or edited.</source>
+        <translation>يستخدم «{name}» ترميز فيديو لا يتعرّف عليه FFmpeg، لذا لا يمكن تشغيله أو تحريره.</translation>
+    </message>
+    <message>
+        <location filename="../../services/user_messages.py" line="53"/>
+        <source>&quot;{name}&quot; has missing or invalid video information (frame size or duration). The file is probably damaged.</source>
+        <translation>معلومات الفيديو في «{name}» ناقصة أو غير صالحة (حجم الإطار أو المدة). الملف تالف على الأرجح.</translation>
+    </message>
+    <message>
+        <location filename="../../services/user_messages.py" line="57"/>
+        <source>&quot;{name}&quot; cannot be decoded: FFmpeg could not read its first video frame ({codec}).</source>
+        <translation>يتعذّر فك ترميز «{name}»: لم يتمكن FFmpeg من قراءة أول إطار فيديو ({codec}).</translation>
+    </message>
+    <message>
+        <location filename="../../services/user_messages.py" line="59"/>
+        <source>&quot;{name}&quot; is incomplete: the end of the video is missing or damaged (for example after an interrupted download or copy).</source>
+        <translation>الملف «{name}» غير مكتمل: نهاية الفيديو مفقودة أو تالفة (مثلًا بعد تنزيل أو نسخ متقطّع).</translation>
+    </message>
+    <message>
+        <location filename="../../services/user_messages.py" line="63"/>
+        <source>Checking &quot;{name}&quot; took too long (over {seconds} s). The drive may be very slow or the file may be damaged.</source>
+        <translation>استغرق التحقق من «{name}» وقتًا طويلًا (أكثر من {seconds} ث). قد يكون القرص بطيئًا جدًا أو الملف تالفًا.</translation>
+    </message>
+    <message>
+        <location filename="../../services/user_messages.py" line="67"/>
+        <source>&quot;{name}&quot; no longer exists. It was removed from the recent files.</source>
+        <translation>الملف «{name}» لم يعد موجودًا. أُزيل من الملفات الحديثة.</translation>
+    </message>
+    <message>
+        <location filename="../../services/user_messages.py" line="69"/>
+        <source>Could not open the video. {reason}</source>
+        <translation>تعذّر فتح الفيديو. {reason}</translation>
+    </message>
+    <message>
+        <location filename="../../services/user_messages.py" line="70"/>
+        <source>None of the selected files could be opened. {reason}</source>
+        <translation>تعذّر فتح أي من الملفات المحددة. {reason}</translation>
+    </message>
+    <message>
+        <location filename="../../services/user_messages.py" line="72"/>
+        <source>Fast Cutting cannot remove audio exactly: stream copy keeps whole audio frames around each cut, so up to about 0.1 s of sound from every removed interval would remain. Nothing was exported. Use Smart Cutting, which rebuilds the audio exactly.</source>
+        <translation>لا يستطيع القص السريع إزالة الصوت بدقة: نسخ التدفق يحتفظ بإطارات صوتية كاملة حول كل قص، لذا سيبقى ما يصل إلى نحو 0.1 ث من صوت كل فاصل مُزال. لم يُصدَّر شيء. استخدم القص الذكي الذي يعيد بناء الصوت بدقة.</translation>
+    </message>
+    <message>
+        <location filename="../../services/user_messages.py" line="77"/>
+        <source>Fast Cutting cannot merge clips with exact audio: stream copy keeps whole audio frames around each clip, so up to about 0.1 s of sound from outside the selected clips would be included. Nothing was exported. Use Smart Cutting, which rebuilds the audio exactly.</source>
+        <translation>لا يستطيع القص السريع دمج المقاطع بصوت دقيق: نسخ التدفق يحتفظ بإطارات صوتية كاملة حول كل مقطع، لذا سيُضمَّن ما يصل إلى نحو 0.1 ث من الصوت خارج المقاطع المحددة. لم يُصدَّر شيء. استخدم القص الذكي الذي يعيد بناء الصوت بدقة.</translation>
+    </message>
+    <message>
+        <location filename="../../services/user_messages.py" line="82"/>
+        <source>Fast Cutting cannot export clips with exact audio: stream copy keeps whole audio frames around each clip, so up to about 0.1 s of sound from outside every clip would be included. Nothing was exported. Use Smart Cutting, which rebuilds the audio exactly.</source>
+        <translation>لا يستطيع القص السريع تصدير المقاطع بصوت دقيق: نسخ التدفق يحتفظ بإطارات صوتية كاملة حول كل مقطع، لذا سيُضمَّن ما يصل إلى نحو 0.1 ث من الصوت خارج كل مقطع. لم يُصدَّر شيء. استخدم القص الذكي الذي يعيد بناء الصوت بدقة.</translation>
+    </message>
+    <message>
+        <location filename="../../services/user_messages.py" line="87"/>
+        <source>Fast Cutting cannot remove the selected intervals exactly: stream copy can only cut on a keyframe that starts an independent group of frames, and these cut boundaries are not on one: {details}. Nothing was exported and the cuts were not changed. Use Smart Cutting for frame-exact removal, or move these boundaries onto the listed keyframes.</source>
+        <translation>لا يستطيع القص السريع إزالة الفواصل المحددة بدقة: نسخ التدفق لا يقص إلا عند إطار مفتاحي يبدأ مجموعة إطارات مستقلة، وحدود القص هذه ليست على إطار كهذا: {details}. لم يُصدَّر شيء ولم تتغير القصوص. استخدم القص الذكي لإزالة دقيقة على مستوى الإطار، أو انقل هذه الحدود إلى الإطارات المفتاحية المذكورة.</translation>
+    </message>
+    <message>
+        <location filename="../../services/user_messages.py" line="93"/>
+        <source>Fast Cutting cannot export the selected clips exactly: stream copy can only cut on a keyframe that starts an independent group of frames, and these cut boundaries are not on one: {details}. Nothing was exported and the cuts were not changed. Use Smart Cutting for frame-exact removal, or move these boundaries onto the listed keyframes.</source>
+        <translation>لا يستطيع القص السريع تصدير المقاطع المحددة بدقة: نسخ التدفق لا يقص إلا عند إطار مفتاحي يبدأ مجموعة إطارات مستقلة، وحدود القص هذه ليست على إطار كهذا: {details}. لم يُصدَّر شيء ولم تتغير القصوص. استخدم القص الذكي لإزالة دقيقة على مستوى الإطار، أو انقل هذه الحدود إلى الإطارات المفتاحية المذكورة.</translation>
+    </message>
+    <message>
+        <location filename="../../services/user_messages.py" line="99"/>
+        <source>{time} (keyframe of an open GOP: earlier frames depend on it)</source>
+        <translation>{time} (إطار مفتاحي لمجموعة GOP مفتوحة: إطارات سابقة تعتمد عليه)</translation>
+    </message>
+    <message>
+        <location filename="../../services/user_messages.py" line="101"/>
+        <source>{time} (nearest keyframes {first})</source>
+        <translation>{time} (أقرب إطارات مفتاحية: {first})</translation>
+    </message>
+    <message>
+        <location filename="../../services/user_messages.py" line="102"/>
+        <source>{time} (nearest keyframes {first} and {second})</source>
+        <translation>{time} (أقرب إطارات مفتاحية: {first} و{second})</translation>
+    </message>
+    <message>
+        <location filename="../../services/user_messages.py" line="104"/>
+        <source>The output folder cannot be used: &quot;{name}&quot; is an existing file, not a folder. Choose another output folder.</source>
+        <translation>لا يمكن استخدام مجلد الإخراج: «{name}» ملف موجود وليس مجلدًا. اختر مجلد إخراج آخر.</translation>
+    </message>
+    <message>
+        <location filename="../../services/user_messages.py" line="108"/>
+        <location filename="../../services/user_messages.py" line="147"/>
+        <source>&quot;{name}&quot; can no longer be found. It may have been moved, renamed or deleted.</source>
+        <translation>الملف «{name}» لم يعد موجودًا. ربما نُقل أو أُعيدت تسميته أو حُذف.</translation>
+    </message>
+    <message>
+        <location filename="../../services/user_messages.py" line="111"/>
+        <source>The operation was cancelled. No output was kept.</source>
+        <translation>أُلغيت العملية. لم يُحتفظ بأي ملف.</translation>
+    </message>
+    <message>
+        <location filename="../../services/user_messages.py" line="112"/>
+        <source>The video file is damaged or incomplete (for example after an interrupted download or copy), so it cannot be processed. Try another copy of the file.</source>
+        <translation>ملف الفيديو تالف أو غير مكتمل (مثلًا بعد تنزيل أو نسخ متقطّع)، لذا لا يمكن معالجته. جرّب نسخة أخرى من الملف.</translation>
+    </message>
+    <message>
+        <location filename="../../services/user_messages.py" line="116"/>
+        <source>This video uses a codec or format that this operation cannot handle. Try Smart Cutting, or convert the video to H.264 MP4 or MKV.</source>
+        <translation>يستخدم هذا الفيديو ترميزًا أو صيغة لا تدعمها هذه العملية. جرّب القص الذكي، أو حوّل الفيديو إلى MP4 أو MKV بترميز H.264.</translation>
+    </message>
+    <message>
+        <location filename="../../services/user_messages.py" line="120"/>
+        <source>FFmpeg is missing, so videos cannot be processed. Reinstall the application or run scripts/prepare_ffmpeg.ps1 to restore the bundled FFmpeg.</source>
+        <translation>برنامج FFmpeg مفقود، لذا لا يمكن معالجة الفيديوهات. أعد تثبيت التطبيق أو شغّل scripts/prepare_ffmpeg.ps1 لاستعادة FFmpeg المرفق.</translation>
+    </message>
+    <message>
+        <location filename="../../services/user_messages.py" line="124"/>
+        <source>The FFmpeg program in use does not support an option this application needs. The application expects the bundled FFmpeg 8.1.1; run scripts/prepare_ffmpeg.ps1 to restore it.</source>
+        <translation>برنامج FFmpeg المستخدم لا يدعم خيارًا يحتاجه هذا التطبيق. يتوقع التطبيق FFmpeg 8.1.1 المرفق؛ شغّل scripts/prepare_ffmpeg.ps1 لاستعادته.</translation>
+    </message>
+    <message>
+        <location filename="../../services/user_messages.py" line="128"/>
+        <source>There is not enough free disk space to finish. Free some space or choose another output folder.</source>
+        <translation>لا توجد مساحة كافية على القرص لإنهاء العملية. حرّر بعض المساحة أو اختر مجلد إخراج آخر.</translation>
+    </message>
+    <message>
+        <location filename="../../services/user_messages.py" line="131"/>
+        <source>FFmpeg stopped responding ({reason}), so it was stopped. No output was kept. Try again; if it happens again, try the other cutting mode.</source>
+        <translation>توقف FFmpeg عن الاستجابة ({reason})، لذا أُوقف. لم يُحتفظ بأي ملف. حاول مرة أخرى؛ وإذا تكرر ذلك فجرّب وضع القص الآخر.</translation>
+    </message>
+    <message>
+        <location filename="../../services/user_messages.py" line="135"/>
+        <source>Access to a file was denied. Check that it is not open in another program.</source>
+        <translation>رُفض الوصول إلى ملف. تحقّق من أنه غير مفتوح في برنامج آخر.</translation>
+    </message>
+    <message>
+        <location filename="../../services/user_messages.py" line="137"/>
+        <source>Access to &quot;{name}&quot; was denied. Check that it is not open in another program and that you are allowed to write to the output folder.</source>
+        <translation>رُفض الوصول إلى «{name}». تحقّق من أنه غير مفتوح في برنامج آخر ومن أن لديك صلاحية الكتابة في مجلد الإخراج.</translation>
+    </message>
+    <message>
+        <location filename="../../services/user_messages.py" line="141"/>
+        <source>Access to a file was denied. Check that it is not open in another program and that you are allowed to write to the output folder.</source>
+        <translation>رُفض الوصول إلى ملف. تحقّق من أنه غير مفتوح في برنامج آخر ومن أن لديك صلاحية الكتابة في مجلد الإخراج.</translation>
+    </message>
+    <message>
+        <location filename="../../services/user_messages.py" line="145"/>
+        <source>A required file can no longer be found. It may have been moved or deleted.</source>
+        <translation>ملف مطلوب لم يعد موجودًا. ربما نُقل أو حُذف.</translation>
+    </message>
+    <message>
+        <location filename="../../services/user_messages.py" line="149"/>
+        <source>A file can no longer be found. It may have been moved, renamed or deleted.</source>
+        <translation>ملف لم يعد موجودًا. ربما نُقل أو أُعيدت تسميته أو حُذف.</translation>
+    </message>
+    <message>
+        <location filename="../../services/user_messages.py" line="151"/>
+        <source>A file named &quot;{name}&quot; already exists, so nothing was overwritten. Choose another name or folder.</source>
+        <translation>يوجد ملف باسم «{name}» بالفعل، لذا لم يُستبدل شيء. اختر اسمًا أو مجلدًا آخر.</translation>
+    </message>
+    <message>
+        <location filename="../../services/user_messages.py" line="154"/>
+        <source>A file named a file already exists, so nothing was overwritten. Choose another name or folder.</source>
+        <translation>يوجد ملف بهذا الاسم بالفعل، لذا لم يُستبدل شيء. اختر اسمًا أو مجلدًا آخر.</translation>
+    </message>
+    <message>
+        <location filename="../../services/user_messages.py" line="157"/>
+        <source>A file operation on &quot;{name}&quot; failed ({reason}). Technical details were written to the application log (logs/video-cut.log).</source>
+        <translation>فشلت عملية على «{name}» ({reason}). كُتبت التفاصيل التقنية في سجل التطبيق (logs/video-cut.log).</translation>
+    </message>
+    <message>
+        <location filename="../../services/user_messages.py" line="161"/>
+        <source>A file operation on a file failed ({reason}). Technical details were written to the application log (logs/video-cut.log).</source>
+        <translation>فشلت عملية على ملف ({reason}). كُتبت التفاصيل التقنية في سجل التطبيق (logs/video-cut.log).</translation>
+    </message>
+    <message>
+        <location filename="../../services/user_messages.py" line="165"/>
+        <source>FFmpeg could not process this video (exit code {code}). No output was kept. Technical details were written to the application log (logs/video-cut.log).</source>
+        <translation>تعذّر على FFmpeg معالجة هذا الفيديو (رمز الخروج {code}). لم يُحتفظ بأي ملف. كُتبت التفاصيل التقنية في سجل التطبيق (logs/video-cut.log).</translation>
+    </message>
+    <message>
+        <location filename="../../services/user_messages.py" line="169"/>
+        <source>An unexpected internal error occurred ({type}). Technical details were written to the application log (logs/video-cut.log).</source>
+        <translation>حدث خطأ داخلي غير متوقع ({type}). كُتبت التفاصيل التقنية في سجل التطبيق (logs/video-cut.log).</translation>
+    </message>
+</context>
+<context>
     <name>VideoControls</name>
     <message>
         <location filename="../../vue/qml/WindowsApplication/VideoPlayer/VideoControls.qml" line="47"/>
@@ -1664,6 +1953,17 @@ then select Add Cut.</source>
         <location filename="../../vue/qml/WindowsApplication/VideoPlayer/VideoStage.qml" line="79"/>
         <source>Open a video to get started</source>
         <translation>افتح فيديو للبدء</translation>
+    </message>
+    <message>
+        <location filename="../../vue/qml/WindowsApplication/VideoPlayer/VideoStage.qml" line="67"/>
+        <location filename="../../vue/qml/WindowsApplication/VideoPlayer/VideoStage.qml" line="96"/>
+        <source>Open a video</source>
+        <translation>افتح فيديو</translation>
+    </message>
+    <message>
+        <location filename="../../vue/qml/WindowsApplication/VideoPlayer/VideoStage.qml" line="104"/>
+        <source>MP4 or MKV</source>
+        <translation>MP4 أو MKV</translation>
     </message>
 </context>
 <context>

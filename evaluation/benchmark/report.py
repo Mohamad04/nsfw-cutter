@@ -4,7 +4,7 @@ from __future__ import annotations
 import statistics
 
 from evaluation.benchmark import events, video_metrics as vm
-from evaluation.benchmark.manifest import BenchmarkManifest, manifest_digest
+from evaluation.benchmark.manifest import BenchmarkManifest, assert_disjoint_from_pilot, manifest_digest
 from evaluation.benchmark.results import ResultsFile
 from evaluation.benchmark.stats import grouped_bootstrap, holm, mcnemar_exact
 
@@ -99,11 +99,18 @@ def _runtime(results: ResultsFile, manifest: BenchmarkManifest, split: str):
     return summary
 
 
-def score(manifest: BenchmarkManifest, results: ResultsFile, *, split: str = "test",
+def score(manifest: BenchmarkManifest, results: ResultsFile, *, pilot_manifest, split: str = "test",
           resamples: int = DEFAULT_RESAMPLES, seed: int = DEFAULT_SEED):
+    """pilot_manifest (the development/tuning pilot) is mandatory: scoring always re-checks leakage."""
     digest = manifest_digest(manifest)
-    results.check_against(manifest, digest)
+    disjoint = assert_disjoint_from_pilot(manifest, pilot_manifest)
     items = manifest.evaluable(split)
+    unidentified = sorted(item.item_id for item in items if item.sha256 is None)
+    if unidentified:
+        raise ValueError("scoring requires the media SHA-256 of every evaluable item (identity and leakage "
+                         "checks): " + ", ".join(unidentified[:10]))
+    results.check_against(manifest, digest)
+    excluded = [i for i in manifest.items if i.split == split and i.excluded]
     rows, fallbacks = _decisions(manifest, results, split)
     labels = [item.video_label for item in items]
     report = {
@@ -111,9 +118,13 @@ def score(manifest: BenchmarkManifest, results: ResultsFile, *, split: str = "te
         "split": split, "dataset": manifest.dataset.model_dump(mode="json"),
         "annotation": manifest.annotation.model_dump(mode="json"),
         "environment": results.environment.model_dump(mode="json"),
+        "disjoint_from_pilot": disjoint,
         "sample_sizes": {
             "items_in_split": sum(i.split == split for i in manifest.items),
-            "excluded": {i.item_id: i.exclusion_reason for i in manifest.items if i.split == split and i.excluded},
+            "excluded": {i.item_id: i.exclusion_reason for i in excluded},
+            "excluded_by_reason": {reason: sum(i.exclusion_reason == reason for i in excluded)
+                                   for reason in sorted({i.exclusion_reason for i in excluded})},
+            "excluded_reference_positives": sum(i.video_label == "positive" for i in excluded),
             "evaluable": len(items), "groups": len({i.group_id for i in items}),
             **{label: labels.count(label) for label in ("positive", "negative", "uncertain", "missing")}},
         "decision_rules": {"pipeline": "alert when a completed run returns at least one final suggestion",
@@ -137,7 +148,8 @@ def score(manifest: BenchmarkManifest, results: ResultsFile, *, split: str = "te
                   "are withheld; see alert_review")
         report["video_level"] = {"withheld": reason}
         report["paired_comparisons"] = {"withheld": reason}
-        report["event_level"] = _event_section(items, results, resamples, seed)
+        # Temporal annotations limited to reviewed (e.g. alerted) videos would inherit the same selection.
+        report["event_level"] = {"withheld": reason}
         return report
     comparisons = [("A1", "A2")] + [(f"A0@{tau:.2f}", target) for tau in vm.A0_THRESHOLDS for target in ("A1", "A2")]
     paired = {f"{x}_vs_{y}": _paired(rows[x], rows[y], x, y, resamples, seed) for x, y in comparisons}
@@ -163,6 +175,8 @@ def _event_section(items, results, resamples, seed):
                 per_config[name] = {"available": False, "reason": str(exc)}
                 continue
             per_config[name] = {"available": True, "scored_items": len(rows), "unusable_runs": unusable,
+                                "evaluable_items": len(items),
+                                "items_without_exhaustive_temporal_truth": len(items) - len(rows) - len(unusable),
                                 "aggregate": events.summarize(rows) if rows else None,
                                 "f1_iou_0.50_bootstrap": grouped_bootstrap(rows, "group_id", events.event_f1_of,
                                                                            resamples=resamples, seed=seed)}

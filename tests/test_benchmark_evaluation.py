@@ -13,13 +13,18 @@ from pydantic import ValidationError
 from evaluation.benchmark import events, media, video_metrics as vm
 from evaluation.benchmark.__main__ import main as cli
 from evaluation.benchmark.manifest import BenchmarkManifest, manifest_digest
-from evaluation.benchmark.report import score
+from evaluation.benchmark.report import score as _score
 from evaluation.benchmark.results import ResultsFile
 from evaluation.benchmark.stats import grouped_bootstrap, holm, mcnemar_exact, wilson
 
 ROOT = Path(__file__).resolve().parents[1]
+PILOT = ROOT / "tests" / "fixtures" / "pilot" / "synthetic.json"
 ABSENT = {"nudity": "absent", "sexual_activity": "absent", "sexual_context": "absent"}
 UNKNOWN = {"nudity": "unknown", "sexual_activity": "unknown", "sexual_context": "unknown"}
+
+
+def score(manifest, results, **options):
+    return _score(manifest, results, pilot_manifest=PILOT, **options)
 
 
 def sha(text):
@@ -277,14 +282,15 @@ class ReportTests(unittest.TestCase):
         self.assertAlmostEqual(review["alert_rate_unverified_ci"]["estimate"], 0.2)
         self.assertTrue(review["all_alerts_reviewed"])
         self.assertEqual(review["confirmed_false_alerts"], 2)
-        self.assertAlmostEqual(review["confirmed_false_alerts_per_hour"], 12.0)  # 2 alerts / (10 x 60 s)
-        self.assertEqual(review["random_audit"], {"audited_videos": 2, "positives_found_without_alert": 0})
+        self.assertAlmostEqual(review["confirmed_false_alerts_per_analyzed_hour"], 12.0)  # 2 alerts / (10 x 60 s)
+        self.assertEqual(review["random_audit"]["audited_videos"], 2)
+        self.assertEqual(review["random_audit"]["positives_found_without_alert"], 0)
         # An alert on an unreviewed video makes the confirmed rate a lower bound: it is withheld.
         rows[0] = result("m0", "A2", alert=True)
         unreviewed = score(manifest, results_file(manifest, rows), resamples=50)["alert_review"]["A2"]
         self.assertFalse(unreviewed["all_alerts_reviewed"])
-        self.assertIsNone(unreviewed["confirmed_false_alerts_per_video_ci"])
-        self.assertIsNone(unreviewed["confirmed_false_alerts_per_hour"])
+        self.assertIsNone(unreviewed["confirmed_false_alerts_per_analyzed_video_ci"])
+        self.assertIsNone(unreviewed["confirmed_false_alerts_per_analyzed_hour"])
 
     def test_results_must_match_manifest_and_verified_inputs(self):
         manifest = build([item("a", "negative")])
@@ -352,6 +358,133 @@ class MediaTests(unittest.TestCase):
                 media.enable_whisper_cuda12_cublas(root, loader=lambda path: path)
 
 
+class MethodologyTests(unittest.TestCase):
+    """Review designs, metric suppression, label handling and anti-leakage enforcement."""
+
+    def reviewed(self, item_id, label, basis, group=None):
+        return {**item(item_id, label, group=group), "review_basis": basis}
+
+    def technical(self, extra=()):
+        # 4 unreviewed presumed negatives, 2 alerted+reviewed negatives, 2 audited non-alerted negatives.
+        items = [item(f"m{i}", "missing", group=f"s{i % 2}") for i in range(4)]
+        items += [self.reviewed(f"r{i}", "negative", "alert_triggered", group=f"s{i}") for i in range(2)]
+        items += [self.reviewed(f"q{i}", "negative", "random_audit", group=f"s{i}") for i in range(2)]
+        return build([*items, *extra], track="technical")
+
+    def technical_rows(self, alert_on_unreviewed=False):
+        rows = [result(f"m{i}", "A2", alert=alert_on_unreviewed and i == 0) for i in range(4)]
+        rows += [result(f"r{i}", "A2", alert=True) for i in range(2)]
+        return rows + [result(f"q{i}", "A2") for i in range(2)]
+
+    def test_1_complete_review_reports_classification_metrics_with_denominators(self):
+        manifest = build([item("p1", "positive"), item("p2", "positive"), item("n1", "negative"),
+                          item("n2", "negative")])
+        report = score(manifest, results_file(manifest, [result("p1", "A2", alert=True), result("p2", "A2"),
+                                                         result("n1", "A2", alert=True), result("n2", "A2")]),
+                       resamples=50)
+        self.assertTrue(report["verification"]["complete"])
+        metrics = report["video_level"]["A2"]["exclude"]["metrics"]
+        self.assertEqual((metrics["recall"], metrics["specificity"], metrics["precision"]), (0.5, 0.5, 0.5))
+        self.assertIn("reference negatives", metrics["denominators"]["specificity_and_false_positive_rate"])
+        self.assertIn("A1_vs_A2", report["paired_comparisons"])
+
+    def test_2_partial_review_withholds_classification_metrics(self):
+        manifest = build([item("n1", "negative"), self.reviewed("n2", "negative", "random_audit")])
+        report = score(manifest, results_file(manifest, [result("n1", "A2"), result("n2", "A2")]), resamples=50)
+        self.assertFalse(report["verification"]["complete"])
+        self.assertEqual(set(report["video_level"]), {"withheld"})
+
+    def test_3_all_alerts_and_an_audit_sample_reviewed(self):
+        manifest = self.technical()
+        review = score(manifest, results_file(manifest, self.technical_rows()), resamples=50)["alert_review"]["A2"]
+        self.assertTrue(review["all_alerts_reviewed"])
+        self.assertEqual(review["confirmed_false_alerts"], 2)
+        self.assertAlmostEqual(review["confirmed_false_alerts_per_analyzed_video_ci"]["estimate"], 2 / 8)
+        self.assertEqual(review["random_audit"]["labels"], {"positive": 0, "negative": 2, "uncertain": 0})
+
+    def test_4_no_alert_reviewed_withholds_confirmed_rates(self):
+        manifest = build([item(f"m{i}", "missing") for i in range(3)], track="technical")
+        rows = [result("m0", "A2", alert=True), result("m1", "A2", alert=True), result("m2", "A2")]
+        review = score(manifest, results_file(manifest, rows), resamples=50)["alert_review"]["A2"]
+        self.assertFalse(review["all_alerts_reviewed"])
+        self.assertEqual(review["alerts_by_reference_label"]["missing"], 2)
+        self.assertEqual(review["confirmed_false_alerts"], 0)
+        self.assertIsNone(review["confirmed_false_alerts_per_analyzed_video_ci"])
+        self.assertIsNone(review["confirmed_false_alerts_per_analyzed_hour"])
+
+    def test_5_alert_rate_uses_every_analyzed_video(self):
+        manifest = self.technical()
+        rows = self.technical_rows(alert_on_unreviewed=True)
+        rows[1] = result("m1", "A2", status="failed")  # failures are outside the denominator, and counted
+        review = score(manifest, results_file(manifest, rows), resamples=50)["alert_review"]["A2"]
+        self.assertEqual((review["completed_runs"], review["failed_or_partial_runs"]), (7, 1))
+        self.assertEqual(review["alert_rate_unverified_ci"]["total"], 7)
+        self.assertEqual(review["alert_rate_unverified_ci"]["successes"], 3)
+
+    def test_6_confirmed_false_alerts_require_every_alert_reviewed(self):
+        manifest = self.technical()
+        complete = score(manifest, results_file(manifest, self.technical_rows()), resamples=50)
+        incomplete = score(manifest, results_file(manifest, self.technical_rows(alert_on_unreviewed=True)),
+                           resamples=50)
+        self.assertIsNotNone(complete["alert_review"]["A2"]["confirmed_false_alerts_per_analyzed_video_ci"])
+        self.assertIsNone(incomplete["alert_review"]["A2"]["confirmed_false_alerts_per_analyzed_video_ci"])
+
+    def test_7_unsupported_metrics_and_paired_tests_are_suppressed(self):
+        manifest = self.technical()
+        report = score(manifest, results_file(manifest, self.technical_rows()), resamples=50)
+        for section in ("video_level", "paired_comparisons", "event_level"):
+            self.assertEqual(set(report[section]), {"withheld"})
+        text = json.dumps(report)
+        for name in ('"precision"', '"recall"', '"specificity"', '"f1"', '"mcnemar"'):
+            self.assertNotIn(name, text)
+
+    def test_8_9_10_pilot_overlap_is_refused_at_validation_and_scoring(self):
+        independent = build([item("a", "negative")])
+        same_media = build([{**item("a", "negative"), "sha256": "0" * 64}])
+        same_source = build([item("a", "negative", group="synthetic_source")])
+        report = score(independent, results_file(independent, [result("a", "A2")]), resamples=20)
+        self.assertEqual(report["disjoint_from_pilot"]["pilot_clips"], 1)
+        for manifest in (same_media, same_source):
+            with self.assertRaises(ValueError):
+                score(manifest, results_file(manifest, []), resamples=20)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "manifest.json"
+            path.write_text(same_source.model_dump_json(), encoding="utf-8")
+            with self.assertRaises(ValueError):
+                cli(["validate", str(path), "--pilot-manifest", str(PILOT)])
+            with self.assertRaises(SystemExit):  # the check cannot be skipped from the CLI
+                cli(["validate", str(path)])
+            with self.assertRaises(SystemExit):
+                cli(["score", str(path), str(path), "--output", str(Path(tmp) / "out")])
+
+    def test_scoring_requires_media_identity_for_every_evaluable_item(self):
+        manifest = build([{**item("a", "negative"), "sha256": None}])
+        with self.assertRaises(ValueError):
+            score(manifest, results_file(manifest, []), resamples=20)
+
+    def test_11_unknown_and_uncertain_labels_are_never_scored_as_negatives(self):
+        manifest = build([item("p", "positive"), item("n", "negative"), item("u", "uncertain"),
+                          item("k", "negative", categories={**UNKNOWN, "nudity": "absent"})])
+        report = score(manifest, results_file(manifest, [result("p", "A2", alert=True), result("n", "A2"),
+                                                         result("u", "A2"), result("k", "A2")]), resamples=20)
+        counts = report["video_level"]["A2"]["exclude"]["counts"]
+        self.assertEqual((counts["tp"], counts["tn"], counts["uncertain_label"]), (1, 2, 1))
+        self.assertEqual(report["sample_sizes"]["uncertain"], 1)
+
+    def test_12_nsfw_discovered_in_the_technical_corpus_is_excluded_and_counted(self):
+        discovered = {**self.reviewed("x", "positive", "alert_triggered"), "excluded": True,
+                      "exclusion_reason": "nsfw_discovered"}
+        with self.assertRaises(ValidationError):  # an unexcluded positive is refused in this track
+            self.technical(extra=[{**discovered, "excluded": False, "exclusion_reason": ""}])
+        manifest = self.technical(extra=[discovered])
+        report = score(manifest, results_file(manifest, [*self.technical_rows(), result("x", "A2", alert=True)]),
+                       resamples=20)
+        self.assertEqual(report["sample_sizes"]["excluded_by_reason"], {"nsfw_discovered": 1})
+        self.assertEqual(report["sample_sizes"]["excluded_reference_positives"], 1)
+        self.assertEqual(report["sample_sizes"]["evaluable"], 8)
+        self.assertEqual(report["alert_review"]["A2"]["alerted_videos"], 2)  # excluded video not scored
+
+
 class CharadesManifestTests(unittest.TestCase):
     def synthetic_zip(self, tmp):
         import zipfile
@@ -396,15 +529,17 @@ class CliTests(unittest.TestCase):
             results = results_file(manifest, [result("a", "A2", alert=True), result("b", "A2")])
             (tmp / "results.json").write_text(results.model_dump_json(), encoding="utf-8")
             self.assertEqual(cli(["validate", str(tmp / "manifest.json"), "--pilot-manifest",
-                                  str(ROOT / "tests" / "fixtures" / "pilot" / "synthetic.json")]), 0)
+                                  str(PILOT)]), 0)
             out = tmp / "report"
             self.assertEqual(cli(["score", str(tmp / "manifest.json"), str(tmp / "results.json"),
+                                  "--pilot-manifest", str(PILOT),
                                   "--output", str(out), "--resamples", "50"]), 0)
             metrics = json.loads((out / "metrics.json").read_text(encoding="utf-8"))
             self.assertEqual(metrics["video_level"]["A2"]["exclude"]["counts"]["tp"], 1)
             self.assertTrue((out / "per_video.csv").is_file())
             with self.assertRaises(FileExistsError):
-                cli(["score", str(tmp / "manifest.json"), str(tmp / "results.json"), "--output", str(out)])
+                cli(["score", str(tmp / "manifest.json"), str(tmp / "results.json"), "--output", str(out),
+                     "--pilot-manifest", str(PILOT)])
         shutil.rmtree(tmp, ignore_errors=True)
 
 

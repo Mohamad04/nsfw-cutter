@@ -162,8 +162,12 @@ class BenchmarkManifest(StrictModel):
         for item in self.items:
             if splits.setdefault(item.group_id, item.split) != item.split:
                 raise ValueError(f"group {item.group_id}: tuning/test leakage")
-        if self.track == "technical" and any(item.video_label == "positive" for item in self.items):
-            raise ValueError("the technical track has no positive reference labels")
+        # A technical (negative-presumed) corpus has no positive references. NSFW content found during
+        # review is kept as an excluded, counted item so the discovery is never silently dropped.
+        if self.track == "technical" and any(item.video_label == "positive" and not item.excluded
+                                             for item in self.items):
+            raise ValueError("the technical track has no positive reference labels; exclude discovered NSFW "
+                             "videos with a reason")
         return self
 
     def evaluable(self, split: str = "test") -> list[Item]:
@@ -178,7 +182,11 @@ class BenchmarkManifest(StrictModel):
 
 
 def assert_disjoint_from_pilot(manifest: BenchmarkManifest, pilot_manifest_path: str | Path):
-    """The development pilot (tuning data) must never reappear in an independent benchmark."""
+    """The development pilot (tuning data) must never reappear in an independent benchmark.
+
+    Checks identical media (SHA-256) and shared source identity (pilot source_video_id equal to a
+    benchmark group_id). It cannot detect re-encoded or trimmed copies of a pilot source.
+    """
     from evaluation.pilot.manifest import load_manifest as load_pilot
 
     pilot = load_pilot(pilot_manifest_path, allow_draft=True)
@@ -188,7 +196,8 @@ def assert_disjoint_from_pilot(manifest: BenchmarkManifest, pilot_manifest_path:
                        if (item.sha256 and item.sha256 in pilot_hashes) or item.group_id in pilot_sources})
     if overlaps:
         raise ValueError("benchmark items overlap the development pilot: " + ", ".join(overlaps))
-    return {"pilot_clips": len(pilot.clips), "checked_items": len(manifest.items),
+    return {"pilot_manifest_digest": canonical_digest(pilot.model_dump(mode="json")),
+            "pilot_clips": len(pilot.clips), "checked_items": len(manifest.items),
             "items_without_sha256": sum(item.sha256 is None for item in manifest.items)}
 
 

@@ -16,11 +16,12 @@ def main(argv=None):
     parser = argparse.ArgumentParser(prog="python -m evaluation.benchmark")
     commands = parser.add_subparsers(dest="command", required=True)
     validate = commands.add_parser("validate", help="validate a benchmark manifest (no media access)")
-    validate.add_argument("manifest", type=Path)
-    validate.add_argument("--pilot-manifest", type=Path,
-                          help="development pilot manifest whose clips must not reappear in the benchmark")
     scoring = commands.add_parser("score", help="score recorded results against a manifest")
-    scoring.add_argument("manifest", type=Path)
+    for command in (validate, scoring):
+        command.add_argument("manifest", type=Path)
+        # Mandatory: the anti-leakage check against the tuning pilot cannot be skipped.
+        command.add_argument("--pilot-manifest", type=Path, required=True,
+                             help="development pilot manifest whose clips must not reappear in the benchmark")
     scoring.add_argument("results", type=Path)
     scoring.add_argument("--output", type=Path, required=True, help="new directory; must not exist")
     scoring.add_argument("--split", choices=("tuning", "test"), default="test")
@@ -31,7 +32,7 @@ def main(argv=None):
     manifest = load_manifest(args.manifest)
     if args.command == "validate":
         labels = [item.video_label for item in manifest.items]
-        disjoint = assert_disjoint_from_pilot(manifest, args.pilot_manifest) if args.pilot_manifest else None
+        disjoint = assert_disjoint_from_pilot(manifest, args.pilot_manifest)
         print(json.dumps({"valid": True, "benchmark_id": manifest.benchmark_id, "track": manifest.track,
                           "manifest_digest": manifest_digest(manifest), "items": len(manifest.items),
                           "excluded": sum(item.excluded for item in manifest.items),
@@ -40,7 +41,7 @@ def main(argv=None):
                           "disjoint_from_pilot": disjoint, "media_identity_verified": False}, indent=2))
         return 0
 
-    report = score(manifest, load_results(args.results), split=args.split,
+    report = score(manifest, load_results(args.results), pilot_manifest=args.pilot_manifest, split=args.split,
                    resamples=args.resamples, seed=args.seed)
     args.output.mkdir(parents=True, exist_ok=False)
     (args.output / "metrics.json").write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")

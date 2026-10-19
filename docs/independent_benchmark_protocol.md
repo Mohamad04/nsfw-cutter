@@ -170,9 +170,16 @@ Sans l'une de ces voies, le rapport présentera le volet 1 et le pilote, explici
 
 - **Sources disjointes.** Aucune vidéo Charades ne figure dans le pilote. Un même groupe (sujet ou
   source) ne peut pas être à la fois en tuning et en test : le validateur le refuse.
-  `python -m evaluation.benchmark validate MANIFEST --pilot-manifest artifacts/pilot/manifest.json`
-  refuse aussi tout élément qui partage un SHA-256 ou une source avec le pilote. Il faut le relancer
-  une fois les SHA-256 des médias renseignés.
+- **Contrôle anti-fuite obligatoire.** `validate` et `score` exigent `--pilot-manifest`
+  (`artifacts/pilot/manifest.json` pour les 6 clips du pilote). Sans ce manifeste, la commande
+  s'arrête. La fonction `score()` exige elle aussi `pilot_manifest` : on ne peut pas noter sans ce
+  contrôle.
+  - **Ce qui est refusé :** tout élément qui partage un SHA-256 avec un clip du pilote, ou dont le
+    `group_id` est un `source_video_id` du pilote.
+  - **Identité des médias :** la notation exige le SHA-256 de chaque vidéo évaluée, donc le contrôle
+    est forcément refait après le téléchargement.
+  - **Limite :** une copie recodée ou découpée d'une source du pilote n'est pas détectable par
+    empreinte ; l'indépendance repose alors sur la provenance documentée.
 - **Rien n'est ajusté sur le test.** Les seuils A0 (0,15 et 0,45), les règles de décision et les
   critères sont fixés ci-dessus, avant toute exécution.
 - **Configuration gelée par empreinte.** `manifest_digest` est vérifié par le scoreur, et les
@@ -201,14 +208,18 @@ Limites de l'attribution des écarts :
 
 Elles sont implémentées dans `evaluation/benchmark` et testées sur données synthétiques.
 
-- **Niveau vidéo** (seulement si la vérification est complète ; sinon, revue des alertes) :
+- **Niveau vidéo** (seulement si la vérification est complète ; sinon, revue des alertes, voir 8 bis) :
   - matrice TP / FP / FN / TN ;
   - précision, rappel, spécificité, F1, exactitude équilibrée ;
-  - IC de Wilson à 95 % pour les proportions.
+  - IC de Wilson à 95 % pour les proportions, chacune avec son dénominateur explicite.
+    `false_positive_rate_on_verified_negatives_ci` a pour dénominateur les négatifs de référence
+    (TN + FP) d'un jeu **entièrement** vérifié. Ce taux n'existe pas sous une vérification
+    partielle.
   - Les étiquettes `uncertain` et `missing` ne sont **jamais** notées, mais sont comptées.
   - Les échecs sont exclus et comptés (politique `exclude`), ou comptés comme erreurs (politique
     `worst_case`). Les deux sont publiées.
-- **Niveau événement** (seulement si la vérité temporelle est exhaustive) :
+- **Niveau événement** (seulement si la vérité temporelle est exhaustive **et** la vérification
+  complète ; la part des vidéos évaluables réellement notées est publiée) :
   - appariement un-à-un à IoU 0,25, **0,50** et 0,75, avec l'appariement du pilote ;
   - P, R et F1 ;
   - couverture, erreurs de bornes ;
@@ -227,6 +238,68 @@ Elles sont implémentées dans `evaluation/benchmark` et testées sur données s
   - temps du pipeline, RTF global (somme des temps / somme des durées) ;
   - pics de RAM et de VRAM ;
   - démarrage à froid ou à chaud, et état du cache disque, séparés.
+
+## 8 bis. Vérification des étiquettes et interprétation statistique
+
+**Provenance de la revue.** Chaque vidéo porte `review_basis` :
+
+| Valeur | Sens | Étiquette permise |
+|---|---|---|
+| `unreviewed` | Aucune référence | `missing` uniquement |
+| `complete` | Annotation qui couvre **toutes** les vidéos évaluables du split | positive, negative, uncertain |
+| `alert_triggered` | Revue parce qu'au moins une configuration a alerté | idem |
+| `random_audit` | Revue dans l'échantillon aléatoire pré-déclaré des vidéos non alertées | idem |
+
+Les autres éléments de provenance sont consignés dans `provenance` : relecteurs, date, version du
+guide, accord entre relecteurs. Une étiquette `missing` n'est **jamais** traitée comme un négatif.
+
+**Revue complète ou partielle.**
+- **Vérification complète** (tous les éléments évaluables en `complete`) : métriques de
+  classification, tests appariés et métriques événementielles sont publiés.
+- **Dans tous les autres cas, ils sont retenus** (`withheld`). Le sous-ensemble vérifié contient
+  toutes les alertes, mais seulement un échantillon des non-alertes. Ce n'est pas un échantillon
+  aléatoire de la population : une spécificité ou un taux de faux positifs calculés dessus sans
+  pondération seraient biaisés, pessimistes. On ne publie alors que la revue des alertes
+  (`alert_review`) :
+  - **taux d'alerte non vérifié** : vidéos alertées sur **toutes** les vidéos analysées (runs
+    terminés). Ce n'est **pas** un taux de faux positifs ;
+  - **fausses alertes confirmées** : un nombre, ventilé par étiquette de référence ;
+  - **fausses alertes confirmées par vidéo analysée et par heure analysée** : publiées
+    **uniquement** si toutes les alertes ont été revues. C'est alors un décompte exact rapporté à
+    toutes les vidéos analysées, pas une spécificité ;
+  - **constats de l'audit** : étiquettes et positifs non alertés trouvés dans l'échantillon audité,
+    décrits pour cet échantillon seulement.
+- **Estimation à l'échelle de la population.** Toute estimation de spécificité ou de taux de faux
+  positifs à partir de l'audit exigerait un estimateur pondéré par le plan de sondage, justifié et
+  pré-enregistré séparément. Il n'est pas implémenté.
+
+**Protocole d'audit des vidéos non alertées.**
+1. Après les exécutions A0, A1 et A2, définir la population des vidéos **non alertées par aucune
+   configuration**.
+2. Tirer de façon déterministe, avec une graine déclarée avant la revue, au moins 10 % de cette
+   population, et au minimum 30 vidéos si possible.
+3. Faire revoir l'échantillon par un relecteur, sans connaître la strate.
+4. Rapporter les constats tels quels.
+
+Toute vidéo retirée de l'échantillon est comptée.
+
+**Contenu NSFW découvert dans le volet technique.** Une vidéo réellement NSFW trouvée pendant la
+revue prend l'étiquette `positive`. Elle est **exclue** (`excluded: true`,
+`exclusion_reason: nsfw_discovered`) ; le validateur refuse tout positif non exclu dans ce volet. Le
+rapport publie `excluded_by_reason` et `excluded_reference_positives` : la découverte reste
+visible, mais la vidéo ne compte ni comme vrai positif ni comme faux positif.
+
+**Limites de Charades comme jeu d'évaluation NSFW.**
+- Ce n'est pas un jeu NSFW : aucune étiquette de nudité ou de contenu sexuel, aucun positif de
+  référence.
+- On ne peut donc pas en tirer de rappel, de F1 ni d'exactitude NSFW. Seuls comptent les faux
+  positifs, les coûts et la robustesse.
+- Le contenu est du quotidien en intérieur, filmé par des participants recrutés en ligne, d'environ
+  30 s, à 480p : la généralisation à des films ou à des contenus professionnels n'est pas
+  démontrée.
+- Il y a peu de parole, si bien que A1 ≈ A2 est attendu et que l'apport du texte y est presque
+  invisible.
+- La licence est non commerciale (section 12).
 
 ## 9. Coûts estimés
 
@@ -283,8 +356,9 @@ run à la fois, à cause des 5,1 Go de VRAM et des 9,9 Go de RAM.
    - produire le schéma `ResultsFile` ;
    - extraire les scores Marqo du journal.
 5. Lancer d'abord le manifeste de 100 vidéos, vérifier les sorties, puis passer à 500 ou 1 000.
-6. Faire la revue humaine des alertes et de l'audit, versionner les étiquettes, puis lancer
-   `python -m evaluation.benchmark score`.
+6. Faire la revue humaine des alertes et de l'audit, versionner les étiquettes (avec
+   `review_basis`), puis lancer
+   `python -m evaluation.benchmark score MANIFEST RESULTS --pilot-manifest artifacts/pilot/manifest.json --output DOSSIER_NEUF`.
 7. Pour le volet 2 : décision sur les demandes Pornography-2k et NPDI-800, hors contrainte
    « sans autorisation ».
 

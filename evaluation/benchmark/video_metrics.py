@@ -62,6 +62,8 @@ def confusion(rows: list[dict], failure_policy: str = "exclude"):
 
 
 def video_metrics(counts: dict):
+    """Classification metrics; valid as population estimates only under complete verification
+    (report.py withholds them otherwise). Every proportion names its denominator."""
     tp, fp, fn, tn = (counts[k] for k in ("tp", "fp", "fn", "tn"))
     sensitivity, specificity = ratio(tp, tp + fn), ratio(tn, tn + fp)
     return {
@@ -74,6 +76,9 @@ def video_metrics(counts: dict):
         "precision_ci": wilson(tp, tp + fp), "recall_ci": wilson(tp, tp + fn),
         "specificity_ci": wilson(tn, tn + fp),
         "false_positive_rate_on_verified_negatives_ci": wilson(fp, tn + fp),
+        "denominators": {"precision": "alerted videos with a reference label (tp+fp)",
+                         "recall": "reference positives (tp+fn)",
+                         "specificity_and_false_positive_rate": "reference negatives (tn+fp)"},
     }
 
 
@@ -95,13 +100,20 @@ def alert_review(rows: list[dict]):
     return {
         "completed_runs": len(completed), "failed_or_partial_runs": len(rows) - len(completed),
         "alerted_videos": len(alerted),
+        # Denominator: every completed (analyzed) video, labelled or not. Not a false-positive rate.
         "alert_rate_unverified_ci": wilson(len(alerted), len(completed)),
         "alerts_by_reference_label": by_label, "all_alerts_reviewed": all_alerts_reviewed,
         "confirmed_false_alerts": by_label["negative"],
-        "confirmed_false_alerts_per_video_ci": wilson(by_label["negative"], len(completed))
+        # Exact count of false alerts over all analyzed videos once every alert is reviewed; it is not
+        # a specificity (the denominator includes unreviewed and positive videos).
+        "confirmed_false_alerts_per_analyzed_video_ci": wilson(by_label["negative"], len(completed))
         if all_alerts_reviewed else None,
-        "confirmed_false_alerts_per_hour": by_label["negative"] / hours if all_alerts_reviewed and hours else None,
+        "confirmed_false_alerts_per_analyzed_hour": by_label["negative"] / hours
+        if all_alerts_reviewed and hours else None,
+        # Audit findings describe the audited sample only; no population estimate is derived from them.
         "random_audit": {"audited_videos": len(audited),
+                         "labels": {label: sum(r["label"] == label for r in audited)
+                                    for label in ("positive", "negative", "uncertain")},
                          "positives_found_without_alert": sum(r["label"] == "positive" and not r["alert"]
                                                               for r in audited)},
     }

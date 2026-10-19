@@ -95,10 +95,34 @@ ces dossiers n'existent pas localement.
 CI échoue donc à cette étape tant qu'aucune étape de préparation n'est ajoutée, qu'il s'agisse
 d'une archive en cache ou de `-AllowDownload`. C'est une décision à prendre, non implémentée.
 
-**Effet du PATH.** Le hook PySide6 de PyInstaller cherche aussi `libssl-3-x64.dll` et
-`libcrypto-3-x64.dll` dans le PATH. Un build lancé depuis Git Bash embarque ainsi l'OpenSSL
-3.2.1 de Git for Windows ; un build lancé depuis PowerShell ne l'embarque pas. Voir les points
-ouverts ci-dessous.
+### PATH contrôlé pendant PyInstaller
+
+PyInstaller cherche dans le PATH les DLL qu'il ne trouve pas à côté des binaires rassemblés. Son
+hook PySide6 embarque aussi l'OpenSSL que Qt trouve dans le PATH.
+
+**Avant cette correction,** le contenu du paquet dépendait de la machine et du shell :
+
+- depuis Git Bash, il contenait l'OpenSSL 3.2.1 de Git for Windows (`libssl-3-x64.dll`,
+  `libcrypto-3-x64.dll`) ;
+- dans les deux shells, le runtime Visual C++ de la racine de `_internal` venait du dossier
+  d'ImageMagick, premier dans le PATH machine.
+
+**Désormais,** `build_windows.ps1` lance PyInstaller avec
+`PATH=%SystemRoot%\System32;%SystemRoot%;%SystemRoot%\System32\Wbem`, puis restaure le PATH
+d'origine. Il vérifie ensuite trois points :
+
+- **OpenSSL de Python.** Seuls `libssl-3.dll` et `libcrypto-3.dll` de Python sont embarqués,
+  identiques à ceux de `sys.base_prefix\DLLs`, avec `_ssl.pyd` et `_hashlib.pyd`. Python s'en
+  sert pour `ssl` et `hashlib`, par exemple pour la vérification des mises à jour.
+- **Aucune autre bibliothèque OpenSSL.** Sans OpenSSL disponible, Qt utilise son backend TLS
+  Schannel ; l'application n'utilise pas QtNetwork.
+- **Origine des fichiers.** Chaque fichier enregistré dans `build\VideoCutter\COLLECT-00.toc`
+  doit provenir du projet (`.venv` et `vendor\` compris), de l'installation Python ou de Windows.
+
+Le runtime Visual C++ de la racine provient maintenant de `System32` : c'est la version du
+redistribuable installée sur la machine de build (14.51.36247 lors du build du 2026-10-19).
+PySide6 et shiboken6 gardent leurs propres copies. `tests/test_windows_build_environment.py`
+couvre ce comportement.
 
 ## Taille et ressources
 
@@ -195,8 +219,8 @@ nom porte un numéro de version. Ses conditions comprennent :
   - Le dépôt n'a pas de licence d'application permettant de juger la compatibilité.
 - **Points voisins encore ouverts :**
   - FFmpeg : source correspondante GPL (voir `docs/ffmpeg_distribution.md`) ;
-  - OpenSSL : le paquet contient `libssl-3.dll` 3.5.7 de CPython, et parfois `libssl-3-x64.dll`
-    3.2.1 de Git for Windows selon le PATH du build, sans texte de licence OpenSSL (Apache-2.0) ;
+  - OpenSSL : le paquet contient l'OpenSSL 3.5.7 de CPython (`libssl-3.dll`, `libcrypto-3.dll`),
+    sans texte de licence OpenSSL (Apache-2.0) ;
   - CPython : l'avis de licence n'est pas inclus.
 
 Ces obligations ne sont pas considérées comme remplies.

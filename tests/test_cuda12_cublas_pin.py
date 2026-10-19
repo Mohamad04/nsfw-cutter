@@ -96,8 +96,13 @@ class CublasPinTests(unittest.TestCase):
 
     def test_build_does_not_touch_the_pytorch_cuda13_libraries(self):
         text = BUILD.read_text(encoding="utf-8")
-        for forbidden in ("_13.dll", "torch\\lib", "cudnn", "add_dll_directory", "$env:PATH"):
+        for forbidden in ("_13.dll", "torch\\lib", "cudnn", "add_dll_directory"):
             self.assertNotIn(forbidden, text)
+        # The build may restrict PATH for PyInstaller, but never puts the CUDA 12 DLLs on it.
+        for line in text.splitlines():
+            if "$env:PATH" in line or "controlledBuildPath" in line:
+                self.assertNotIn("cublas", line.lower())
+                self.assertNotIn("vendor", line.lower())
 
     @unittest.skipUnless(_powershell(), "Windows PowerShell is required")
     def test_preparation_refuses_without_a_source_and_rejects_a_wrong_archive(self):

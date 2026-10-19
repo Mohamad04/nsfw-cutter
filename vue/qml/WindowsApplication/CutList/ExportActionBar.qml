@@ -118,7 +118,7 @@ Rectangle {
             size: "sm"
             lightMode: root.lightMode
             enabled: !videoCutController.cutBusy
-            Layout.preferredWidth: 122
+            Layout.preferredWidth: Math.max(122, labelFitWidth)
             Layout.preferredHeight: 40
             onClicked: root.chooseFolderRequested()
         }
@@ -130,7 +130,7 @@ Rectangle {
             size: "sm"
             lightMode: root.lightMode
             enabled: false
-            Layout.preferredWidth: 144
+            Layout.preferredWidth: Math.max(144, labelFitWidth)
             Layout.preferredHeight: 40
             ToolTip.visible: hovered
             ToolTip.text: root.hasCuts
@@ -225,7 +225,7 @@ Rectangle {
             size: "sm"
             lightMode: root.lightMode
             enabled: root.hasVideo && root.hasCuts && !videoCutController.cutBusy
-            Layout.preferredWidth: 196
+            Layout.preferredWidth: Math.max(196, labelFitWidth)
             Layout.preferredHeight: 40
             onClicked: root.exportCleanVideoRequested()
         }
@@ -321,6 +321,9 @@ Rectangle {
                 text: videoCutController.cutError
                 color: root.lightMode ? "#B91C1C" : "#FCA5A5"
                 font.pixelSize: 11
+                // A refusal explains what to do (for example which keyframes to use): show it in full.
+                wrapMode: Text.Wrap
+                maximumLineCount: 5
                 elide: Text.ElideRight
                 visible: root.exportFailed
                 ToolTip.visible: errorMouse.containsMouse

@@ -15,13 +15,6 @@ ColumnLayout {
 
     signal clearListRequested()
 
-    TextMetrics {
-        id: clearListTextMetrics
-        text: qsTr("Clear List")
-        font.pixelSize: 12
-        font.weight: Font.Medium
-    }
-
     spacing: 3
 
     RowLayout {
@@ -53,7 +46,7 @@ ColumnLayout {
             lightMode: root.lightMode
             enabled: root.cutsCount > 0
             accessibilityLabel: qsTr("Clear List")
-            Layout.preferredWidth: Math.ceil(clearListTextMetrics.width) + 48
+            Layout.preferredWidth: labelFitWidth
             Layout.minimumWidth: Layout.preferredWidth
             Layout.preferredHeight: 34
             onClicked: root.clearListRequested()

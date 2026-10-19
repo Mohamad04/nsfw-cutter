@@ -40,6 +40,7 @@ class FakeAppController(QObject):
         self.model_retries = 0
         self.model_cancellations = 0
         self.open_file_requests = 0
+        self._ai_suggestions = []
 
     @Property(str, notify=selectedVideoPathChanged)
     def selectedVideoPath(self):
@@ -120,7 +121,11 @@ class FakeAppController(QObject):
 
     @Property("QVariantList", notify=aiSuggestionsChanged)
     def aiSuggestions(self):
-        return []
+        return list(self._ai_suggestions)
+
+    def set_ai_suggestions(self, suggestions):
+        self._ai_suggestions = [dict(item) for item in suggestions]
+        self.aiSuggestionsChanged.emit()
 
     @Property(str, constant=True)
     def aiAnalysisState(self):
@@ -939,6 +944,134 @@ ApplicationWindow {{
         self.assertTrue(analyze_button.property("enabled"))
         self.assertIsNotNone(engine)
 
+    def test_reviewing_a_suggestion_keeps_the_list_scroll_position(self):
+        engine, page, app_controller, _video_cut_controller = self._load_windowed_page(height=900)
+        suggestions = [
+            {"id": f"s{index}", "start": f"00:00:{index * 3:02d}", "end": f"00:00:{index * 3 + 2:02d}",
+             "category": "uncertain", "confidence": "50%", "reason": f"Fixture {index}", "review_state": "pending"}
+            for index in range(6)
+        ]
+        app_controller.set_ai_suggestions(suggestions)
+        popup = self._open_ai_picks(page)
+        suggestion_list = next(child for child in popup.findChildren(QObject)
+                               if child.metaObject().className() == "QQuickListView")
+        self.assertGreater(suggestion_list.property("contentHeight"), suggestion_list.property("height"))
+        suggestion_list.setProperty("contentY", 300)
+        self.app.processEvents()
+
+        suggestions[3]["review_state"] = "rejected"  # what reviewAiSuggestion publishes
+        app_controller.set_ai_suggestions(suggestions)
+        self.app.processEvents()
+
+        self.assertEqual(suggestion_list.property("contentY"), 300)
+        self.assertEqual(suggestion_list.property("count"), 6)
+        # A different set of suggestions (a new analysis) is still shown from the top.
+        app_controller.set_ai_suggestions(suggestions[:2])
+        self.app.processEvents()
+        self.assertEqual(suggestion_list.property("count"), 2)
+        self.assertIsNotNone(engine)
+
+    def test_a_long_export_refusal_is_shown_in_full(self):
+        engine, page, _app_controller, video_cut_controller = self._load_windowed_page(width=1280, height=760)
+        refusal = (
+            "Fast Cutting cannot remove the selected intervals exactly: stream copy can only cut on a keyframe that "
+            "starts an independent group of frames, and these cut boundaries are not on one: 00:00:15.520 (nearest "
+            "keyframes 00:00:14.000 and 00:00:16.000). Nothing was exported and the cuts were not changed. Use Smart "
+            "Cutting for frame-exact removal, or move these boundaries onto the listed keyframes."
+        )
+        video_cut_controller.fail_export(refusal)
+        self.app.processEvents()
+        error = page.findChild(QObject, "exportErrorText")
+        self.assertEqual(error.property("text"), refusal)
+        self.assertFalse(error.property("truncated"))
+        self.assertGreater(error.property("lineCount"), 1)
+        self.assertIsNotNone(engine)
+
+    def test_buttons_and_settings_show_whole_labels_in_english_french_and_arabic(self):
+        import subprocess
+        import sys
+        import tempfile
+
+        from PySide6.QtGui import QFont
+
+        from controllers.settings_controller import SettingsController
+        from controllers.update_controller import UpdateController
+        from services.i18n.translation_service import TranslationService
+        from services.settings_service import SettingsService
+
+        lrelease = Path(sys.executable).parent / "pyside6-lrelease.exe"
+        if not lrelease.is_file():
+            self.skipTest("pyside6-lrelease is not available")
+        root_dir = Path(__file__).resolve().parents[1]
+        if str(root_dir) not in sys.path:
+            sys.path.insert(0, str(root_dir))
+        from main import load_windows_ui_font_family
+
+        original_font = self.app.font()
+        self.app.setFont(QFont(load_windows_ui_font_family(), 9))  # as main.py does
+        self.addCleanup(self.app.setFont, original_font)
+
+        def truncated_labels(window):
+            labels = []
+            for item in window.findChildren(QObject):
+                class_name = item.metaObject().className()
+                if not class_name.startswith(("QQuickText", "QQuickLabel")) or class_name.startswith(
+                        ("QQuickTextEdit", "QQuickTextInput", "QQuickTextField", "QQuickTextArea")):
+                    continue
+                if item.property("visible") and item.property("width") > 0 and item.property("truncated"):
+                    labels.append(item.property("text"))
+            return labels
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            for language in ("fr", "ar"):
+                completed = subprocess.run(
+                    [str(lrelease), str(root_dir / "resources" / "i18n" / f"app_{language}.ts"),
+                     "-qm", str(Path(temp_dir) / f"app_{language}.qm")],
+                    capture_output=True, text=True, timeout=60, check=False,
+                )
+                self.assertEqual(completed.returncode, 0, completed.stderr)
+            # 1888x1017 physical pixels at 125 % scaling (the validated Windows setup), and the minimum size.
+            for width, height in ((1510, 790), (1280, 720)):
+                for language in ("en", "fr", "ar"):
+                    with self.subTest(language=language, width=width):
+                        engine, page, _app, _cut = self._load_windowed_page(width=width, height=height)
+                        translation = TranslationService(engine, temp_dir, parent=engine)
+                        self.assertTrue(translation.setLanguage(language))
+                        try:
+                            self.app.processEvents()
+                            self.assertEqual(truncated_labels(engine._test_window), [])
+
+                            settings_engine = QQmlApplicationEngine()
+                            settings_translation = TranslationService(settings_engine, temp_dir, parent=settings_engine)
+                            context = settings_engine.rootContext()
+                            context.setContextProperty("translationService", settings_translation)
+                            context.setContextProperty("settingsController", SettingsController(
+                                settings_service=SettingsService(settings_path=Path(temp_dir) / "settings.json"),
+                                translation_service=settings_translation))
+                            context.setContextProperty("updateController", UpdateController())
+                            settings_dir = root_dir / "vue" / "qml" / "WindowsApplication" / "Settings"
+                            qml = f'''import QtQuick
+import QtQuick.Controls
+import "{settings_dir.as_uri()}" as Settings
+
+ApplicationWindow {{
+    visible: true
+    width: {width}
+    height: {height}
+    Settings.SettingsDialog {{ objectName: "settingsDialog" }}
+}}
+'''
+                            settings_engine.loadData(qml.encode("utf-8"), QUrl.fromLocalFile(str(Path(__file__).resolve())))
+                            settings_window = settings_engine.rootObjects()[0]
+                            dialog = settings_window.findChild(QObject, "settingsDialog")
+                            self.assertTrue(QMetaObject.invokeMethod(dialog, "open"))
+                            self.app.processEvents()
+                            self.assertEqual(truncated_labels(settings_window), [])
+                            settings_engine.deleteLater()
+                        finally:
+                            translation.setLanguage("en")
+                        engine.deleteLater()
+                        self.app.processEvents()
 
 
 class PlayerAppController(QObject):

@@ -28,8 +28,19 @@ Button {
     readonly property bool hasImageIcon: String(root.iconSource).length > 0
     readonly property bool hasVectorIcon: root.iconName.length > 0 && !root.hasImageIcon
     readonly property bool hasIcon: root.hasImageIcon || root.hasVectorIcon
+    // Width that shows the whole label at full size: the control padding plus the content margins,
+    // icon and text below. Callers with a fixed width use Math.max(width, labelFitWidth) so longer
+    // translations are not cut.
+    readonly property real labelFitWidth: Math.ceil(labelMetrics.advanceWidth) + root.leftPadding + root.rightPadding
+        + (root.hasIcon ? 10 + (root.hasImageIcon ? root.imageIconWidth : root.iconSize) + 7 : 12) + 12 + 2
 
     Accessible.name: root.accessibilityLabel.length > 0 ? root.accessibilityLabel : root.text
+
+    TextMetrics {
+        id: labelMetrics
+        font: root.font
+        text: root.text
+    }
 
     implicitHeight: {
         if (size === "sm") return 36
@@ -265,6 +276,9 @@ Button {
                 font: root.font
                 horizontalAlignment: root.hasIcon ? Text.AlignLeft : Text.AlignHCenter
                 verticalAlignment: Text.AlignVCenter
+                // Shrink a label that does not fit (down to 10 px) before eliding it.
+                fontSizeMode: Text.HorizontalFit
+                minimumPixelSize: 10
                 elide: Text.ElideRight
             }
         }

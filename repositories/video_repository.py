@@ -1,3 +1,5 @@
+import os
+
 from sqlalchemy.orm import Session
 
 from models.video import Video
@@ -31,6 +33,19 @@ def add_video(
     db.add(video)
     db.flush()
     return video
+
+
+def find_video_for_path(db: Session, *, user_id: int, video_path: str) -> Video | None:
+    """Oldest Video of ``user_id`` for this file, or None.
+
+    Paths compare as the operating system does (``os.path.normcase``: case-insensitive on Windows).
+    The comparison runs in Python because SQLite's ``lower()`` only folds ASCII letters.
+    """
+    wanted = os.path.normcase(str(video_path))
+    for video in db.query(Video).filter(Video.user_id == user_id).order_by(Video.video_id):
+        if os.path.normcase(video.video_path) == wanted:
+            return video
+    return None
 
 
 def get_video_by_id(db: Session, video_id: int) -> Video | None:

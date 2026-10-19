@@ -68,8 +68,19 @@ et n'a pas changé depuis (même taille et même date de modification). Chaque v
 qu'un enregistrement. Appeler cette méthode directement ne permet donc pas de sauter la validation D9,
 ni d'enregistrer un fichier remplacé entre le contrôle et l'enregistrement.
 
-**Défaut préexistant, non modifié.** Chaque chargement réussi ajoute une ligne `Video`
-(`repositories/video_repository.add_video` insère toujours), y compris pour une vidéo déjà connue :
-rouvrir le même fichier crée des doublons. Corriger ce point demande de décider s'il faut réutiliser la
-ligne existante (par chemin, ou par chemin et empreinte) et ce que deviennent les travaux de découpe qui
-y sont rattachés. C'est hors du périmètre de D9.
+**Réouverture d'une vidéo.** Avant la correction, chaque chargement réussi ajoutait une ligne `Video`.
+Désormais `register_video_file` réutilise la plus ancienne ligne du même utilisateur pour le même
+chemin (`repositories/video_repository.find_video_for_path`). La comparaison suit le système de
+fichiers (`os.path.normcase` : insensible à la casse sous Windows). Le nom, le chemin, la taille et le
+format sont mis à jour, et l'identifiant comme les lignes liées sont conservés.
+
+- Un fichier déplacé reçoit une nouvelle ligne ; l'ancienne reste.
+- Un fichier absent ou invalide est refusé avant tout accès à la base.
+- Les doublons déjà présents ne sont ni supprimés ni fusionnés.
+- Aucun résultat d'analyse, ni aucune tâche de découpe (`CutJob`, rattachée par chemin), n'est
+  réécrit.
+
+**Limite.** Il n'y a pas d'index unique, donc pas de migration nécessaire. La réutilisation est garantie
+dans un même processus (verrou), mais deux instances de l'application important le même fichier au même
+instant pourraient encore créer deux lignes. Une garantie atomique demanderait un index unique,
+précédé d'une migration qui rattache les lignes liées des doublons à la ligne conservée.

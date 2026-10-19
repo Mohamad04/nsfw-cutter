@@ -5,7 +5,7 @@ from pathlib import Path
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 os.environ.setdefault("QT_QUICK_BACKEND", "software")
 
-from PySide6.QtCore import Property, QMetaObject, QObject, QUrl, Signal, Slot
+from PySide6.QtCore import Q_ARG, Property, QMetaObject, QObject, QUrl, Signal, Slot
 from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtWidgets import QApplication
 
@@ -938,6 +938,218 @@ ApplicationWindow {{
         self.assertFalse(setup_panel.property("visible"))
         self.assertTrue(analyze_button.property("enabled"))
         self.assertIsNotNone(engine)
+
+
+
+class PlayerAppController(QObject):
+    """The part of AppController that VideoWorkspace uses, with a settable video."""
+
+    selectedVideoPathChanged = Signal()
+    keyframeStateChanged = Signal()
+
+    def __init__(self):
+        super().__init__()
+        self._path = ""
+
+    def set_video(self, path):
+        self._path = str(path) if path else ""
+        self.selectedVideoPathChanged.emit()
+
+    @Property(str, notify=selectedVideoPathChanged)
+    def selectedVideoPath(self):
+        return self._path
+
+    @Property(str, notify=selectedVideoPathChanged)
+    def videoUrl(self):
+        return QUrl.fromLocalFile(self._path).toString() if self._path else ""
+
+    @Property(str, constant=True)
+    def previewSubtitleText(self):
+        return ""
+
+    @Property(int, constant=True)
+    def activePreviewSubtitleTrackIndex(self):
+        return -1
+
+    @Slot(str, str, str, str, str, str)
+    def logPlaybackState(self, *_args):
+        pass
+
+    @Slot(int)
+    def updatePlayerSubtitleTrackCount(self, _count):
+        pass
+
+    @Slot(float)
+    def updatePreviewSubtitlePosition(self, _position):
+        pass
+
+    @Slot()
+    def openFile(self):
+        pass
+
+
+class VideoWorkspacePreviewTests(unittest.TestCase):
+    """V05: a seek before the first Play must show the frame at the new position, silently."""
+
+    @classmethod
+    def setUpClass(cls):
+        import sys
+        import tempfile
+
+        from PySide6 import QtMultimedia  # noqa: F401  (registers the QVideoSink type for property access)
+
+        cls.app = QApplication.instance() or QApplication([])
+        root_dir = Path(__file__).resolve().parents[1]
+        if str(root_dir) not in sys.path:
+            sys.path.insert(0, str(root_dir))
+        from evaluation import export_frame_accuracy as efa
+        from services.infrastructure.ffmpeg.paths import FFmpegNotFoundError, get_ffmpeg_path
+
+        try:
+            ffmpeg = get_ffmpeg_path()
+        except FFmpegNotFoundError:
+            raise unittest.SkipTest("FFmpeg is not available") from None
+        cls.temp = tempfile.TemporaryDirectory()
+        folder = Path(cls.temp.name)
+        # Pattern: left half encodes the source second, right half the frame within the second (25 fps).
+        cls.mp4 = efa.generate_fixture(ffmpeg, efa.FIXTURES["h264_aac_mp4"], folder)
+        cls.mkv = efa.generate_fixture(ffmpeg, efa.FIXTURES["h264_aac_mkv"], folder)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.temp.cleanup()
+
+    def setUp(self):
+        self.controller = PlayerAppController()
+        self.engine = QQmlApplicationEngine()
+        context = self.engine.rootContext()
+        context.setContextProperty("appController", self.controller)
+        context.setContextProperty("videoCutController", FakeVideoCutController())
+        player_dir = Path(__file__).resolve().parents[1] / "vue" / "qml" / "WindowsApplication" / "VideoPlayer"
+        qml = f'''import QtQuick
+import QtQuick.Controls
+import "{player_dir.as_uri()}" as Player
+
+ApplicationWindow {{
+    visible: true
+    width: 900
+    height: 700
+    ListModel {{ id: cuts }}
+    Player.VideoWorkspace {{ objectName: "workspace"; anchors.fill: parent; cutsModel: cuts }}
+}}
+'''
+        self.engine.loadData(qml.encode("utf-8"), QUrl.fromLocalFile(str(Path(__file__).resolve())))
+        self.window = self.engine.rootObjects()[0]
+        self.workspace = self.window.findChild(QObject, "workspace")
+        self.player = next(child for child in self.workspace.findChildren(QObject)
+                           if child.metaObject().className() == "QQuickMediaPlayer")
+        output = next(child for child in self.window.findChildren(QObject)
+                      if child.metaObject().className() == "QQuickVideoOutput")
+        self.sink = output.property("videoSink")
+        self.states = []
+        self.player.playbackStateChanged.connect(lambda state: self.states.append(int(getattr(state, "value", state))))
+
+    def tearDown(self):
+        self.controller.set_video("")
+        self.engine.deleteLater()
+        self.app.processEvents()
+
+    def state(self):
+        # 0 stopped, 1 playing, 2 paused
+        value = self.player.property("playbackState")
+        return int(getattr(value, "value", value))
+
+    def wait_for(self, condition, timeout_ms=8000):
+        from PySide6.QtCore import QElapsedTimer, QEventLoop
+
+        clock = QElapsedTimer()
+        clock.start()
+        while clock.elapsed() < timeout_ms:
+            if condition():
+                return True
+            self.app.processEvents(QEventLoop.AllEvents, 20)
+        return condition()
+
+    def shown_frame_index(self):
+        frame = self.sink.videoFrame()
+        if not frame.isValid():
+            return None
+        image = frame.toImage()
+        y = image.height() // 2
+        second = round(image.pixelColor(image.width() // 4, y).red() * 219 / 255 / 8)
+        within = round(image.pixelColor(3 * image.width() // 4, y).red() * 219 / 255 / 8)
+        return second * 25 + within
+
+    def assert_shows(self, position_ms):
+        # Paused Qt shows the last frame starting at or before the position.
+        expected = int(position_ms // 40)
+        self.assertTrue(self.wait_for(lambda: self.shown_frame_index() in (expected - 1, expected)),
+                        f"shown frame {self.shown_frame_index()}, expected about {expected}")
+
+    def seek_to(self, position_ms):
+        QMetaObject.invokeMethod(self.workspace, "seekTo", Q_ARG("QVariant", position_ms))
+
+    def seek_by(self, seconds):
+        QMetaObject.invokeMethod(self.workspace, "seekBy", Q_ARG("QVariant", seconds))
+
+    def test_seek_before_first_play_shows_the_frame_without_playing(self):
+        self.controller.set_video(self.mp4)
+        self.assertTrue(self.wait_for(lambda: self.state() == 2))  # paused, not playing
+        self.seek_to(12000)
+        self.assert_shows(12000)
+        self.seek_by(5)
+        self.assert_shows(17000)
+        self.assertEqual(self.player.property("position"), 17000)
+        self.assertNotIn(1, self.states, "the player must never start playing on its own")
+
+    def test_seek_requested_while_loading_is_applied_once_loaded(self):
+        self.controller.set_video(self.mp4)
+        self.seek_to(9000)  # media not loaded yet
+        self.assertTrue(self.wait_for(lambda: self.player.property("position") == 9000))
+        self.assert_shows(9000)
+        self.assertNotIn(1, self.states)
+
+    def test_switching_video_drops_the_old_pending_seek(self):
+        self.controller.set_video(self.mp4)
+        self.seek_to(20000)
+        self.controller.set_video(self.mkv)  # before the MP4 finished loading
+        self.assertTrue(self.wait_for(lambda: self.state() == 2))
+        self.assertEqual(self.player.property("position"), 0)
+        self.seek_to(4000)
+        self.assert_shows(4000)
+
+    def test_opening_another_video_after_a_loaded_one_still_shows_frames(self):
+        # Packaged-app V05 retest: MP4 loaded (paused on its first frame), then an MKV is opened.
+        self.controller.set_video(self.mp4)
+        self.assertTrue(self.wait_for(lambda: self.state() == 2))
+        self.assert_shows(0)
+        self.controller.set_video(self.mkv)
+        self.assertTrue(self.wait_for(lambda: self.player.property("source").toLocalFile().endswith(".mkv")
+                                      and self.state() == 2 and self.shown_frame_index() == 0))
+        self.seek_to(12000)
+        self.assert_shows(12000)
+        self.assertNotIn(1, self.states)
+
+    def test_seek_right_after_opening_another_video_is_applied_to_it(self):
+        self.controller.set_video(self.mp4)
+        self.assertTrue(self.wait_for(lambda: self.state() == 2))
+        self.controller.set_video(self.mkv)
+        self.seek_to(9000)  # while the MKV is still being opened
+        self.assertTrue(self.wait_for(lambda: self.player.property("source").toLocalFile().endswith(".mkv")
+                                      and self.player.property("position") == 9000))
+        self.assert_shows(9000)
+        self.assertEqual(self.state(), 2)
+        self.assertNotIn(1, self.states)
+
+    def test_seek_after_the_end_of_the_video_shows_the_frame(self):
+        self.controller.set_video(self.mkv)
+        self.assertTrue(self.wait_for(lambda: self.state() == 2))
+        self.seek_to(29600)
+        QMetaObject.invokeMethod(self.workspace, "togglePlayback")
+        self.assertTrue(self.wait_for(lambda: self.state() == 0))  # stopped at the end
+        self.seek_to(6000)
+        self.assert_shows(6000)
+        self.assertEqual(self.state(), 2)
 
 
 if __name__ == "__main__":

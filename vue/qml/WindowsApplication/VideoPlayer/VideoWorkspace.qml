@@ -37,6 +37,12 @@ Rectangle {
     readonly property real positionMs: player.position
     readonly property bool hasVideo: appController.videoUrl.length > 0
     readonly property bool isPlaying: player.playbackState === MediaPlayer.PlayingState
+    // A seek requested before the media has loaded; applied once it has.
+    property real pendingSeekMs: -1
+    // Set when the source changes, cleared once the new media is shown paused. While switching, Qt
+    // first reports LoadedMedia again for the previous media; pausing on that one left the new media
+    // "paused" without ever rendering a frame.
+    property bool showFirstFrameOnLoad: false
 
     signal cutAdded(var cut)
     signal timingModeSelected(string mode)
@@ -192,12 +198,37 @@ Rectangle {
         root.dragOriginalEndSeconds = 0
     }
 
+    function mediaReady() {
+        if (root.showFirstFrameOnLoad) return false  // the new source has not finished loading
+        return player.mediaStatus === MediaPlayer.LoadedMedia
+            || player.mediaStatus === MediaPlayer.BufferingMedia
+            || player.mediaStatus === MediaPlayer.BufferedMedia
+            || player.mediaStatus === MediaPlayer.EndOfMedia
+    }
+
+    // Qt's FFmpeg backend renders no frame while stopped: a seek then only moves the position and the
+    // preview stays black. Paused (silent) renders the frame at each new position.
+    function showFramesWhileStopped() {
+        if (player.playbackState === MediaPlayer.StoppedState && root.mediaReady())
+            player.pause()
+    }
+
+    function seekTo(positionMs) {
+        if (!root.hasVideo) return
+        var target = Math.max(0, positionMs)
+        if (player.duration > 0) target = Math.min(target, player.duration)
+        if (!root.mediaReady()) {
+            root.pendingSeekMs = target
+            return
+        }
+        root.showFramesWhileStopped()
+        player.position = target
+    }
+
     function seekBy(seconds) {
         if (!root.hasVideo) return
-        var nextPosition = player.position + seconds * 1000
-        if (nextPosition < 0) nextPosition = 0
-        if (player.duration > 0 && nextPosition > player.duration) nextPosition = player.duration
-        player.position = nextPosition
+        var base = root.pendingSeekMs >= 0 ? root.pendingSeekMs : player.position
+        root.seekTo(base + seconds * 1000)
     }
 
     function togglePlayback() {
@@ -455,6 +486,8 @@ Rectangle {
         onVideoTracksChanged: root.scheduleSubtitleTrackSync()
         onSubtitleTracksChanged: root.scheduleSubtitleTrackSync()
         onSourceChanged: {
+            root.pendingSeekMs = -1
+            root.showFirstFrameOnLoad = String(player.source).length > 0
             player.activeAudioTrack = -1
             player.activeVideoTrack = -1
             player.activeSubtitleTrack = -1
@@ -464,6 +497,16 @@ Rectangle {
         onMediaStatusChanged: {
             root.logPlayerState("mediaStatusChanged")
             root.scheduleSubtitleTrackSync()
+            if (player.mediaStatus === MediaPlayer.LoadedMedia && root.showFirstFrameOnLoad) {
+                // Show the first frame (or the position the user already asked for) without playing.
+                root.showFirstFrameOnLoad = false
+                if (player.playbackState === MediaPlayer.StoppedState)
+                    player.pause()
+                if (root.pendingSeekMs >= 0) {
+                    player.position = root.pendingSeekMs
+                    root.pendingSeekMs = -1
+                }
+            }
         }
         onErrorOccurred: function(error, errorString) {
             root.logPlayerState("errorOccurred")
@@ -560,7 +603,7 @@ Rectangle {
             }
 
             onSeekRequested: function(positionMs) {
-                player.position = positionMs
+                root.seekTo(positionMs)
             }
 
             onVolumeLevelChangeRequested: function(value) {

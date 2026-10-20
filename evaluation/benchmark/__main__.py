@@ -1,4 +1,7 @@
-"""CLI: python -m evaluation.benchmark validate|score. Never opens media or imports the AI runtime."""
+"""CLI: python -m evaluation.benchmark validate|score|run|collect.
+
+validate/score/collect never open media or import the AI runtime; run requires --allow-inference.
+"""
 from __future__ import annotations
 
 import argparse
@@ -17,7 +20,9 @@ def main(argv=None):
     commands = parser.add_subparsers(dest="command", required=True)
     validate = commands.add_parser("validate", help="validate a benchmark manifest (no media access)")
     scoring = commands.add_parser("score", help="score recorded results against a manifest")
-    for command in (validate, scoring):
+    running = commands.add_parser("run", help="run A2/A1 sequentially on the manifest's media (inference)")
+    collecting = commands.add_parser("collect", help="build a validated ResultsFile from a campaign")
+    for command in (validate, scoring, running, collecting):
         command.add_argument("manifest", type=Path)
         # Mandatory: the anti-leakage check against the tuning pilot cannot be skipped.
         command.add_argument("--pilot-manifest", type=Path, required=True,
@@ -27,7 +32,26 @@ def main(argv=None):
     scoring.add_argument("--split", choices=("tuning", "test"), default="test")
     scoring.add_argument("--resamples", type=int, default=DEFAULT_RESAMPLES)
     scoring.add_argument("--seed", type=int, default=DEFAULT_SEED)
+    running.add_argument("--media-root", type=Path, required=True)
+    running.add_argument("--campaign", type=Path, required=True)
+    running.add_argument("--allow-inference", action="store_true")
+    running.add_argument("--retry-incomplete", action="store_true")
+    running.add_argument("--attempt-timeout", type=float, default=300.0)
+    collecting.add_argument("--campaign", type=Path, required=True)
+    collecting.add_argument("--output", type=Path, required=True, help="new ResultsFile path; must not exist")
     args = parser.parse_args(argv)
+
+    if args.command in ("run", "collect"):
+        from evaluation.benchmark import runner
+        if args.command == "run":
+            outcome = runner.run(args.manifest, args.media_root, args.campaign, args.pilot_manifest,
+                                 allow_inference=args.allow_inference, retry_incomplete=args.retry_incomplete,
+                                 limits=runner.Limits(attempt_timeout_seconds=args.attempt_timeout))
+            print(json.dumps(outcome, indent=2, default=str))
+            return 0 if outcome.get("stopped_at") is None else 2
+        results = runner.collect(args.manifest, args.campaign, args.pilot_manifest, args.output)
+        print(json.dumps({"output": str(args.output), "results": len(results.results)}, indent=2))
+        return 0
 
     manifest = load_manifest(args.manifest)
     if args.command == "validate":

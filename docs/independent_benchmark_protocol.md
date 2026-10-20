@@ -24,8 +24,20 @@ révisions de modèles, réglages, matériel).
   de Whisper, puis enregistrer les chemins des DLL chargées. Le préchargement vérifie les empreintes
   épinglées, puis charge `cublasLt64_12.dll` et `cublas64_12.dll` **dans le processus d'évaluation
   seulement**. Aucun module de production n'importe `evaluation/`, et l'exécutable embarque déjà
-  son propre cuBLAS 12. *Ce préchargement n'a pas encore été vérifié par une inférence* : c'est la
-  première vérification à faire (étape 10.2).
+  son propre cuBLAS 12.
+  - **Diagnostic du 2026-10-20 (processus neuf, depuis le code source) :**
+    - cuBLAS 12 est chargé depuis `vendor\cuda12-cublas`, cuBLAS 13 depuis `torch\lib` ;
+    - torch tourne sur CUDA dans le même processus ;
+    - Whisper tourne en `cuda` / `float16` : chargement 2,2 s, transcription 0,81 s ;
+    - les **3 segments sont identiques à l'exécutable validé**, bornes comprises
+      (0–3,4 / 3,4–10,0 / 10,0–11,8 s) ;
+    - VRAM de 1 246 à 2 101 Mio, RAM du processus 1,48 Go.
+
+    Preuves : `artifacts/benchmark-runner-20261020/whisper-diag/`.
+  - **Différence avec l'exécutable.** Dans le `.venv`, CTranslate2 charge aussi sa cale
+    `cudnn64_9.dll`, absente de l'exécutable. Elle porte le même nom que le cuDNN 9.20 de PyTorch.
+    Le worker initialise donc CUDA dans torch **avant** CTranslate2, et enregistre les chemins de
+    cuDNN et de cuBLAS réellement chargés (`loaded_runtime_libraries`).
 - **Pilote de 6 clips.** Ses données sont des données de **tuning**, sans valeur de test. Ses
   sources ne doivent jamais apparaître dans le benchmark.
 
@@ -344,23 +356,124 @@ run à la fois, à cause des 5,1 Go de VRAM et des 9,9 Go de RAM.
 
 1. Confirmer que le cadre du stage est **académique et non commercial**, condition de la licence
    Charades. Accepter le volet 1 comme seul volet réalisable sans autorisation.
-2. Autoriser une **vérification d'inférence** d'une vidéo synthétique non sensible, dans un processus
-   neuf. Elle doit prouver Whisper en CUDA `float16` via `enable_whisper_cuda12_cublas` : DLL
-   chargées depuis `vendor/cuda12-cublas`, transcription correcte.
+2. ~~Vérifier Whisper en CUDA `float16` depuis le code source~~ : **fait le 2026-10-20** (section 1).
 3. Autoriser le téléchargement de `Charades.zip` (annotations, déjà lues) et de
    `Charades_v1_480.zip` (16,3 Go). Le téléchargement est vérifié par le SHA-256 consigné, et seul
    le sous-ensemble du manifeste est extrait.
-4. Écrire et tester un **runner** mince (code d'évaluation seulement). Il doit :
-   - lancer un processus par vidéo et par configuration, avec un cache privé ;
-   - échantillonner RAM et VRAM ;
-   - produire le schéma `ResultsFile` ;
-   - extraire les scores Marqo du journal.
-5. Lancer d'abord le manifeste de 100 vidéos, vérifier les sorties, puis passer à 500 ou 1 000.
+4. ~~Écrire et tester le runner~~ : **implémenté et testé** sur données synthétiques avec un pipeline
+   simulé (section 10 bis). Il n'a encore jamais été exécuté avec les vrais modèles.
+5. Lancer d'abord le manifeste de 100 vidéos, vérifier les sorties, puis passer à 500 ou 1 000
+   (critères en section 10 ter).
 6. Faire la revue humaine des alertes et de l'audit, versionner les étiquettes (avec
    `review_basis`), puis lancer
    `python -m evaluation.benchmark score MANIFEST RESULTS --pilot-manifest artifacts/pilot/manifest.json --output DOSSIER_NEUF`.
 7. Pour le volet 2 : décision sur les demandes Pornography-2k et NPDI-800, hors contrainte
    « sans autorisation ».
+
+## 10 bis. Runner de campagne (`evaluation/benchmark/runner.py`, `worker.py`)
+
+```powershell
+# Inférence (autorisation explicite requise), séquentielle, reprenable :
+.venv\Scripts\python.exe -m evaluation.benchmark run MANIFEST --media-root DOSSIER_MEDIAS --campaign artifacts\benchmark\campagne-001 --pilot-manifest artifacts\pilot\manifest.json --allow-inference
+# Après examen d'un échec ou d'une annulation :
+... run ... --retry-incomplete
+# Construction d'un ResultsFile validé (nouveau fichier, jamais écrasé) :
+.venv\Scripts\python.exe -m evaluation.benchmark collect MANIFEST --campaign artifacts\benchmark\campagne-001 --pilot-manifest artifacts\pilot\manifest.json --output artifacts\benchmark\campagne-001-results.json
+```
+
+- **Une vidéo source à la fois, en ordre fixe.** Le manifeste fixe l'ordre. Pour chaque vidéo :
+  1. vérification du SHA-256 ;
+  2. préparation de la copie **vidéo seule** vérifiée pour A1 (`inputs/`) ;
+  3. exécution de A2 et de A1, **chacune dans un processus neuf** (`cold_process`), dans un ordre
+     alterné d'une vidéo à l'autre.
+
+  A0 est déduit après coup des scores Marqo enregistrés par A2.
+- **Isolement.** Chaque tentative a son dossier exclusif (`attempts/<UTC>_<item>_<config>_<uuid>/`),
+  son cache d'analyse privé et `force_reanalysis`. Le pipeline de production est **inchangé** : les
+  observateurs du pilote lui sont seulement ajoutés.
+- **Verrou et identité de campagne.** Un verrou système empêche deux exécutions concurrentes.
+  `campaign.json` fixe le manifeste, le pilote, la configuration gelée (`3348307d…`), la référence
+  `2399e950`, les révisions de modèles, l'empreinte du code d'analyse et des dépendances, les
+  limites et le préchargement. Tout changement impose une nouvelle campagne.
+- **Contrôle d'identité avant toute exécution.** `services/analysis`, `models` et `core` doivent être
+  identiques à `2399e950`, sans fichier non suivi. Les réglages doivent correspondre à
+  l'empreinte gelée.
+- **Écritures atomiques.** Fichier temporaire, `fsync`, puis renommage, sans jamais écraser un
+  fichier existant.
+- **Reprise.** Une tentative terminée n'est jamais refaite. Un échec ou une annulation impose une
+  reprise **explicite** (`--retry-incomplete`), et l'historique des tentatives est conservé. La
+  campagne s'arrête au premier résultat non terminé.
+- **Statuts explicites.** `completed`, `partial`, `failed`, `cancelled`, plus `not_run` à la
+  collecte. Erreurs typées :
+  - `input_sha256_mismatch` ;
+  - `whisper_cpu_fallback` ou `whisper_unavailable` (pour A2) ;
+  - `a1_text_branch_ran` ;
+  - `resource_limit:*`, `timeout` ou `interrupted_by_user` (raison du parent) ;
+  - `|killed_after_grace` en suffixe.
+
+  Une sortie sans résumé compte comme un échec.
+- **GPU ou repli CPU.** Le worker classe le mode de calcul de Whisper d'après les avertissements de
+  production. Un repli sur CPU **fait échouer** A2, et `collect` refuse tout A2 terminé sans
+  `cuda_float16`. Les DLL CUDA et cuDNN chargées sont enregistrées.
+- **Mesures :**
+  - durée de chaque étape d'après les événements de progression, temps du pipeline et temps total ;
+  - surveillance chaque seconde par le parent : RAM de l'arbre de processus, mémoire disponible,
+    mémoire virtuelle libre, VRAM et utilisation du GPU (`monitor.jsonl`, pics dans
+    `monitor_summary.json`).
+- **Limites par défaut :** mémoire disponible au moins 2,5 Go ; mémoire virtuelle libre au moins
+  1,5 Go ; VRAM sous 7 900 Mio, une alerte n'étant déclenchée qu'après 5 échantillons consécutifs ;
+  300 s par tentative. En cas de dépassement : annulation coopérative, puis arrêt forcé après 60 s.
+- **Froid et chaud.** Toutes les tentatives démarrent avec des modèles froids (`cold_process`). Le
+  cache disque de l'OS n'est pas contrôlé (`os_file_cache: unknown`). Une mesure à processus chaud
+  devrait former une campagne distincte, jamais mélangée à celle-ci.
+- **Limites des tests.** Le runner a été testé avec un pipeline simulé, de vraies vidéos synthétiques
+  et un vrai sous-processus worker (qui refuse une entrée). Il n'a jamais tourné avec les vrais
+  modèles : la première campagne réelle doit commencer par quelques vidéos et une relecture de leurs
+  sorties.
+
+## 10 ter. Plan du premier pilote technique Charades (100 vidéos)
+
+- **Licence.** « Non-Commercial Use » : chercheurs académiques, à but non lucratif ou
+  gouvernementaux, ou « evaluation purposes » ; ni redistribution ni publication des données, sauf
+  de courts extraits si nécessaire. Le cadre du stage doit être **confirmé par écrit** avant le
+  téléchargement.
+- **Disponibilité (métadonnées seulement).** Requête HEAD du 2026-10-19 : `Charades_v1_480.zip`,
+  16 339 546 533 octets, Last-Modified 2021-02-04. L'archive d'annotations a pour SHA-256
+  `c616913e…`. La source ne publie aucune empreinte pour l'archive vidéo : il faudra calculer et
+  consigner son SHA-256 au premier téléchargement.
+- **Stockage.** Environ 17 Go : l'archive entière (16,3 Go), environ 170 Mo de vidéos extraites,
+  autant de copies A1, et moins de 1 Go de résultats. L'archive peut être supprimée après
+  extraction, une fois son SHA-256 consigné.
+- **Manifeste.** `charades_track1_100` (70 sujets, 50 difficiles et 50 ordinaires), groupé par
+  sujet. Après extraction : SHA-256 et durées ffprobe, nouvelle version du manifeste, puis
+  `validate --pilot-manifest`.
+- **Audio, parole et langue.**
+  - Présence d'audio : ffprobe.
+  - Parole et langue : transcription Whisper de A2 (langue et probabilité dans l'enregistrement).
+  - Ces mesures sont rapportées comme **caractéristiques du jeu**, sans jamais servir à choisir les
+    vidéos après coup.
+- **Arrêt anticipé de la comparaison A1/A2.** Si moins de 10 vidéos sur 100 contiennent une parole
+  en anglais détectée, la comparaison A2 − A1 est déclarée **non informative** sur Charades. On
+  rapporte alors seulement A0 contre A2. Ce seuil est pré-déclaré ici.
+- **Revue humaine.**
+  - Toutes les vidéos alertées par l'une des configurations (A0 à 0,15 ou 0,45, A1, A2) sont revues
+    par deux relecteurs, avec arbitrage ; leur accord est consigné.
+  - Un audit aléatoire porte sur au moins 10 % des autres vidéos, au minimum 30 si possible, avec
+    une graine déclarée à l'avance.
+  - Aucune capture d'écran.
+  - Une vidéo NSFW découverte est exclue (`nsfw_discovered`) et comptée.
+  - Aucune vidéo non revue n'est traitée comme un négatif vérifié.
+- **Budget.**
+  - Environ 0,9 h de temps GPU en hypothèse optimiste, 1,7 h attendue, 3,1 h prudente.
+  - Pics d'environ 9,9 Go de RAM et 5,1 Go de VRAM, une exécution à la fois.
+  - Commencer par les 5 premières vidéos, relire leurs tentatives, puis poursuivre.
+- **Passage à 500, puis à 1 000 vidéos, si :**
+  - au moins 95 % des tentatives sont terminées, sans limite de ressources dépassée ni repli de
+    Whisper sur CPU ;
+  - la revue des alertes est faite et les durées mesurées sont compatibles avec le budget ;
+  - aucune anomalie de provenance n'a été relevée.
+
+  Les 1 000 vidéos ne viennent qu'après validation des 500.
 
 ## 11. Tableaux et figures pour le rapport de stage
 

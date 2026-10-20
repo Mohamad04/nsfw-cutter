@@ -461,6 +461,23 @@ run à la fois, à cause des 5,1 Go de VRAM et des 9,9 Go de RAM.
   - l'empreinte du manifeste dérivé et le SHA-256 de la spécification.
 
   Une vidéo exclue retire ses deux configurations, si bien qu'une paire A1/A2 n'est jamais coupée.
+- **Étiquettes de référence ajoutées après la campagne (`score --labels LABELS.json`).** Un fichier
+  de résultats reste lié à l'empreinte du manifeste avec lequel la campagne a tourné. Les étiquettes
+  humaines sont donc gardées à part, dans un fichier exporté par l'outil de revue
+  (`python -m evaluation.annotation export`, voir `docs/nsfw_annotation_guide.md`, § 11). Ce
+  fichier est lié à la même empreinte et aux SHA-256 des médias, et doit couvrir toutes les vidéos
+  évaluables.
+  - `score` applique ces étiquettes en mémoire et valide le manifeste étiqueté contre le contrat
+    complet. Une vidéo NSFW découverte dans le volet technique devient `nsfw_discovered`.
+  - `score` enregistre `reference_labels` et, avec un seul relecteur, ajoute
+    `annotation_warning`.
+  - Ni le manifeste ni les résultats ne sont modifiés.
+  - Les positifs découverts restent visibles dans `excluded_reference_positives_outcomes`, avec
+    leurs étiquettes humaines, leurs événements, l'empreinte de l'enregistrement verrouillé et les
+    alertes de A0, A1 et A2. Ils sont exclus de tous les taux, ne sont jamais comptés comme
+    négatifs, et cette liste n'est pas une mesure de performance de détection.
+  - Un sous-ensemble (`--subset`) peut nommer une vidéo déjà exclue par la revue : elle garde son
+    propre motif (`already_excluded`).
 - **Incertitude groupée et accord sans étiquette (`score`).** `alert_uncertainty` ajoute à
   l'intervalle de Wilson simple un bootstrap groupé par sujet du taux d'alerte.
   `paired_alert_agreement` compte, vidéo par vidéo, les alertes communes, propres à chaque

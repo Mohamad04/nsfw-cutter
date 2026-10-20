@@ -36,6 +36,9 @@ def main(argv=None):
     scoring.add_argument("--subset", type=Path,
                          help="JSON spec (subset_id, reason, exclude_item_ids, optional selection_rule) of a "
                               "documented sensitivity subset; results and manifest are left unchanged")
+    scoring.add_argument("--labels", type=Path,
+                         help="reference labels file exported by python -m evaluation.annotation, bound to this "
+                              "manifest's digest; the manifest and results are left unchanged")
     running.add_argument("--media-root", type=Path, required=True)
     running.add_argument("--campaign", type=Path, required=True)
     running.add_argument("--allow-inference", action="store_true")
@@ -73,8 +76,12 @@ def main(argv=None):
     if args.subset is not None:
         subset = json.loads(args.subset.read_text(encoding="utf-8-sig"))
         subset["spec_file"] = {"path": str(args.subset), "sha256": hashlib.sha256(args.subset.read_bytes()).hexdigest()}
+    labels = None
+    if args.labels is not None:
+        from evaluation.benchmark.labels import load_labels
+        labels = load_labels(args.labels)
     report = score(manifest, load_results(args.results), pilot_manifest=args.pilot_manifest, split=args.split,
-                   resamples=args.resamples, seed=args.seed, subset=subset)
+                   resamples=args.resamples, seed=args.seed, subset=subset, labels=labels)
     args.output.mkdir(parents=True, exist_ok=False)
     (args.output / "metrics.json").write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
     with (args.output / "per_video.csv").open("w", newline="", encoding="utf-8") as handle:

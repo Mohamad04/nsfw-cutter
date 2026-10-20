@@ -4,6 +4,7 @@ from __future__ import annotations
 import statistics
 
 from evaluation.benchmark import events, video_metrics as vm
+from evaluation.benchmark.labels import apply_reference_labels
 from evaluation.benchmark.manifest import BenchmarkManifest, assert_disjoint_from_pilot, manifest_digest
 from evaluation.benchmark.results import ResultsFile
 from evaluation.benchmark.stats import grouped_bootstrap, holm, mcnemar_exact
@@ -22,8 +23,9 @@ def apply_subset(manifest: BenchmarkManifest, spec: dict, split: str = "test"):
     spec: {"subset_id", "reason", "exclude_item_ids": [...],
            optional "selection_rule": {"provenance_flag", "scope": "item" (default) | "subject"}}.
     Excluded items keep both configurations out (an A1/A2 pair is never split). With a provenance flag,
-    the listed items must be exactly the evaluable items carrying that flag (scope "item"), or every
-    evaluable item of a subject that has a flagged item (scope "subject": subject-disjoint subset).
+    the listed items must be exactly the split's items carrying that flag (scope "item"), or every item
+    of a subject that has a flagged item (scope "subject": subject-disjoint subset). Items already
+    excluded (e.g. NSFW discovered during review) stay excluded under their own reason and are listed.
     Returns the derived manifest and the record written to the report.
     """
     subset_id, reason = str(spec.get("subset_id", "")).strip(), str(spec.get("reason", "")).strip()
@@ -32,36 +34,37 @@ def apply_subset(manifest: BenchmarkManifest, spec: dict, split: str = "test"):
         raise ValueError("a subset needs subset_id, reason and a non-empty exclude_item_ids")
     if len(ids) != len(set(ids)):
         raise ValueError("exclude_item_ids must be unique")
+    candidates = {item.item_id: item for item in manifest.items if item.split == split}
     evaluable = {item.item_id: item for item in manifest.evaluable(split)}
-    unknown = sorted(set(ids) - set(evaluable))
+    unknown = sorted(set(ids) - set(candidates))
     if unknown:
-        raise ValueError("subset exclusions are not evaluable items of this split: " + ", ".join(unknown))
+        raise ValueError("subset exclusions are not items of this split: " + ", ".join(unknown))
     rule = spec.get("selection_rule") or {}
     flag, scope = rule.get("provenance_flag"), rule.get("scope", "item")
     if scope not in ("item", "subject"):
         raise ValueError("selection_rule.scope must be 'item' or 'subject'")
     if flag is not None:
-        flagged = {item_id for item_id, item in evaluable.items() if item.provenance.get(flag) is True}
+        flagged = {item_id for item_id, item in candidates.items() if item.provenance.get(flag) is True}
         if scope == "subject":
-            subjects = {evaluable[item_id].group_id for item_id in flagged}
-            flagged = {item_id for item_id, item in evaluable.items() if item.group_id in subjects}
+            subjects = {candidates[item_id].group_id for item_id in flagged}
+            flagged = {item_id for item_id, item in candidates.items() if item.group_id in subjects}
         if not flagged or flagged != set(ids):
-            raise ValueError(f"exclude_item_ids must be exactly the evaluable items selected by {flag!r} "
-                             f"(scope {scope!r})")
-    if len(ids) == len(evaluable):
-        raise ValueError("a subset cannot exclude every evaluable item")
+            raise ValueError(f"exclude_item_ids must be exactly the items selected by {flag!r} (scope {scope!r})")
     marker = SUBSET_EXCLUSION_PREFIX + reason
     derived = manifest.model_copy(update={"items": [
-        item.model_copy(update={"excluded": True, "exclusion_reason": marker}) if item.item_id in ids else item
-        for item in manifest.items]})
+        item.model_copy(update={"excluded": True, "exclusion_reason": marker})
+        if item.item_id in ids and item.item_id in evaluable else item for item in manifest.items]})
     remaining = derived.evaluable(split)
+    if not remaining:
+        raise ValueError("a subset cannot exclude every evaluable item")
     return derived, {
         "subset_id": subset_id, "reason": reason, "description": spec.get("description", ""),
         "selection_rule": spec.get("selection_rule"), "spec_file": spec.get("spec_file"), "excluded_item_ids": sorted(ids),
-        "excluded_groups": sorted({evaluable[i].group_id for i in ids}),
+        "already_excluded": {i: candidates[i].exclusion_reason for i in sorted(ids) if i not in evaluable},
+        "excluded_groups": sorted({candidates[i].group_id for i in ids}),
         "base_evaluable": len(evaluable), "base_groups": len({i.group_id for i in evaluable.values()}),
         "remaining_evaluable": len(remaining), "remaining_groups": len({i.group_id for i in remaining}),
-        "groups_shared_with_excluded_items": sorted({evaluable[i].group_id for i in ids}
+        "groups_shared_with_excluded_items": sorted({candidates[i].group_id for i in ids}
                                                     & {i.group_id for i in remaining}),
         "derived_manifest_digest": manifest_digest(derived)}
 
@@ -188,6 +191,31 @@ def _paired_alerts(rows_x, rows_y, name_x, name_y, resamples, seed):
                 len({p["group_id"] for p in usable if p["x"] != p["y"]}), "a discordant pair")}
 
 
+def _excluded_positive_outcomes(manifest: BenchmarkManifest, results: ResultsFile, split: str):
+    """Reference positives excluded from scoring (e.g. NSFW discovered in the technical corpus), with
+    the human labels and what each configuration did on them: kept visible, never scored as negatives."""
+    by_key = {(r.item_id, r.config): r for r in results.results}
+    rows = []
+    for item in manifest.items:
+        if item.split != split or not item.excluded or item.video_label != "positive":
+            continue
+        a2 = by_key.get((item.item_id, "A2"))
+        events = item.temporal.events if item.temporal else []
+        rows.append({"item_id": item.item_id, "group_id": item.group_id, "exclusion_reason": item.exclusion_reason,
+                     "media_sha256": item.sha256, "review_basis": item.review_basis,
+                     "category_labels": dict(item.category_labels),
+                     "nudity_context": item.provenance.get("nudity_context"),
+                     "reference_record_sha256": item.provenance.get("reference_record_sha256"),
+                     "events": [{"start_seconds": e.start_seconds, "end_seconds": e.end_seconds,
+                                 "categories": list(e.categories)} for e in events],
+                     "alerts": {"A1": vm.pipeline_alert(by_key.get((item.item_id, "A1"))),
+                                "A2": vm.pipeline_alert(a2),
+                                **{f"A0@{tau:.2f}": vm.a0_alert(a2, tau)[0] for tau in vm.A0_THRESHOLDS}}})
+    return {"note": "incidental positives found during review: descriptive only, excluded from every rate; "
+                    "not an independent measure of NSFW detection performance (alert None = no usable run)",
+            "count": len(rows), "items": rows}
+
+
 def _runtime(results: ResultsFile, manifest: BenchmarkManifest, split: str):
     durations = {i.item_id: i.duration_seconds for i in manifest.evaluable(split)}
     summary = {}
@@ -215,16 +243,20 @@ def _runtime(results: ResultsFile, manifest: BenchmarkManifest, split: str):
 
 
 def score(manifest: BenchmarkManifest, results: ResultsFile, *, pilot_manifest, split: str = "test",
-          resamples: int = DEFAULT_RESAMPLES, seed: int = DEFAULT_SEED, subset: dict | None = None):
+          resamples: int = DEFAULT_RESAMPLES, seed: int = DEFAULT_SEED, subset: dict | None = None,
+          labels: dict | None = None):
     """pilot_manifest (the development/tuning pilot) is mandatory: scoring always re-checks leakage.
 
-    subset (see apply_subset) scores a documented part of the campaign; the results must still belong to
-    the full manifest, whose digest is the one reported.
+    subset (see apply_subset) scores a documented part of the campaign; labels (see labels.py) are human
+    reference labels recorded after the campaign. Results must still belong to the full, unlabelled
+    manifest, whose digest is the one reported.
     """
     digest = manifest_digest(manifest)
     disjoint = assert_disjoint_from_pilot(manifest, pilot_manifest)
     results.check_against(manifest, digest)
-    subset_record = None
+    labels_record, subset_record = None, None
+    if labels is not None:
+        manifest, labels_record = apply_reference_labels(manifest, labels, split)
     if subset is not None:
         manifest, subset_record = apply_subset(manifest, subset, split)
     items = manifest.evaluable(split)
@@ -254,10 +286,16 @@ def score(manifest: BenchmarkManifest, results: ResultsFile, *, pilot_manifest, 
                            "a0_fallback_scores_ignored": fallbacks},
         "video_level": {name: _video_section(config_rows, resamples, seed) for name, config_rows in rows.items()},
         "runtime": _runtime(results, manifest, split),
+        "excluded_reference_positives_outcomes": _excluded_positive_outcomes(manifest, results, split),
         "per_video": [{"item_id": r["item_id"], "group_id": r["group_id"], "label": r["label"],
                        **{name: next(x["alert"] for x in rows[name] if x["item_id"] == r["item_id"])
                           for name in rows}} for r in rows["A2"]],
     }
+    if labels_record is not None:
+        report["reference_labels"] = labels_record
+        if labels_record["single_reviewer"]:
+            report["annotation_warning"] = ("single reviewer: reference labels have no inter-annotator "
+                                            "reliability; metrics depend on one person's judgement")
     if subset_record is not None:
         report["subset"] = subset_record
     report["alert_uncertainty"] = {

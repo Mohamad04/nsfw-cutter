@@ -2,8 +2,8 @@
 
 > **PROPOSED / NOT YET HUMAN-APPROVED — Statut : proposition, non approuvée.** Ce guide n'a été
 > validé par aucun responsable humain. Il remplace la version 1 du kit (`blinded/PROTOCOLE.md`)
-> **seulement après approbation écrite**, consignée dans le journal d'audit. Il doit ensuite rester figé pour toutes les vidéos d'une même
-> campagne.
+> **seulement après approbation écrite**, consignée dans le journal d'audit. Il doit ensuite rester
+> figé pour toutes les vidéos d'une même campagne.
 
 Ce guide sert à établir des étiquettes de référence humaines pour le benchmark indépendant
 (`docs/independent_benchmark_protocol.md`, sections 8 bis et 10 ter). Il reprend les trois
@@ -46,6 +46,24 @@ et ne modifient ni ce prompt ni les catégories du pipeline.
 3. Pas de capture d'écran, d'enregistrement, d'extrait ni de partage. Les médias restent sur le
    poste prévu.
 4. Noter `watched_in_full`, `audio_listened`, `minutes_spent`, `reviewer_id` et `review_date`.
+
+**Outil de revue hors ligne** (`python -m evaluation.annotation review`, section 11). Avec l'outil,
+les étapes 1 et 4 sont automatiques :
+- le SHA-256 est vérifié avant le chargement ;
+- l'identifiant du relecteur, les horodatages et le temps passé sont enregistrés.
+
+L'outil enregistre aussi les **intervalles réellement lus**. Une avancée de lecture n'est comptée
+que si elle est cohérente avec le temps réel écoulé et la vitesse choisie (0,5× à 2×). Un saut, une
+avance rapide, une pause ou un changement de vitesse ne comptent jamais comme visionnés, et un
+passage revu n'est compté qu'une fois.
+
+La case « vu en entier » ne peut être cochée que lorsque **toute** la vidéo a été lue. Une
+tolérance de 0,5 s au total couvre la granularité des positions du lecteur et l'écart de fin de
+flux. Le compteur « non lu » indique ce qui manque. Une vidéo n'est `negative` que si trois
+conditions sont remplies : les trois catégories sont choisies `absent`, la case « vu en entier »
+est cochée, et la case « audio écouté » l'est aussi quand la vidéo a une piste audio. Le
+verrouillage demande une dernière confirmation, qui affiche l'étiquette. Rien n'est jamais déduit
+par défaut.
 
 ## 4. Catégories
 
@@ -224,6 +242,21 @@ dans les fiches, dans l'adjudication et dans le rapport.
 Avec un seul relecteur, la revue est **exploratoire**. Aucun accord inter-annotateurs n'est calculé
 ni revendiqué, et la fiche du second relecteur reste vide.
 
+Conséquences à déclarer dans tout rapport :
+- **Fiabilité.** Les étiquettes reflètent le jugement d'une seule personne. Ses erreurs et ses biais
+  d'interprétation ne sont ni détectés ni corrigés par un second avis. Il n'y a pas d'adjudication.
+- **Aveugle imparfait.** Si le relecteur unique est aussi l'auteur du projet, il a pu voir des
+  résultats de la campagne (par exemple les identifiants des vidéos alertées). L'outil n'affiche
+  ni identifiant, ni nom de fichier, ni prédiction, ni indice Charades, et suit un ordre aléatoire.
+  Il limite donc ce biais sans pouvoir l'exclure.
+- **Métriques.** Toute métrique calculée sur ces étiquettes (spécificité, taux de fausses alertes)
+  doit porter la mention « référence à un seul relecteur ». `score` ajoute automatiquement
+  l'avertissement `annotation_warning`.
+- **Cohérence intra-relecteur (option, à pré-déclarer).** Le relecteur peut revoir un échantillon
+  aléatoire tiré **avant** le début de la revue (par exemple 10 vidéos), au moins 7 jours plus
+  tard, sans consulter ses premières réponses. Cela mesure seulement la stabilité d'un même
+  jugement, pas l'accord entre personnes.
+
 ## 10. À approuver avant la première revue (responsable du projet)
 
 1. Les définitions des sections 4 à 6, y compris la colonne `nudity_context`. Les fiches à l'aveugle
@@ -233,6 +266,28 @@ ni revendiqué, et la fiche du second relecteur reste vide.
    audit aléatoire pré-déclaré.
 4. L'ordre des opérations : fiches, verrouillage, accord, adjudication, levée de l'aveugle.
 5. Le stockage : poste local, accès restreint, sans copie des médias.
+
+## 11. Outil de revue hors ligne
+
+```powershell
+.venv\Scripts\python.exe -m evaluation.annotation review --session <dossier local> --manifest <manifeste> --media-root <dossier des vidéos> --reviewer-id <pseudonyme>
+.venv\Scripts\python.exe -m evaluation.annotation status --session ... --manifest ... --media-root ...
+.venv\Scripts\python.exe -m evaluation.annotation export --session ... --manifest ... --media-root ... --output <labels.json>
+```
+
+- **Une vidéo à la fois**, dans l'ordre aléatoire de la graine 1001 : c'est le même ordre que
+  `reviewer_1.csv` du kit.
+- **Brouillons :** enregistrés automatiquement, la reprise est possible à tout moment.
+- **Verrouillage :** il est définitif. Une correction devient une nouvelle version motivée
+  (`locked/<vidéo>/v002.json`), sans écraser la précédente. Chaque événement est inscrit dans
+  `audit.jsonl`.
+- **Escalade :** le bouton « Arrêter immédiatement » décharge la vidéo.
+- **Export :** il n'est possible qu'une fois toutes les vidéos verrouillées. Il produit un fichier
+  d'étiquettes lié à l'empreinte du manifeste d'origine, que
+  `python -m evaluation.benchmark score ... --labels <labels.json>` applique sans modifier ni le
+  manifeste ni les résultats.
+- **Isolement :** l'outil ne charge aucun modèle et ne lit aucun dossier de campagne ni de
+  résultats. Les sessions et exports restent locaux (`artifacts/`, hors Git).
 
 ## Changements par rapport à la version 1
 

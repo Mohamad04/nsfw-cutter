@@ -417,9 +417,29 @@ run à la fois, à cause des 5,1 Go de VRAM et des 9,9 Go de RAM.
   `cuda_float16`. Les DLL CUDA et cuDNN chargées sont enregistrées.
 - **Mesures :**
   - durée de chaque étape d'après les événements de progression, temps du pipeline et temps total ;
-  - surveillance chaque seconde par le parent : RAM de l'arbre de processus, mémoire disponible,
-    mémoire virtuelle libre, VRAM et utilisation du GPU (`monitor.jsonl`, pics dans
-    `monitor_summary.json`).
+  - surveillance chaque seconde par le parent : RAM et CPU de l'arbre de processus du worker,
+    mémoire disponible, mémoire virtuelle libre, VRAM et utilisation du GPU (`monitor.jsonl`, pics
+    dans `monitor_summary.json`). Le CPU suit la convention psutil : 100 = un cœur logique occupé ;
+    la première mesure de chaque processus est exclue, et les pics et moyennes sont publiés avec le
+    nombre de cœurs logiques.
+- **Entrées canoniques.** Le chemin de chaque entrée est enregistré en absolu, quel que soit le
+  dossier de lancement. Un ancien enregistrement à chemin relatif est résolu à côté de son fichier
+  d'identité, sans être réécrit.
+- **Sonde Whisper (évaluation seulement, A2 seulement).** Dans le processus worker A2, une
+  sous-classe de `faster_whisper.WhisperModel` appelle exactement le même constructeur et la même
+  `transcribe()`. Elle enregistre :
+  - le périphérique et le type de calcul ;
+  - les durées de chargement et de transcription ;
+  - le nombre de segments ;
+  - la langue détectée.
+
+  Elle ne lit jamais le texte, l'audio ni le contenu de la parole. Sans segment, la langue
+  détectée n'est pas une observation de langue parlée : elle est rangée dans
+  `detected_language_without_speech` (`language_basis: no_speech_segments_unreliable`), et
+  `language` reste vide. Une transcription observée hors CUDA, ou un chargement CUDA autre que
+  `float16`, fait échouer A2 même sans avertissement de production. A1 n'a pas de piste audio : la
+  sonde n'y est pas installée, et `faster_whisper` et CTranslate2 n'y sont pas importés
+  (`python_modules_imported` dans `summary.json`). Le préchargement de cuBLAS 12 est inchangé.
 - **Limites par défaut :** mémoire disponible au moins 2,5 Go ; mémoire virtuelle libre au moins
   1,5 Go ; VRAM sous 7 900 Mio, une alerte n'étant déclenchée qu'après 5 échantillons consécutifs ;
   300 s par tentative. En cas de dépassement : annulation coopérative, puis arrêt forcé après 60 s.
@@ -427,9 +447,11 @@ run à la fois, à cause des 5,1 Go de VRAM et des 9,9 Go de RAM.
   cache disque de l'OS n'est pas contrôlé (`os_file_cache: unknown`). Une mesure à processus chaud
   devrait former une campagne distincte, jamais mélangée à celle-ci.
 - **Limites des tests.** Le runner a été testé avec un pipeline simulé, de vraies vidéos synthétiques
-  et un vrai sous-processus worker (qui refuse une entrée). Il n'a jamais tourné avec les vrais
-  modèles : la première campagne réelle doit commencer par quelques vidéos et une relecture de leurs
-  sorties.
+  et un vrai sous-processus worker (qui refuse une entrée). Il a ensuite tourné avec les vrais
+  modèles sur une vidéo Charades (`smoke1`), puis sur cinq (`pilot5`, 2026-10-20 : 10 tentatives
+  terminées, Whisper confirmé en CUDA `float16`). Le correctif qui limite la sonde à A2 n'a été
+  validé que par des tests synthétiques. Les étiquettes de ces vidéos restent `missing` tant
+  qu'aucune revue humaine n'a eu lieu.
 
 ## 10 ter. Plan du premier pilote technique Charades (100 vidéos)
 

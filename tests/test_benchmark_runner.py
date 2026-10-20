@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import subprocess
+import sys
 import tempfile
 import threading
 import unittest
@@ -391,6 +392,190 @@ class SubprocessPlumbingTests(unittest.TestCase):
             self.assertTrue((directory / "worker_stderr.log").exists())
             self.assertFalse((directory / "record.json").exists())
             self.assertGreaterEqual(json.loads((directory / "monitor_summary.json").read_text())["samples"], 1)
+
+
+class ObservabilityTests(unittest.TestCase):
+    def test_inputs_are_recorded_with_absolute_paths_from_any_working_directory(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            c = Campaign(tmp, names=("v1",))
+            other = Path(tmp) / "elsewhere"
+            other.mkdir()
+            previous = os.getcwd()
+            try:
+                os.chdir(tmp)
+                runner.run(Path("manifest.json"), Path("media"), Path("campaign"), PILOT, allow_inference=True,
+                           limits=FAST, launcher=c.launcher, sampler=lambda pid: HEALTHY,
+                           identity_factory=c.identity, prepare=c.fake_prepare, preload_whisper_cuda12=False)
+                identity = json.loads((c.dir / "inputs" / "v1.json").read_text())
+                self.assertTrue(Path(identity["path"]).is_absolute())
+                self.assertEqual(identity["file_name"], "v1.video-only.mp4")
+                spec = json.loads(next(iter(c.attempts("v1", "A1"))).joinpath("spec.json").read_text())
+                self.assertTrue(Path(spec["input_path"]).is_absolute())
+                os.chdir(other)  # resuming and collecting from another directory still works
+                self.assertIsNone(c.run()["stopped_at"])
+                self.assertEqual(len(c.attempts("v1", "A1")), 1)
+                c.collect()
+            finally:
+                os.chdir(previous)
+
+    def test_legacy_relative_input_records_resolve_beside_their_identity(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            c = Campaign(tmp, names=("v1",))
+            inputs = c.dir / "inputs"
+            inputs.mkdir(parents=True)
+            copy = inputs / "v1.video-only.mp4"
+            identity = Campaign.fake_prepare(c.media_root / "v1.mp4", copy)
+            (inputs / "v1.json").write_text(json.dumps({**identity, "path": "some\\relative\\v1.video-only.mp4"}))
+            from evaluation.benchmark.manifest import load_manifest
+            item = load_manifest(c.manifest).items[0]
+            resolved = runner._prepare_inputs(c.dir, item, c.media_root / "v1.mp4", c.fake_prepare)
+            self.assertEqual(Path(resolved["path"]), copy.resolve())
+            self.assertIn("relative", json.loads((inputs / "v1.json").read_text())["path"])  # not rewritten
+
+    def test_process_tree_cpu_is_measured_and_exited_processes_are_tolerated(self):
+        import sys
+        rss, cpu = runner.process_tree_usage(os.getpid())
+        self.assertGreater(rss, 0)
+        self.assertIsNone(cpu)  # first sample has no interval
+        sum(i * i for i in range(200_000))
+        rss, cpu = runner.process_tree_usage(os.getpid())
+        self.assertIsNotNone(cpu)
+        child = subprocess.Popen([sys.executable, "-c", "pass"])
+        runner.process_tree_usage(child.pid)
+        child.wait(timeout=30)
+        self.assertEqual(runner.process_tree_usage(child.pid), (None, None))
+
+    def test_monitor_summary_reports_cpu_peak_mean_and_convention(self):
+        values = iter([None, 50.0, 150.0])
+
+        def sampler(pid):
+            return dict(HEALTHY, process_tree_cpu_percent=next(values, 100.0))
+        with tempfile.TemporaryDirectory() as tmp:
+            c = Campaign(tmp, names=("v1",))
+            c.behaviour["v1.mp4"] = {"wait_for_cancel": True}
+            c.run(sampler=sampler, limits=runner.Limits(attempt_timeout_seconds=0.2, cancel_grace_seconds=5,
+                                                         sample_interval_seconds=0.02))
+            summary = json.loads(next(iter(c.attempts("v1", "A2"))).joinpath("monitor_summary.json").read_text())
+            self.assertEqual(summary["cpu"]["logical_cpus"], os.cpu_count())
+            self.assertIn("100 = one logical CPU", summary["cpu"]["convention"])
+            self.assertEqual(summary["cpu"]["peak_percent"], 150.0)
+            self.assertEqual(summary["cpu"]["valid_samples"], summary["samples"] - 1)
+
+    def test_whisper_probe_times_without_storing_text(self):
+        import sys
+        import types
+        from evaluation.benchmark import whisper_probe
+
+        class Segment:
+            text = "SECRET TRANSCRIPT"
+
+        class FakeModel:
+            def __init__(self, *args, device="cpu", compute_type="int8", **kwargs):
+                self.model = types.SimpleNamespace(device=device, compute_type=compute_type)
+
+            def transcribe(self, audio, **kwargs):
+                info = types.SimpleNamespace(language="en", language_probability=0.97)
+                return iter([Segment(), Segment(), Segment()]), info
+
+        events = []
+        journal = types.SimpleNamespace(emit=lambda kind, **data: events.append({"kind": kind, **data}))
+        saved = sys.modules.get("faster_whisper")
+        sys.modules["faster_whisper"] = types.SimpleNamespace(WhisperModel=FakeModel)
+        try:
+            self.assertTrue(whisper_probe.install(journal))
+            model = sys.modules["faster_whisper"].WhisperModel("small", device="cuda", compute_type="float16")
+            segments, info = model.transcribe("audio.wav", beam_size=1)
+            self.assertEqual([s.text for s in segments], ["SECRET TRANSCRIPT"] * 3)  # outputs unchanged
+            partial, _ = model.transcribe("audio.wav")
+            next(partial)
+            partial.close()  # e.g. cancellation while iterating
+        finally:
+            if saved is None:
+                sys.modules.pop("faster_whisper")
+            else:
+                sys.modules["faster_whisper"] = saved
+        self.assertNotIn("SECRET", json.dumps(events))
+        summary = whisper_probe.summarize(events)
+        self.assertEqual(summary["model_loads"][0]["device"], "cuda")
+        self.assertEqual(summary["model_loads"][0]["compute_type"], "float16")
+        first, second = summary["transcriptions"]
+        self.assertEqual((first["ok"], first["segments"], first["language"]), (True, 3, "en"))
+        self.assertEqual((second["complete"], second["segments"]), (False, 1))
+
+    def test_probe_is_installed_for_a2_only_and_a1_never_imports_whisper_runtime(self):
+        script = (
+            "import json, sys, types\n"
+            "from evaluation.benchmark import worker\n"
+            "events = []\n"
+            "journal = types.SimpleNamespace(emit=lambda kind, **data: events.append(kind))\n"
+            "calls = []\n"
+            "_, a1 = worker.prepare_whisper_runtime('A1', journal, enable_cublas=lambda: calls.append('cublas'),\n"
+            "                                        cuda_init=lambda: calls.append('cuda'))\n"
+            "a1_modules = {m: m in sys.modules for m in ('faster_whisper', 'ctranslate2')}\n"
+            "a1_events = list(events)\n"
+            "class Fake:\n"
+            "    pass\n"
+            "sys.modules['faster_whisper'] = types.SimpleNamespace(WhisperModel=Fake)\n"
+            "_, a2 = worker.prepare_whisper_runtime('A2', journal, enable_cublas=lambda: calls.append('cublas'),\n"
+            "                                        cuda_init=lambda: calls.append('cuda'))\n"
+            "print(json.dumps({'a1': a1, 'a1_modules': a1_modules, 'a1_events': a1_events, 'a2': a2,\n"
+            "                  'events': events, 'calls': calls,\n"
+            "                  'patched': sys.modules['faster_whisper'].WhisperModel is not Fake}))\n")
+        out = subprocess.run([sys.executable, "-c", script], cwd=ROOT, capture_output=True, text=True, timeout=120,
+                             check=True)
+        result = json.loads(out.stdout.strip().splitlines()[-1])
+        self.assertEqual(result["a1_modules"], {"faster_whisper": False, "ctranslate2": False})
+        self.assertEqual(result["a1_events"], [])
+        self.assertFalse(result["a1"]["whisper_probe_installed"])
+        self.assertTrue(result["a1"]["torch_cuda_initialized"])
+        self.assertTrue(result["a2"]["whisper_probe_installed"])
+        self.assertTrue(result["patched"])
+        self.assertEqual(result["events"], ["whisper_probe"])
+        self.assertEqual(result["calls"], ["cublas", "cuda", "cublas", "cuda"])  # preload order unchanged
+
+    def test_zero_segment_language_is_not_reported_as_a_speech_language(self):
+        from evaluation.benchmark import whisper_probe
+        events = [{"kind": "whisper_probe", "available": True},
+                  {"kind": "whisper_transcription", "ok": True, "complete": True, "device": "cuda", "language": "en",
+                   "language_probability": 0.44, "segments": 0, "setup_seconds": 0.1, "seconds": 0.4},
+                  {"kind": "whisper_transcription", "ok": True, "complete": True, "device": "cuda", "language": "en",
+                   "language_probability": 0.78, "segments": 7, "setup_seconds": 0.1, "seconds": 0.8}]
+        silent, spoken = whisper_probe.summarize(events)["transcriptions"]
+        self.assertEqual((silent["language"], silent["language_probability"]), (None, None))
+        self.assertEqual(silent["language_basis"], "no_speech_segments_unreliable")
+        self.assertEqual(silent["detected_language_without_speech"], "en")
+        self.assertFalse(silent["speech_segments_present"])
+        self.assertEqual((spoken["language"], spoken["language_probability"]), ("en", 0.78))
+        self.assertEqual(spoken["language_basis"], "speech_segments")
+        self.assertIsNone(spoken["detected_language_without_speech"])
+
+    def test_worker_summary_records_whisper_runtime_imports(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            c = Campaign(tmp, names=("v1",))
+            c.run()
+            for config in ("A1", "A2"):
+                summary = json.loads(next(iter(c.attempts("v1", config))).joinpath("summary.json").read_text())
+                self.assertEqual(set(summary["python_modules_imported"]), {"faster_whisper", "ctranslate2"})
+                self.assertIsNone(summary["whisper_observed"])
+
+    def test_observed_non_cuda_whisper_fails_a2_even_without_a_warning(self):
+        class ProbeEmittingPipeline(MockPipeline):
+            def run(self, request, cancellation, event_callback, job_id):
+                self.journal.emit("whisper_probe", available=True)
+                self.journal.emit("whisper_model_load", ok=True, device="cpu", compute_type="int8", seconds=1.0)
+                self.journal.emit("whisper_transcription", ok=True, complete=True, device="cpu", language="en",
+                                  language_probability=0.9, segments=2, setup_seconds=0.1, seconds=1.0)
+                return super().run(request, cancellation, event_callback, job_id)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            c = Campaign(tmp, names=("v1",))
+            c.launcher = lambda spec: ThreadHandle(lambda: worker.run_attempt(
+                spec, pipeline_factory=lambda cache, journal: ProbeEmittingPipeline(c.behaviour, journal, c.calls)))
+            outcome = c.run()
+            self.assertEqual((outcome["status"], outcome["error_type"]), ("failed", "whisper_cpu_fallback"))
+            summary = json.loads(next(iter(c.attempts("v1", "A2"))).joinpath("summary.json").read_text())
+            self.assertFalse(summary["whisper_backend_confirmed"])
+            self.assertEqual(summary["whisper_observed"]["transcriptions"][0]["segments"], 2)
 
 
 class AtomicAndWorkerUnitTests(unittest.TestCase):

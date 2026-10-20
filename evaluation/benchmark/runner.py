@@ -74,6 +74,15 @@ def verify_identity():
             "environment": env}
 
 
+def evaluation_code_identity():
+    """The benchmark harness itself is versioned per campaign (it may be uncommitted during development)."""
+    files = {p.name: file_digest(p) for p in sorted(Path(__file__).parent.glob("*.py"))}
+    dirty = subprocess.run(["git", "-c", f"safe.directory={ROOT.as_posix()}", "status", "--porcelain", "--",
+                            "evaluation"], cwd=ROOT, capture_output=True, text=True).stdout.strip()
+    return {"benchmark_sources_sha256": canonical_digest(files), "files": files,
+            "uncommitted_evaluation_changes": bool(dirty)}
+
+
 # --------------------------------------------------------------------------- resource monitoring
 
 class _PerformanceInformation(ctypes.Structure):
@@ -93,21 +102,51 @@ def commit_headroom_bytes():
     return (info.CommitLimit - info.CommitTotal) * info.PageSize
 
 
-def system_sample(pid: int):
+_PROCESSES = {}
+_PRIMED = set()
+
+
+def process_tree_usage(pid: int):
+    """RSS and CPU of the worker process tree only (not system-wide).
+
+    CPU uses psutil's per-process convention: 100 = one fully busy logical CPU, so the tree can exceed
+    100; divide by the logical CPU count for a 0-100 % machine share. A process's first sample has no
+    interval yet and is excluded; processes that exit between samples are skipped.
+    """
     import psutil
     try:
-        root = psutil.Process(pid)
-        tree = [root, *root.children(recursive=True)]
-        rss = sum(p.memory_info().rss for p in tree if p.is_running())
+        root = _PROCESSES.setdefault(pid, psutil.Process(pid))
+        members = [root, *root.children(recursive=True)]
     except psutil.Error:
-        rss = None
+        return None, None
+    rss, cpu, measured = 0, 0.0, 0
+    for member in members:
+        process = _PROCESSES.setdefault(member.pid, member)
+        try:
+            first = member.pid not in _PRIMED
+            value = process.cpu_percent(None)
+            rss += process.memory_info().rss
+            _PRIMED.add(member.pid)
+            if not first:
+                cpu += value
+                measured += 1
+        except psutil.Error:
+            _PROCESSES.pop(member.pid, None)
+            _PRIMED.discard(member.pid)
+    return rss or None, (cpu if measured else None)
+
+
+def system_sample(pid: int):
+    import psutil
+    rss, cpu = process_tree_usage(pid)
     try:
         gpu = subprocess.run(["nvidia-smi", "--query-gpu=memory.used,utilization.gpu",
                               "--format=csv,noheader,nounits"],
                              capture_output=True, text=True, timeout=10).stdout.strip().split(",")
     except (OSError, subprocess.SubprocessError):
         gpu = []
-    return {"process_tree_rss_bytes": rss, "available_bytes": psutil.virtual_memory().available,
+    return {"process_tree_rss_bytes": rss, "process_tree_cpu_percent": cpu,
+            "available_bytes": psutil.virtual_memory().available,
             "commit_headroom_bytes": commit_headroom_bytes(),
             "gpu_memory_mib": int(gpu[0]) if gpu and gpu[0].strip().isdigit() else None,
             "gpu_utilization_percent": int(gpu[1]) if len(gpu) > 1 and gpu[1].strip().isdigit() else None}
@@ -136,6 +175,7 @@ def subprocess_launcher(spec_path: Path):
 def supervise(directory: Path, launcher, sampler, limits: Limits, clock=time.monotonic, sleep=time.sleep):
     handle = launcher(directory / "spec.json")
     started, reason, gpu_streak, cancel_at, peaks, samples = clock(), None, 0, None, {}, 0
+    cpu_values = []
     monitor = (directory / "monitor.jsonl").open("x", encoding="utf-8")
     try:
         while handle.poll() is None:
@@ -143,9 +183,12 @@ def supervise(directory: Path, launcher, sampler, limits: Limits, clock=time.mon
             samples += 1
             monitor.write(json.dumps({"t": round(clock() - started, 2), **sample}) + "\n")
             monitor.flush()
-            for key in ("process_tree_rss_bytes", "gpu_memory_mib", "gpu_utilization_percent"):
+            for key in ("process_tree_rss_bytes", "process_tree_cpu_percent", "gpu_memory_mib",
+                        "gpu_utilization_percent"):
                 if sample.get(key) is not None:
                     peaks[key] = max(peaks.get(key, 0), sample[key])
+            if sample.get("process_tree_cpu_percent") is not None:
+                cpu_values.append(sample["process_tree_cpu_percent"])
             for key in ("available_bytes", "commit_headroom_bytes"):
                 if sample.get(key) is not None:
                     peaks[f"min_{key}"] = min(peaks.get(f"min_{key}", sample[key]), sample[key])
@@ -172,8 +215,13 @@ def supervise(directory: Path, launcher, sampler, limits: Limits, clock=time.mon
     finally:
         monitor.close()
         wall = clock() - started
-        write_atomic(directory / "monitor_summary.json", {"wall_seconds": wall, "samples": samples,
-                                                          "intervention": reason, **peaks})
+        write_atomic(directory / "monitor_summary.json", {
+            "wall_seconds": wall, "samples": samples, "sample_interval_seconds": limits.sample_interval_seconds,
+            "intervention": reason, **peaks,
+            "cpu": {"convention": "process tree only; 100 = one logical CPU fully busy",
+                    "logical_cpus": os.cpu_count(), "valid_samples": len(cpu_values),
+                    "peak_percent": max(cpu_values) if cpu_values else None,
+                    "mean_percent": sum(cpu_values) / len(cpu_values) if cpu_values else None}})
         if reason is not None or not (directory / "summary.json").exists():
             write_atomic(directory / "parent_summary.json", {
                 "intervention": reason or "worker_exited_without_summary",
@@ -210,16 +258,24 @@ def _attempts(campaign: Path):
     return rows
 
 
+def _executed_input(record: Path, identity: dict) -> Path:
+    """Absolute path of a prepared A1 input. The copy always lives beside its identity record, so records
+    written with a working-directory-relative path (first smoke campaign) are resolved by file name."""
+    stored = Path(identity["path"])
+    return stored if stored.is_absolute() else (record.parent / stored.name).resolve()
+
+
 def _prepare_inputs(campaign: Path, item, source: Path, prepare):
     record = campaign / "inputs" / f"{item.item_id}.json"
     if record.exists():
         identity = json.loads(record.read_text(encoding="utf-8"))
-        if file_digest(Path(identity["path"])) != identity["sha256"]:
+        path = _executed_input(record, identity)
+        if file_digest(path) != identity["sha256"]:
             raise ValueError(f"{item.item_id}: prepared A1 input changed on disk")
-        return identity
+        return {**identity, "path": str(path)}
     record.parent.mkdir(parents=True, exist_ok=True)
-    target = record.parent / f"{item.item_id}.video-only{source.suffix}"
-    identity = {**prepare(source, target), "path": str(target)}
+    target = (record.parent / f"{item.item_id}.video-only{source.suffix}").resolve()
+    identity = {**prepare(source, target), "path": str(target), "file_name": target.name}
     if identity["derived_from_sha256"] != item.sha256:
         raise ValueError(f"{item.item_id}: A1 input was not derived from the manifest media")
     write_atomic(record, identity)
@@ -233,6 +289,7 @@ def run(manifest_path: Path, media_root: Path, campaign: Path, pilot_manifest: P
 
     if not allow_inference:
         raise PermissionError("running models requires explicit --allow-inference")
+    campaign, media_root = Path(campaign).resolve(), Path(media_root).resolve()
     manifest = load_manifest(manifest_path)
     disjoint = assert_disjoint_from_pilot(manifest, pilot_manifest)
     items = manifest.evaluable(split)
@@ -248,7 +305,8 @@ def run(manifest_path: Path, media_root: Path, campaign: Path, pilot_manifest: P
                          "pilot_manifest_digest": disjoint["pilot_manifest_digest"], "split": split,
                          **{k: identity[k] for k in ("commit", "frozen_baseline", "configuration_sha256",
                                                      "model_revisions", "gpu", "runtime_sha256")},
-                         "limits": asdict(limits), "preload_whisper_cuda12": preload_whisper_cuda12}
+                         "limits": asdict(limits), "preload_whisper_cuda12": preload_whisper_cuda12,
+                         "evaluation_code": evaluation_code_identity()}
     campaign.mkdir(parents=True, exist_ok=True)
     with campaign_lock(campaign):
         marker = campaign / "campaign.json"

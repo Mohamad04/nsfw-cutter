@@ -51,6 +51,36 @@ def loaded_runtime_libraries():
     return sorted(p for p in paths if Path(p).name.lower().startswith(("cublas", "cudnn", "ctranslate2", "cudart")))
 
 
+def probe_applicable(config: str) -> bool:
+    """Only A2 keeps the audio stream. Probing A1 would import faster_whisper, and so CTranslate2, for nothing."""
+    return config == "A2"
+
+
+def prepare_whisper_runtime(config: str, journal, *, enable_cublas=None, cuda_init=None):
+    """Evaluation-only CUDA preparation; returns (module handles to keep alive, startup order record)."""
+    from evaluation.benchmark import whisper_probe
+    from evaluation.benchmark.media import enable_whisper_cuda12_cublas
+
+    handles = (enable_cublas or enable_whisper_cuda12_cublas)()
+    order = {"ctranslate2_imported_before_torch_cuda_init": "ctranslate2" in sys.modules}
+    if cuda_init is None:
+        import torch
+        cuda_init = torch.cuda.init
+    # Bind PyTorch's own cuDNN 9.20 before CTranslate2 loads its cudnn64_9 shim (same file name).
+    cuda_init()
+    order["torch_cuda_initialized"] = True
+    order["whisper_probe_installed"] = probe_applicable(config) and whisper_probe.install(journal)
+    return handles, order
+
+
+def _journal_whisper(journal_path: Path, journal=None):
+    from evaluation.benchmark.whisper_probe import summarize
+    if journal is not None:
+        journal.stream.flush()
+    entries = [json.loads(line) for line in journal_path.read_text(encoding="utf-8").splitlines()]
+    return summarize(entries)
+
+
 def _watch_cancel(flag: Path, token, stop: threading.Event):
     while not stop.wait(0.5):
         if flag.exists():
@@ -68,7 +98,8 @@ def run_attempt(spec_path: Path, *, pipeline_factory=None):
     spec = json.loads(Path(spec_path).read_text(encoding="utf-8"))
     directory = Path(spec["attempt_dir"])
     summary = {"item_id": spec["item_id"], "config": spec["config"], "status": "failed", "error_type": "",
-               "whisper_backend": None, "stage_seconds": {}, "pipeline_seconds": None}
+               "whisper_backend": None, "whisper_backend_confirmed": None, "startup_order": None,
+               "stage_seconds": {}, "pipeline_seconds": None}
     started = perf_counter()
     journal = Journal(directory / "observations.jsonl")
     token, stop = CancellationToken(), threading.Event()
@@ -76,11 +107,7 @@ def run_attempt(spec_path: Path, *, pipeline_factory=None):
     watcher.start()
     try:
         if spec["preload_whisper_cuda12"]:
-            from evaluation.benchmark.media import enable_whisper_cuda12_cublas
-            handles = enable_whisper_cuda12_cublas()  # noqa: F841 - keep the modules loaded
-            import torch
-            # Bind PyTorch's own cuDNN 9.20 before CTranslate2 loads its cudnn64_9 shim (same file name).
-            torch.cuda.init()
+            _cuda_handles, summary["startup_order"] = prepare_whisper_runtime(spec["config"], journal)  # kept loaded
         if file_digest(Path(spec["input_path"]), cancellation=token) != spec["input_sha256"]:
             raise ValueError("input_sha256_mismatch")
         settings = frozen_settings()
@@ -96,7 +123,15 @@ def run_attempt(spec_path: Path, *, pipeline_factory=None):
         if (record.status.value == "running" or record.settings != settings.model_dump(mode="json")
                 or record.video_fingerprint != "sha256:" + spec["input_sha256"]):
             raise ValueError("record_identity_or_configuration_mismatch")
-        summary["whisper_backend"] = backend = whisper_backend(record.warnings)
+        backend = whisper_backend(record.warnings)
+        observed = _journal_whisper(directory / "observations.jsonl", journal)
+        if observed is not None and observed["transcriptions"]:
+            confirmed = all(t["ok"] and t["device"] == "cuda" for t in observed["transcriptions"]) and all(
+                load["compute_type"] == "float16" for load in observed["model_loads"] if load["device"] == "cuda")
+            summary["whisper_backend_confirmed"] = confirmed
+            if backend == "cuda_float16" and not confirmed:
+                backend = "cpu_fallback"
+        summary["whisper_backend"] = backend
         summary["status"] = record.status.value
         if spec["config"] == "A2" and backend in ("cpu_fallback", "unavailable"):
             summary.update(status="failed", error_type=f"whisper_{backend}")
@@ -111,6 +146,9 @@ def run_attempt(spec_path: Path, *, pipeline_factory=None):
         stop.set()
         journal.close()
         summary["stage_seconds"] = stage_seconds(directory / "observations.jsonl")
+        summary["whisper_observed"] = _journal_whisper(directory / "observations.jsonl")
+        summary["python_modules_imported"] = {name: name in sys.modules for name in ("faster_whisper", "ctranslate2")}
+        summary["analysis_cache"] = "private, created empty for this attempt (force_reanalysis)"
         summary["worker_seconds"] = perf_counter() - started
         summary["reliability"] = journal.reliability()
         summary["loaded_runtime_libraries"] = loaded_runtime_libraries()

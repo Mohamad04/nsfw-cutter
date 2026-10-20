@@ -519,6 +519,142 @@ class CharadesManifestTests(unittest.TestCase):
                 charades.build_manifest(path, total=8, per_subject_cap=1)
 
 
+class SubsetTests(unittest.TestCase):
+    """Sensitivity subsets of a completed campaign (e.g. without the integration-pilot sources)."""
+
+    def campaign(self):
+        flags = {"x1": True, "x2": True}
+        groups = {"x1": "s0", "x2": "s9", "a": "s0", "b": "s1", "c": "s1", "d": "s2", "e": "s3", "f": "s4"}
+        items = [item(i, "missing", group=g, provenance={"pilot_flag": True} if flags.get(i) else {})
+                 for i, g in groups.items()]
+        manifest = build(items, track="technical")
+        alerts = {"x1": (True, True), "a": (True, False), "b": (True, True), "c": (False, False)}
+        rows = []
+        for i in groups:
+            a1, a2 = alerts.get(i, (False, False))
+            peak = [{"timestamp_seconds": 0.0, "probability": 0.5 if i in ("x1", "x2", "a", "b") else 0.2}]
+            rows += [result(i, "A2", alert=a2, scores=peak), result(i, "A1", alert=a1)]
+        return manifest, results_file(manifest, rows)
+
+    def spec(self, ids=("x1", "x2"), **extra):
+        return {"subset_id": "without_pilot", "reason": "development_pilot_integration_validation",
+                "exclude_item_ids": list(ids), "selection_rule": {"provenance_flag": "pilot_flag"}, **extra}
+
+    def test_subset_excludes_exactly_the_flagged_items_and_keeps_the_campaign_identity(self):
+        manifest, results = self.campaign()
+        before = (manifest_digest(manifest), results.model_dump_json())
+        report = score(manifest, results, resamples=200, subset=self.spec())
+        self.assertEqual((manifest_digest(manifest), results.model_dump_json()), before)  # inputs untouched
+        self.assertEqual(report["manifest_digest"], before[0])
+        subset = report["subset"]
+        self.assertEqual(subset["excluded_item_ids"], ["x1", "x2"])
+        self.assertEqual((subset["base_evaluable"], subset["base_groups"]), (8, 6))
+        self.assertEqual((subset["remaining_evaluable"], subset["remaining_groups"]), (6, 5))
+        self.assertEqual(subset["groups_shared_with_excluded_items"], ["s0"])
+        self.assertNotEqual(subset["derived_manifest_digest"], before[0])
+        self.assertEqual(report["sample_sizes"]["evaluable"], 6)
+        self.assertEqual(report["sample_sizes"]["excluded_by_reason"],
+                         {"analysis_subset:development_pilot_integration_validation": 2})
+        self.assertEqual({r["item_id"] for r in report["per_video"]}, set("abcdef"))
+        self.assertEqual(report["alert_review"]["A2"]["alerted_videos"], 1)  # x1 is no longer counted
+        self.assertEqual(report["alert_review"]["A1"]["alerted_videos"], 2)
+        self.assertEqual(report["alert_review"]["A0@0.45"]["alerted_videos"], 2)
+        for withheld in ("video_level", "paired_comparisons", "event_level"):
+            self.assertIn("withheld", report[withheld])
+        self.assertNotIn("precision", json.dumps(report["alert_review"]))
+
+    def test_paired_alert_agreement_is_item_by_item_with_grouped_uncertainty(self):
+        manifest, results = self.campaign()
+        report = score(manifest, results, resamples=200, subset=self.spec())
+        pair = report["paired_alert_agreement"]["A1_vs_A2"]
+        self.assertEqual((pair["both"], pair["first_only"], pair["second_only"], pair["neither"]), (1, 1, 0, 4))
+        self.assertEqual((pair["paired_items"], pair["paired_groups"], pair["unpaired_items"]), (6, 5, 0))
+        difference = pair["alert_rate_difference_second_minus_first"]
+        self.assertAlmostEqual(difference["estimate"], -1 / 6)
+        self.assertEqual(difference["method"], "grouped_bootstrap_percentile:group_id")
+        rate = report["alert_uncertainty"]["A1"]
+        self.assertEqual((rate["rows"], rate["groups"]), (6, 5))
+        self.assertAlmostEqual(rate["estimate"], 2 / 6)
+        self.assertLessEqual(rate["low"], rate["estimate"])
+        self.assertLessEqual(rate["estimate"], rate["high"])
+        self.assertIn("not accuracy", report["paired_alert_agreement"]["note"])
+
+    def test_subject_disjoint_subset_removes_every_video_of_a_flagged_subject(self):
+        manifest, results = self.campaign()
+        subject = self.spec(ids=("x1", "x2", "a"), subset_id="subject_disjoint",
+                            selection_rule={"provenance_flag": "pilot_flag", "scope": "subject"})
+        report = score(manifest, results, resamples=100, subset=subject)
+        record = report["subset"]
+        self.assertEqual(record["excluded_item_ids"], ["a", "x1", "x2"])
+        self.assertEqual((record["remaining_evaluable"], record["remaining_groups"]), (5, 4))
+        self.assertEqual(record["groups_shared_with_excluded_items"], [])
+        self.assertEqual({r["item_id"] for r in report["per_video"]}, set("bcdef"))
+        for ids in (("x1", "x2"), ("x1", "x2", "a", "b")):  # a subject left behind, or an extra subject
+            with self.subTest(ids=ids), self.assertRaises(ValueError):
+                score(manifest, results, resamples=10, subset={**subject, "exclude_item_ids": list(ids)})
+        with self.assertRaises(ValueError):
+            score(manifest, results, resamples=10,
+                  subset={**subject, "selection_rule": {"provenance_flag": "pilot_flag", "scope": "family"}})
+
+    def test_degenerate_or_few_group_bootstrap_intervals_are_flagged_not_narrowed(self):
+        manifest, results = self.campaign()
+        report = score(manifest, results, resamples=200, subset=self.spec())
+        everyone = report["alert_uncertainty"]["A0@0.15"]  # every remaining video alerts at 0.15
+        self.assertEqual(everyone["estimate"], 1.0)
+        self.assertIsNone(everyone["low"])
+        self.assertIn("degenerate", everyone["interval_withheld"])
+        agree = report["paired_alert_agreement"]["A0@0.45_vs_A1"]  # identical decisions: no discordant pair
+        self.assertEqual(agree["first_only"] + agree["second_only"], 0)
+        self.assertIsNone(agree["alert_rate_difference_second_minus_first"]["high"])
+        self.assertIn("degenerate", agree["alert_rate_difference_second_minus_first"]["interval_withheld"])
+        few = report["alert_uncertainty"]["A1"]  # 2 alerting subjects out of 5
+        self.assertEqual(few["informative_groups"], 2)
+        self.assertIn("unstable", few["caution"])
+        self.assertAlmostEqual(few["probability_resample_without_informative_group"], (1 - 2 / 5) ** 5)
+        self.assertIsNotNone(few["low"])
+
+    def test_invalid_subset_specifications_are_refused(self):
+        manifest, results = self.campaign()
+        for spec in (self.spec(ids=("x1",)),                      # misses a flagged item
+                     self.spec(ids=("x1", "x2", "a")),            # excludes an unflagged item
+                     self.spec(ids=("x1", "zzz")),                # unknown item
+                     self.spec(ids=("x1", "x1", "x2")),           # duplicate
+                     self.spec(reason=" "),
+                     self.spec(ids=()),
+                     {**self.spec(ids=list("abcdef") + ["x1", "x2"]), "selection_rule": None}):
+            with self.subTest(spec=spec), self.assertRaises(ValueError):
+                score(manifest, results, resamples=10, subset=spec)
+
+    def test_a1_a2_pairs_stay_tied_to_the_same_source(self):
+        manifest, results = self.campaign()
+        rows = [r.model_dump(mode="json") for r in results.results]
+        for row in rows:
+            if row["item_id"] == "a" and row["config"] == "A1":
+                row["input"]["derived_from_sha256"] = sha("b")  # A1 copy of another source
+        with self.assertRaises(ValueError):
+            score(manifest, results_file(manifest, rows), resamples=10, subset=self.spec())
+        # Excluding an item removes both of its configurations, never one half of the pair.
+        report = score(manifest, results, resamples=10, subset=self.spec())
+        for name in ("A1", "A2"):
+            self.assertEqual(report["alert_review"][name]["completed_runs"], 6)
+
+    def test_cli_records_the_subset_specification(self):
+        manifest, results = self.campaign()
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            (tmp / "manifest.json").write_text(manifest.model_dump_json(), encoding="utf-8")
+            (tmp / "results.json").write_text(results.model_dump_json(), encoding="utf-8")
+            (tmp / "subset.json").write_text(json.dumps(self.spec()), encoding="utf-8")
+            out = tmp / "report"
+            self.assertEqual(cli(["score", str(tmp / "manifest.json"), str(tmp / "results.json"),
+                                  "--pilot-manifest", str(PILOT), "--output", str(out), "--resamples", "20",
+                                  "--subset", str(tmp / "subset.json")]), 0)
+            metrics = json.loads((out / "metrics.json").read_text(encoding="utf-8"))
+            self.assertEqual(metrics["subset"]["spec_file"]["sha256"],
+                             hashlib.sha256((tmp / "subset.json").read_bytes()).hexdigest())
+            self.assertEqual(metrics["sample_sizes"]["evaluable"], 6)
+
+
 class CliTests(unittest.TestCase):
     def test_validate_and_score_write_a_new_report_directory(self):
         with tempfile.TemporaryDirectory() as tmp:

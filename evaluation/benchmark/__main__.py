@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import json
 import sys
 from pathlib import Path
@@ -32,6 +33,9 @@ def main(argv=None):
     scoring.add_argument("--split", choices=("tuning", "test"), default="test")
     scoring.add_argument("--resamples", type=int, default=DEFAULT_RESAMPLES)
     scoring.add_argument("--seed", type=int, default=DEFAULT_SEED)
+    scoring.add_argument("--subset", type=Path,
+                         help="JSON spec (subset_id, reason, exclude_item_ids, optional selection_rule) of a "
+                              "documented sensitivity subset; results and manifest are left unchanged")
     running.add_argument("--media-root", type=Path, required=True)
     running.add_argument("--campaign", type=Path, required=True)
     running.add_argument("--allow-inference", action="store_true")
@@ -65,8 +69,12 @@ def main(argv=None):
                           "disjoint_from_pilot": disjoint, "media_identity_verified": False}, indent=2))
         return 0
 
+    subset = None
+    if args.subset is not None:
+        subset = json.loads(args.subset.read_text(encoding="utf-8-sig"))
+        subset["spec_file"] = {"path": str(args.subset), "sha256": hashlib.sha256(args.subset.read_bytes()).hexdigest()}
     report = score(manifest, load_results(args.results), pilot_manifest=args.pilot_manifest, split=args.split,
-                   resamples=args.resamples, seed=args.seed)
+                   resamples=args.resamples, seed=args.seed, subset=subset)
     args.output.mkdir(parents=True, exist_ok=False)
     (args.output / "metrics.json").write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
     with (args.output / "per_video.csv").open("w", newline="", encoding="utf-8") as handle:
@@ -74,6 +82,7 @@ def main(argv=None):
         writer.writeheader()
         writer.writerows(report["per_video"])
     print(json.dumps({"output": str(args.output), "evaluable": report["sample_sizes"]["evaluable"],
+                      "subset": (report.get("subset") or {}).get("subset_id"),
                       "scope_warning": report.get("scope_warning")}, indent=2))
     return 0
 

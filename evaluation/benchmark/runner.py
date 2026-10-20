@@ -102,50 +102,69 @@ def commit_headroom_bytes():
     return (info.CommitLimit - info.CommitTotal) * info.PageSize
 
 
+# psutil.Process objects keep the cpu_percent baseline between samples. They are keyed by (pid, creation
+# time), not by pid: Windows reuses PIDs, and a cached object for an exited process whose PID now belongs
+# to a new worker raises NoSuchProcess on every call (the 2026-10-20 campaign lost the process-tree
+# samples of 22 attempts that way). Only members of the current tree are kept.
 _PROCESSES = {}
 _PRIMED = set()
 
 
-def process_tree_usage(pid: int):
-    """RSS and CPU of the worker process tree only (not system-wide).
+def _identity(process):
+    return process.pid, process.create_time()
 
-    CPU uses psutil's per-process convention: 100 = one fully busy logical CPU, so the tree can exceed
-    100; divide by the logical CPU count for a 0-100 % machine share. A process's first sample has no
-    interval yet and is excluded; processes that exit between samples are skipped.
+
+def process_tree_usage(pid: int):
+    """RSS and CPU of the worker process tree only (not system-wide), plus the reason when unmeasured.
+
+    Returns (rss_bytes, cpu_percent, error); error is None when the tree was measured. CPU uses psutil's
+    per-process convention: 100 = one fully busy logical CPU, so the tree can exceed 100; divide by the
+    logical CPU count for a 0-100 % machine share. A process's first sample has no interval yet and is
+    excluded; processes that exit between samples are skipped. Nothing is estimated when a sample fails.
     """
     import psutil
     try:
-        root = _PROCESSES.setdefault(pid, psutil.Process(pid))
-        members = [root, *root.children(recursive=True)]
-    except psutil.Error:
-        return None, None
-    rss, cpu, measured = 0, 0.0, 0
-    for member in members:
-        process = _PROCESSES.setdefault(member.pid, member)
+        root = psutil.Process(pid)
+        members = {_identity(root): root}
+        children = root.children(recursive=True)
+    except psutil.Error as exc:
+        return None, None, type(exc).__name__
+    for child in children:
         try:
-            first = member.pid not in _PRIMED
+            members[_identity(child)] = child
+        except psutil.Error:
+            continue
+    for stale in set(_PROCESSES) - set(members):
+        del _PROCESSES[stale]
+    _PRIMED.intersection_update(members)
+    rss, cpu, measured = 0, 0.0, 0
+    for key, member in members.items():
+        process = _PROCESSES.setdefault(key, member)
+        try:
             value = process.cpu_percent(None)
             rss += process.memory_info().rss
-            _PRIMED.add(member.pid)
-            if not first:
+            if key in _PRIMED:
                 cpu += value
                 measured += 1
+            _PRIMED.add(key)
         except psutil.Error:
-            _PROCESSES.pop(member.pid, None)
-            _PRIMED.discard(member.pid)
-    return rss or None, (cpu if measured else None)
+            _PROCESSES.pop(key, None)
+            _PRIMED.discard(key)
+    if not rss:
+        return None, None, "no_process_measured"
+    return rss, (cpu if measured else None), None
 
 
 def system_sample(pid: int):
     import psutil
-    rss, cpu = process_tree_usage(pid)
+    rss, cpu, error = process_tree_usage(pid)
     try:
         gpu = subprocess.run(["nvidia-smi", "--query-gpu=memory.used,utilization.gpu",
                               "--format=csv,noheader,nounits"],
                              capture_output=True, text=True, timeout=10).stdout.strip().split(",")
     except (OSError, subprocess.SubprocessError):
         gpu = []
-    return {"process_tree_rss_bytes": rss, "process_tree_cpu_percent": cpu,
+    return {"process_tree_rss_bytes": rss, "process_tree_cpu_percent": cpu, "process_tree_error": error,
             "available_bytes": psutil.virtual_memory().available,
             "commit_headroom_bytes": commit_headroom_bytes(),
             "gpu_memory_mib": int(gpu[0]) if gpu and gpu[0].strip().isdigit() else None,
@@ -175,7 +194,7 @@ def subprocess_launcher(spec_path: Path):
 def supervise(directory: Path, launcher, sampler, limits: Limits, clock=time.monotonic, sleep=time.sleep):
     handle = launcher(directory / "spec.json")
     started, reason, gpu_streak, cancel_at, peaks, samples = clock(), None, 0, None, {}, 0
-    cpu_values = []
+    cpu_values, tree_errors = [], {}
     monitor = (directory / "monitor.jsonl").open("x", encoding="utf-8")
     try:
         while handle.poll() is None:
@@ -189,6 +208,9 @@ def supervise(directory: Path, launcher, sampler, limits: Limits, clock=time.mon
                     peaks[key] = max(peaks.get(key, 0), sample[key])
             if sample.get("process_tree_cpu_percent") is not None:
                 cpu_values.append(sample["process_tree_cpu_percent"])
+            if sample.get("process_tree_rss_bytes") is None:
+                error = sample.get("process_tree_error") or "unknown"
+                tree_errors[error] = tree_errors.get(error, 0) + 1
             for key in ("available_bytes", "commit_headroom_bytes"):
                 if sample.get(key) is not None:
                     peaks[f"min_{key}"] = min(peaks.get(f"min_{key}", sample[key]), sample[key])
@@ -221,7 +243,10 @@ def supervise(directory: Path, launcher, sampler, limits: Limits, clock=time.mon
             "cpu": {"convention": "process tree only; 100 = one logical CPU fully busy",
                     "logical_cpus": os.cpu_count(), "valid_samples": len(cpu_values),
                     "peak_percent": max(cpu_values) if cpu_values else None,
-                    "mean_percent": sum(cpu_values) / len(cpu_values) if cpu_values else None}})
+                    "mean_percent": sum(cpu_values) / len(cpu_values) if cpu_values else None},
+            # Unmeasured samples are reported, never filled in; resource limits use system-wide values.
+            "process_tree_monitoring": {"samples_without_rss": sum(tree_errors.values()),
+                                        "errors": tree_errors}})
         if reason is not None or not (directory / "summary.json").exists():
             write_atomic(directory / "parent_summary.json", {
                 "intervention": reason or "worker_exited_without_summary",

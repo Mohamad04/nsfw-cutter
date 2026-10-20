@@ -422,6 +422,14 @@ run à la fois, à cause des 5,1 Go de VRAM et des 9,9 Go de RAM.
     dans `monitor_summary.json`). Le CPU suit la convention psutil : 100 = un cœur logique occupé ;
     la première mesure de chaque processus est exclue, et les pics et moyennes sont publiés avec le
     nombre de cœurs logiques.
+  - les processus suivis sont identifiés par leur PID **et** leur date de création, car Windows
+    réutilise les PID. Avant cette correction, un objet périmé gardé en cache pour un PID réattribué
+    à un nouveau worker faisait échouer toutes les mesures de cette tentative : la campagne
+    `charades-track1-100-20261020` n'a aucune mesure RAM/CPU de l'arbre pour 22 tentatives sur 200.
+    Ces trous restent signalés comme manquants. Chaque échantillon non mesuré porte désormais sa
+    cause (`process_tree_error`), et `monitor_summary.json` les compte
+    (`process_tree_monitoring`). Aucune valeur n'est estimée. Les limites de ressources reposent
+    toujours sur la mémoire système, la mémoire virtuelle et la VRAM, et leur calcul est inchangé.
 - **Entrées canoniques.** Le chemin de chaque entrée est enregistré en absolu, quel que soit le
   dossier de lancement. Un ancien enregistrement à chemin relatif est résolu à côté de son fichier
   d'identité, sans être réécrit.
@@ -440,6 +448,31 @@ run à la fois, à cause des 5,1 Go de VRAM et des 9,9 Go de RAM.
   `float16`, fait échouer A2 même sans avertissement de production. A1 n'a pas de piste audio : la
   sonde n'y est pas installée, et `faster_whisper` et CTranslate2 n'y sont pas importés
   (`python_modules_imported` dans `summary.json`). Le préchargement de cuBLAS 12 est inchangé.
+- **Sous-ensemble de sensibilité (`score --subset SPEC.json`).** Le fichier de spécification donne
+  `subset_id`, `reason`, `exclude_item_ids` et, en option, `selection_rule` (`provenance_flag` et
+  `scope`). Avec cette règle, la liste doit correspondre **exactement** :
+  - avec `scope: item` (par défaut), aux vidéos évaluables portant ce marqueur de provenance ;
+  - avec `scope: subject`, à **toutes** les vidéos des sujets qui ont au moins une vidéo marquée.
+    Le sous-ensemble obtenu est disjoint par sujet.
+ Le manifeste et les résultats de la campagne ne sont pas modifiés, et le rapport garde
+  l'empreinte du manifeste complet. Le bloc `subset` enregistre :
+  - les vidéos et sujets exclus et ceux qui restent ;
+  - les sujets partagés avec des vidéos exclues ;
+  - l'empreinte du manifeste dérivé et le SHA-256 de la spécification.
+
+  Une vidéo exclue retire ses deux configurations, si bien qu'une paire A1/A2 n'est jamais coupée.
+- **Incertitude groupée et accord sans étiquette (`score`).** `alert_uncertainty` ajoute à
+  l'intervalle de Wilson simple un bootstrap groupé par sujet du taux d'alerte.
+  `paired_alert_agreement` compte, vidéo par vidéo, les alertes communes, propres à chaque
+  configuration ou absentes, avec un bootstrap groupé de la différence de taux d'alerte. Ces blocs
+  n'utilisent aucune étiquette : un accord n'est pas une exactitude, et ces chiffres ne sont ni une
+  spécificité ni un taux de faux positifs. Chaque intervalle groupé indique combien de sujets portent
+  le signal (`informative_groups`), ainsi que la probabilité qu'un rééchantillonnage n'en contienne
+  aucun. Le traitement dépend de ce nombre :
+  - **moins de 5 sujets** : l'intervalle reçoit une mise en garde (`caution`) ;
+  - **aucun sujet** (aucune alerte, toutes les vidéos alertées, ou aucune paire discordante) :
+    l'intervalle, de largeur nulle, est retenu (`interval_withheld`). Il suggérerait une précision
+    que les données ne donnent pas.
 - **Limites par défaut :** mémoire disponible au moins 2,5 Go ; mémoire virtuelle libre au moins
   1,5 Go ; VRAM sous 7 900 Mio, une alerte n'étant déclenchée qu'après 5 échantillons consécutifs ;
   300 s par tentative. En cas de dépassement : annulation coopérative, puis arrêt forcé après 60 s.

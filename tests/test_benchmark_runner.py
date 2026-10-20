@@ -434,16 +434,17 @@ class ObservabilityTests(unittest.TestCase):
 
     def test_process_tree_cpu_is_measured_and_exited_processes_are_tolerated(self):
         import sys
-        rss, cpu = runner.process_tree_usage(os.getpid())
+        rss, cpu, error = runner.process_tree_usage(os.getpid())
         self.assertGreater(rss, 0)
         self.assertIsNone(cpu)  # first sample has no interval
+        self.assertIsNone(error)
         sum(i * i for i in range(200_000))
-        rss, cpu = runner.process_tree_usage(os.getpid())
+        rss, cpu, error = runner.process_tree_usage(os.getpid())
         self.assertIsNotNone(cpu)
         child = subprocess.Popen([sys.executable, "-c", "pass"])
         runner.process_tree_usage(child.pid)
         child.wait(timeout=30)
-        self.assertEqual(runner.process_tree_usage(child.pid), (None, None))
+        self.assertEqual(runner.process_tree_usage(child.pid), (None, None, "NoSuchProcess"))
 
     def test_monitor_summary_reports_cpu_peak_mean_and_convention(self):
         values = iter([None, 50.0, 150.0])
@@ -576,6 +577,116 @@ class ObservabilityTests(unittest.TestCase):
             summary = json.loads(next(iter(c.attempts("v1", "A2"))).joinpath("summary.json").read_text())
             self.assertFalse(summary["whisper_backend_confirmed"])
             self.assertEqual(summary["whisper_observed"]["transcriptions"][0]["segments"], 2)
+
+
+class FakePsutil:
+    """Synthetic psutil: a process table where a PID can be reused by a process with a new creation time."""
+
+    class Error(Exception):
+        pass
+
+    class NoSuchProcess(Error):
+        pass
+
+    def __init__(self):
+        self.table = {}  # pid -> {"created": float, "rss": int, "cpu": float, "parent": pid | None}
+        test = self
+
+        class Process:
+            def __init__(self, pid):
+                if pid not in test.table:
+                    raise test.NoSuchProcess(pid)
+                self.pid, self.created = pid, test.table[pid]["created"]
+
+            def _alive(self):
+                entry = test.table.get(self.pid)
+                if entry is None or entry["created"] != self.created:  # exited, or PID reused
+                    raise test.NoSuchProcess(self.pid)
+                return entry
+
+            def create_time(self):
+                self._alive()
+                return self.created
+
+            def children(self, recursive=False):
+                self._alive()
+                found, frontier = [], [self.pid]
+                while frontier:
+                    parent = frontier.pop()
+                    for pid, entry in list(test.table.items()):
+                        if entry["parent"] == parent:
+                            found.append(Process(pid))
+                            if recursive:
+                                frontier.append(pid)
+                return found
+
+            def cpu_percent(self, interval=None):
+                return self._alive()["cpu"]
+
+            def memory_info(self):
+                return type("Memory", (), {"rss": self._alive()["rss"]})()
+
+        self.Process = Process
+
+    def spawn(self, pid, created, rss=100, cpu=50.0, parent=None):
+        self.table[pid] = {"created": created, "rss": rss, "cpu": cpu, "parent": parent}
+
+
+class ProcessMonitoringTests(unittest.TestCase):
+    def setUp(self):
+        from unittest import mock
+        self.ps = FakePsutil()
+        patcher = mock.patch.dict(sys.modules, {"psutil": self.ps})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        for cache in (runner._PROCESSES, runner._PRIMED):
+            self.addCleanup(cache.clear)
+            cache.clear()
+
+    def test_reused_pid_is_measured_as_a_new_process(self):
+        self.ps.spawn(100, created=1.0, rss=10)
+        runner.process_tree_usage(100)
+        self.assertEqual(runner.process_tree_usage(100), (10, 50.0, None))
+        del self.ps.table[100]
+        self.ps.spawn(100, created=2.0, rss=20, cpu=80.0)  # the next worker receives the same PID
+        self.assertEqual(runner.process_tree_usage(100), (20, None, None))  # new process: no interval yet
+        self.assertEqual(runner.process_tree_usage(100), (20, 80.0, None))
+        self.assertEqual(set(runner._PROCESSES), {(100, 2.0)})
+
+    def test_reused_child_pid_does_not_inherit_the_old_cpu_baseline(self):
+        self.ps.spawn(100, created=1.0, rss=10, cpu=10.0)
+        self.ps.spawn(200, created=1.5, rss=5, cpu=30.0, parent=100)
+        runner.process_tree_usage(100)
+        self.assertEqual(runner.process_tree_usage(100), (15, 40.0, None))
+        self.ps.spawn(200, created=3.0, rss=7, cpu=90.0, parent=100)
+        self.assertEqual(runner.process_tree_usage(100), (17, 10.0, None))  # new child primed, not counted
+        self.assertEqual(runner.process_tree_usage(100), (17, 100.0, None))
+
+    def test_terminated_processes_are_reported_and_never_estimated(self):
+        self.ps.spawn(100, created=1.0)
+        self.ps.spawn(200, created=1.0, rss=5, parent=100)
+        runner.process_tree_usage(100)
+        del self.ps.table[200]
+        self.assertEqual(runner.process_tree_usage(100), (100, 50.0, None))  # exited child skipped
+        self.assertNotIn((200, 1.0), runner._PROCESSES)
+        del self.ps.table[100]
+        self.assertEqual(runner.process_tree_usage(100), (None, None, "NoSuchProcess"))
+
+    def test_monitor_summary_discloses_unmeasured_samples_and_limits_still_apply(self):
+        def sampler(pid):
+            return dict(HEALTHY, process_tree_rss_bytes=None, process_tree_cpu_percent=None,
+                        process_tree_error="NoSuchProcess", available_bytes=2**30)
+        with tempfile.TemporaryDirectory() as tmp:
+            c = Campaign(tmp, names=("v1",))
+            c.behaviour["v1.mp4"] = {"wait_for_cancel": True}
+            c.run(sampler=sampler)
+            directory = next(iter(c.attempts("v1", "A2")))
+            summary = json.loads(directory.joinpath("monitor_summary.json").read_text())
+            self.assertEqual(summary["intervention"], "resource_limit:available_memory")
+            self.assertEqual(summary["process_tree_monitoring"],
+                             {"samples_without_rss": summary["samples"], "errors": {"NoSuchProcess": summary["samples"]}})
+            self.assertNotIn("process_tree_rss_bytes", summary)
+            self.assertIsNone(summary["cpu"]["peak_percent"])
 
 
 class AtomicAndWorkerUnitTests(unittest.TestCase):

@@ -307,13 +307,33 @@ def _prepare_inputs(campaign: Path, item, source: Path, prepare):
     return identity
 
 
+def _checked_configs(configs):
+    configs = tuple(configs)
+    if not configs or len(set(configs)) != len(configs) or set(configs) - set(CONFIGS) or "A2" not in configs:
+        raise ValueError(f"configs must be distinct members of {CONFIGS} and include A2 (A0 is derived from it)")
+    return configs
+
+
+def campaign_configs(identity: dict):
+    """Campaigns created before the configs option ran both configurations and do not record them."""
+    return tuple(identity.get("configs", CONFIGS))
+
+
 def run(manifest_path: Path, media_root: Path, campaign: Path, pilot_manifest: Path, *, allow_inference=False,
         retry_incomplete=False, limits: Limits = Limits(), launcher=subprocess_launcher, sampler=system_sample,
-        identity_factory=verify_identity, prepare=None, preload_whisper_cuda12=True, split="test"):
+        identity_factory=verify_identity, prepare=None, preload_whisper_cuda12=True, split="test",
+        configs=CONFIGS, accept_partial=False):
+    """configs=("A2",) runs only the original input, e.g. for a corpus without audio, where A1 would repeat A2.
+
+    accept_partial=True records a "partial" attempt (the pipeline returned an incomplete analysis, e.g. no
+    visual frame could be sampled) as that item's outcome and continues; it is neither retried nor dropped,
+    and is reported as a technical failure. Failed or cancelled attempts still stop the campaign.
+    """
     from evaluation.technical.benchmark import campaign_lock
 
     if not allow_inference:
         raise PermissionError("running models requires explicit --allow-inference")
+    configs = _checked_configs(configs)
     campaign, media_root = Path(campaign).resolve(), Path(media_root).resolve()
     manifest = load_manifest(manifest_path)
     disjoint = assert_disjoint_from_pilot(manifest, pilot_manifest)
@@ -332,6 +352,9 @@ def run(manifest_path: Path, media_root: Path, campaign: Path, pilot_manifest: P
                                                      "model_revisions", "gpu", "runtime_sha256")},
                          "limits": asdict(limits), "preload_whisper_cuda12": preload_whisper_cuda12,
                          "evaluation_code": evaluation_code_identity()}
+    if configs != CONFIGS:
+        # Recorded only when non-default, so the identity of existing two-configuration campaigns is unchanged.
+        campaign_identity["configs"] = list(configs)
     campaign.mkdir(parents=True, exist_ok=True)
     with campaign_lock(campaign):
         marker = campaign / "campaign.json"
@@ -342,8 +365,9 @@ def run(manifest_path: Path, media_root: Path, campaign: Path, pilot_manifest: P
         else:
             write_atomic(marker, campaign_identity)
             write_atomic(campaign / "environment.json", identity["environment"])
+        accepted = (TERMINAL_OK, "partial") if accept_partial else (TERMINAL_OK,)
         latest = {key: attempt_status(dirs[-1]) for key, dirs in _attempts(campaign).items()}
-        unfinished = sorted(f"{k[0]}/{k[1]}" for k, v in latest.items() if v["status"] != TERMINAL_OK)
+        unfinished = sorted(f"{k[0]}/{k[1]}" for k, v in latest.items() if v["status"] not in accepted)
         if unfinished and not retry_incomplete:
             raise ValueError("incomplete attempts retained (" + ", ".join(unfinished[:10]) +
                              "); rerun with --retry-incomplete after review")
@@ -352,9 +376,9 @@ def run(manifest_path: Path, media_root: Path, campaign: Path, pilot_manifest: P
             if file_digest(source) != item.sha256:
                 raise ValueError(f"{item.item_id}: media SHA-256 does not match the manifest")
             a1 = None
-            order = CONFIGS if index % 2 == 0 else tuple(reversed(CONFIGS))
+            order = configs if index % 2 == 0 else tuple(reversed(configs))
             for config in order:
-                if latest.get((item.item_id, config), {}).get("status") == TERMINAL_OK:
+                if latest.get((item.item_id, config), {}).get("status") in accepted:
                     continue
                 if config == "A1" and a1 is None:
                     a1 = _prepare_inputs(campaign, item, source, prepare)
@@ -366,9 +390,10 @@ def run(manifest_path: Path, media_root: Path, campaign: Path, pilot_manifest: P
                     "item_id": item.item_id, "group_id": item.group_id, "config": config,
                     "input_path": str(input_path), "input_sha256": input_sha, "attempt_dir": str(directory),
                     "campaign_manifest_digest": campaign_identity["manifest_digest"],
-                    "preload_whisper_cuda12": preload_whisper_cuda12, "start_mode": "cold_process"})
+                    "preload_whisper_cuda12": preload_whisper_cuda12, "start_mode": "cold_process",
+                    "accepted_terminal_statuses": list(accepted)})
                 outcome = supervise(directory, launcher, sampler, limits)
-                if outcome["status"] != TERMINAL_OK:
+                if outcome["status"] not in accepted:
                     return {"stopped_at": f"{item.item_id}/{config}", **outcome, "summary": None}
         return {"stopped_at": None, "status": "all_attempted"}
 
@@ -396,7 +421,7 @@ def collect(manifest_path: Path, campaign: Path, pilot_manifest: Path, output: P
     attempts = _attempts(campaign)
     rows = []
     for item in manifest.evaluable(split):
-        for config in CONFIGS:
+        for config in campaign_configs(identity):
             dirs = attempts.get((item.item_id, config))
             if not dirs:
                 rows.append({"item_id": item.item_id, "config": config, "status": "not_run",

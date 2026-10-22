@@ -185,6 +185,45 @@ class RunnerCampaignTests(unittest.TestCase):
         self.assertEqual(set(report["video_level"]), {"withheld"})  # unreviewed labels
         self.assertEqual(report["alert_review"]["A0@0.15"]["alerted_videos"], 1)
         self.assertEqual(report["alert_review"]["A2"]["alerts_by_reference_label"]["missing"], 1)
+        # A default (two-configuration) campaign keeps its historical identity: no configs key.
+        self.assertNotIn("configs", json.loads((c.dir / "campaign.json").read_text()))
+
+    def test_a2_only_campaign_runs_and_collects_only_a2(self):
+        c = Campaign(self.tmp)
+        c.behaviour.update({"v1.mp4": {"alert": True, "marqo": 0.5, "warnings": [NOT_APPLICABLE]},
+                            "v2.mp4": {"warnings": [NOT_APPLICABLE]}})
+        prepared = []
+        self.assertIsNone(c.run(configs=("A2",), prepare=lambda s, t: prepared.append(s))["stopped_at"])
+        self.assertEqual(c.calls, ["v1.mp4", "v2.mp4"])
+        self.assertEqual(prepared, [])  # no video-only copy without A1
+        self.assertEqual(json.loads((c.dir / "campaign.json").read_text())["configs"], ["A2"])
+        results = c.collect()
+        self.assertEqual(sorted((r.item_id, r.config) for r in results.results), [("v1", "A2"), ("v2", "A2")])
+        # A campaign created for one set of configurations cannot be continued with another.
+        with self.assertRaisesRegex(ValueError, "campaign identity changed"):
+            c.run()
+
+    def test_accepted_partial_outcomes_are_recorded_never_retried_and_failures_still_stop(self):
+        c = Campaign(self.tmp, names=("v1", "v2", "v3"))
+        c.behaviour.update({"v1.mp4": {"status": "partial", "warnings": [NOT_APPLICABLE]},
+                            "v2.mp4": {"warnings": [NOT_APPLICABLE]}, "v3.mp4": {"fail": True}})
+        self.assertEqual(c.run(configs=("A2",))["stopped_at"], "v1/A2")  # default policy stops
+        self.assertEqual(c.run(configs=("A2",), accept_partial=True, retry_incomplete=True)["stopped_at"], "v3/A2")
+        self.assertEqual(c.calls, ["v1.mp4", "v2.mp4", "v3.mp4"])  # the recorded partial v1 is accepted, not rerun
+        c.behaviour["v3.mp4"] = {"warnings": [NOT_APPLICABLE]}
+        self.assertIsNone(c.run(configs=("A2",), accept_partial=True, retry_incomplete=True)["stopped_at"])
+        self.assertEqual(c.calls[3:], ["v3.mp4"])  # only the failed attempt is retried
+        spec = json.loads(next(iter(c.attempts("v3", "A2"))).joinpath("spec.json").read_text())
+        self.assertEqual(spec["accepted_terminal_statuses"], ["completed", "partial"])
+        statuses = {r.item_id: r.status for r in c.collect().results}
+        self.assertEqual(statuses, {"v1": "partial", "v2": "completed", "v3": "completed"})
+
+    def test_invalid_configuration_sets_are_refused(self):
+        c = Campaign(self.tmp)
+        for configs in ((), ("A1",), ("A2", "A2"), ("A2", "A3")):
+            with self.assertRaisesRegex(ValueError, "configs must"):
+                c.run(configs=configs)
+        self.assertFalse(c.dir.exists())
 
     def test_resource_limit_cancels_and_requires_explicit_resumption(self):
         c = Campaign(self.tmp, names=("v1",))

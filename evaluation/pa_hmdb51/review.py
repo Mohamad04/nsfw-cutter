@@ -13,6 +13,7 @@ Uncertain and excluded labels are never scored as negatives; they are counted. U
 from __future__ import annotations
 
 import csv
+import json
 import re
 from collections import Counter
 from pathlib import Path
@@ -29,6 +30,54 @@ CONTEXTS = ("", "nonsexual_everyday", "nonsexual_medical", "nonsexual_artistic",
             "sexual", "unclear")
 ESCALATIONS = ("", "age_uncertain", "consent_uncertain", "other_sensitive")
 EVENT = re.compile(r"^\s*(\d+(?:\.\d+)?)\s*-\s*(\d+(?:\.\d+)?)\s*:\s*([a-z_]+)\s*$")
+
+
+PACKAGE_SEED = "nsfw-cutter/pa-hmdb51/blind-package/v1"
+
+
+def blind_package(manifest_path: Path, media_root: Path, output: Path, seed: str = PACKAGE_SEED) -> dict:
+    """Review package built from a benchmark manifest only: no prediction, score, alert or PA-HMDB51 attribute
+    is read. Each video is copied bit for bit under an anonymous name (R001.mkv, ...) so that file names,
+    which reveal the HMDB51 action and source, do not prime the reviewer. Order: sha256(seed | item_id).
+    """
+    import hashlib
+    import shutil
+
+    from evaluation.benchmark.manifest import load_manifest, manifest_digest
+    from evaluation.pilot.manifest import file_digest
+
+    manifest, output = load_manifest(manifest_path), Path(output)
+    output.mkdir(parents=True, exist_ok=False)
+    (output / "media").mkdir()
+    items = sorted(manifest.evaluable(), key=lambda i: hashlib.sha256(f"{seed}|{i.item_id}".encode()).hexdigest())
+    sheet, key = [], []
+    for index, item in enumerate(items, 1):
+        review_id = f"R{index:03d}"
+        source = Path(media_root) / item.file_name
+        if file_digest(source) != item.sha256:
+            raise ValueError(f"{item.item_id}: media does not match the manifest")
+        target = output / "media" / f"{review_id}{source.suffix}"
+        shutil.copyfile(source, target)
+        if file_digest(target) != item.sha256:
+            raise ValueError(f"{review_id}: copy differs from the source")
+        sheet.append({"review_id": review_id, "review_batch": 1, "file_to_watch": f"media/{target.name}",
+                      "duration_seconds": item.duration_seconds})
+        key.append({"review_id": review_id, "item_id": item.item_id, "evaluated_sha256": item.sha256,
+                    "selection": f"manifest:{manifest.benchmark_id}"})
+    columns = ("review_id", "review_batch", "file_to_watch", "duration_seconds", "reviewer_id", "review_date",
+               "watched_in_full", "nudity", "nudity_context", "sexual_activity", "sexual_context", "video_label",
+               "events", "escalation", "exclusion_reason", "notes")
+    for name, rows, fields in (("manual_review.csv", sheet, columns), ("manual_review_key.csv", key, list(key[0]))):
+        with (output / name).open("x", newline="", encoding="utf-8") as handle:
+            writer = csv.DictWriter(handle, fieldnames=list(fields), extrasaction="ignore")
+            writer.writeheader()
+            writer.writerows(rows)
+    record = {"benchmark_id": manifest.benchmark_id, "manifest_digest": manifest_digest(manifest), "seed": seed,
+              "videos": len(sheet), "prediction_independent": True,
+              "empty_sheet_sha256": file_digest(output / "manual_review.csv"),
+              "key_sha256": file_digest(output / "manual_review_key.csv")}
+    (output / "package.json").write_text(json.dumps(record, indent=2), encoding="utf-8")
+    return record
 
 
 def _read(path: Path):
@@ -115,10 +164,12 @@ def _clip(item_id: str, duration: float, row: dict) -> Clip | None:
                                 excluded_intervals=masks)
 
 
-def score_review(review_csv: Path, analysis_dir: Path) -> dict:
+def score_review(review_csv: Path, analysis_dir: Path, key_csv: Path | None = None) -> dict:
+    """key_csv defaults to the analysis' own key; pass a blind package key to score one prediction-independent
+    review against the predictions of any analysis of the same videos (e.g. two pipeline versions)."""
     analysis_dir = Path(analysis_dir)
     sheet = {r["review_id"]: r for r in _read(review_csv)}
-    key = {r["review_id"]: r for r in _read(analysis_dir / "manual_review_key.csv")}
+    key = {r["review_id"]: r for r in _read(key_csv or analysis_dir / "manual_review_key.csv")}
     videos = {r["item_id"]: r for r in _read(analysis_dir / "per_video.csv")}
     predictions = {}
     for p in _read(analysis_dir / "predictions.csv"):

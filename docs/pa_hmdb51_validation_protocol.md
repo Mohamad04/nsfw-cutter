@@ -36,6 +36,18 @@ Aucune valeur ne décrit `sexual_activity` ni `sexual_context`. **Le niveau 2 n'
   du projet a vu les métriques agrégées. Si le relecteur est aussi celui qui a lancé la campagne,
   l'aveugle reste partiel : il faut le déclarer dans le rapport.
 
+### Paquet entièrement indépendant des prédictions (recommandé)
+
+`python -m evaluation.pa_hmdb51 review-package MANIFESTE --media-root … --output …` construit la
+feuille **à partir du manifeste seulement** : aucune prédiction, aucune alerte ni aucun attribut
+n'est lu, si bien que la composition de la feuille ne dépend d'aucune version du pipeline.
+
+- Chaque vidéo est une copie bit à bit, sous un nom anonyme (`R001.mkv`, …). Les noms HMDB51
+  révèlent en effet l'action et le film source.
+- La clé doit être déplacée hors du dossier remis au relecteur.
+- Une même revue peut ensuite être notée contre plusieurs versions du pipeline :
+  `score-review … --key <clé du paquet> --analysis <analyse de la version>`.
+
 ## 3. Visionnage et saisie
 
 - Relecteur **majeur**, qui a lu le guide (sections 2 à 7). Visionnage local uniquement, sans

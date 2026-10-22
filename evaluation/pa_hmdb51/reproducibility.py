@@ -39,6 +39,50 @@ def fingerprint(directory: Path):
         "wall_seconds": json.loads((directory / "monitor_summary.json").read_text(encoding="utf-8"))["wall_seconds"]}
 
 
+def _timing(directory: Path):
+    summary = json.loads((directory / "summary.json").read_text(encoding="utf-8"))
+    return summary.get("pipeline_seconds"), summary.get("stage_seconds") or {}
+
+
+def compare_versions(before: Path, after: Path, config: str = "A2"):
+    """Per-video before/after table of two campaigns of the same manifest run by different pipeline versions."""
+    runs = [{key[0]: dirs[-1] for key, dirs in runner._attempts(Path(c)).items() if key[1] == config}
+            for c in (before, after)]
+    rows = []
+    for item in sorted(set(runs[0]) & set(runs[1])):
+        prints = [fingerprint(r[item]) for r in runs]
+        timings = [_timing(r[item]) for r in runs]
+        row = {"item_id": item}
+        for label, p, (pipeline, stages) in zip(("before", "after"), prints, timings):
+            row.update({
+                f"{label}_status": p["status"], f"{label}_errors": len(p["errors"]),
+                f"{label}_coarse_frames": len(p["coarse"]),
+                f"{label}_coarse": ";".join(f"{t:g}:{o}" for t, o in p["coarse"]),
+                f"{label}_marqo": ";".join(f"{s:.4f}" for s in p["marqo"]),
+                f"{label}_marqo_max": max(p["marqo"], default=None),
+                f"{label}_windows": ";".join(f"{a:g}-{b:g}" for a, b in p["windows"]),
+                f"{label}_qwen_batches": len(p["batches"]),
+                f"{label}_alert": bool(p["suggestions"]),
+                f"{label}_suggestions": ";".join(f"{c}@{a:g}-{b:g}:{conf:g}" for c, a, b, conf, _ in p["suggestions"]),
+                f"{label}_reasons": " | ".join(s[4] for s in p["suggestions"]),
+                f"{label}_wall_seconds": round(p["wall_seconds"], 3),
+                f"{label}_pipeline_seconds": round(pipeline, 3) if pipeline is not None else None,
+                f"{label}_coarse_sampling_seconds": stages.get("coarse_sampling"),
+                f"{label}_prefilter_seconds": stages.get("prefilter")})
+        row["changed"] = any(prints[0][k] != prints[1][k] for k in ("status", "coarse", "marqo", "windows",
+                                                                     "batches", "suggestions"))
+        rows.append(row)
+    status = lambda label: {s: sum(r[f"{label}_status"] == s for r in rows) for s in ("completed", "partial")}  # noqa: E731
+    summary = {"before": str(before), "after": str(after), "videos": len(rows),
+               "videos_changed": sum(r["changed"] for r in rows),
+               "status_before": status("before"), "status_after": status("after"),
+               "alerts_before": sum(r["before_alert"] for r in rows), "alerts_after": sum(r["after_alert"] for r in rows),
+               "unchanged_among_completed_before": sum(not r["changed"] for r in rows
+                                                       if r["before_status"] == "completed"),
+               "completed_before": sum(r["before_status"] == "completed" for r in rows)}
+    return {"summary": summary, "rows": rows}
+
+
 def compare(campaigns: list[Path], config: str = "A2"):
     runs = [{key[0]: dirs[-1] for key, dirs in runner._attempts(Path(c)).items() if key[1] == config}
             for c in campaigns]

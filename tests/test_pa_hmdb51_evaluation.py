@@ -278,6 +278,33 @@ class AnalysisAndReviewTests(unittest.TestCase):
         self.assertEqual(len(report["invalid_rows"]), 1)
         self.assertEqual(report["reviewed"], 0)
 
+    def test_blind_package_is_built_from_the_manifest_only_and_scores_any_analysis(self):
+        import hashlib
+
+        from evaluation.pa_hmdb51.review import blind_package
+        package = self.tmp / "package"
+        record = blind_package(self.campaign.manifest, self.campaign.media_root, package)
+        sheet, key = read_csv(package / "manual_review.csv"), read_csv(package / "manual_review_key.csv")
+        self.assertEqual((record["videos"], record["prediction_independent"]), (3, True))
+        self.assertEqual(list(sheet[0]), list(REVIEW_COLUMNS))
+        self.assertFalse(any(item in json.dumps(sheet) for item in ("v1", "v2", "v3")))  # anonymous files
+        for row, entry in zip(sheet, key):
+            copy = package / row["file_to_watch"]
+            self.assertEqual(hashlib.sha256(copy.read_bytes()).hexdigest(), entry["evaluated_sha256"])
+        again = blind_package(self.campaign.manifest, self.campaign.media_root, self.tmp / "package2")
+        self.assertEqual(again["key_sha256"], record["key_sha256"])  # deterministic order
+        with self.assertRaises(FileExistsError):
+            blind_package(self.campaign.manifest, self.campaign.media_root, package)
+        by_item = {k["item_id"]: k["review_id"] for k in key}
+        for row in sheet:
+            row.update(self.NEG)
+        filled = self.tmp / "package_filled.csv"
+        write_csv(filled, sheet)
+        report = score_review(filled, self.out, key_csv=package / "manual_review_key.csv")
+        self.assertEqual(report["status"], "complete_review")
+        self.assertEqual(report["video_level"]["exclude"]["fp"], 1)  # v1 alerted, reviewed negative
+        self.assertIn("v1", by_item)
+
     def test_analysis_never_overwrites(self):
         with self.assertRaises(FileExistsError):
             analyze([(self.campaign.manifest, self.campaign.dir)], prepared=self.tmp / "prepared",

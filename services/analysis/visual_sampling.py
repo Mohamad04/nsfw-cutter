@@ -5,7 +5,7 @@ import math
 from collections.abc import Callable
 from pathlib import Path
 
-from services.analysis.cancellation import CancellationToken
+from services.analysis.cancellation import AnalysisCancelled, CancellationToken
 from services.analysis.contracts import (
     AnalysisSettings,
     CandidateWindow,
@@ -200,8 +200,14 @@ class VisualSamplingService:
             "0",
             output_pattern,
         ]
-        self.process_runner.run(command, cancellation=cancellation)
-        paths = sorted(output_dir.glob("frame_*.jpg"))
+        paths = self._extract_frames(
+            command,
+            _first_frame_command(
+                self.ffmpeg_service.ffmpeg_path, video_path, output_pattern, _CLASSIFIER_FRAME_FILTER
+            ),
+            output_dir,
+            cancellation,
+        )
         return [
             SampledFrame(
                 timestamp_seconds=min(duration_seconds, index / sample_rate_fps),
@@ -297,8 +303,18 @@ class VisualSamplingService:
             "0",
             output_pattern,
         ]
-        self.process_runner.run(command, cancellation=cancellation)
-        paths = sorted(output_dir.glob("frame_*.jpg"))
+        paths = self._extract_frames(
+            command,
+            _first_frame_command(
+                self.ffmpeg_service.ffmpeg_path,
+                video_path,
+                output_pattern,
+                _REFINED_FRAME_FILTER,
+                start_seconds=start_seconds,
+            ),
+            output_dir,
+            cancellation,
+        )
         return [
             SampledFrame(
                 timestamp_seconds=min(
@@ -311,6 +327,82 @@ class VisualSamplingService:
             )
             for index, path in enumerate(paths)
         ]
+
+
+    def _extract_frames(
+        self,
+        command: list,
+        first_frame_command: list,
+        output_dir: Path,
+        cancellation: CancellationToken,
+    ) -> list[Path]:
+        """Run a periodic sampling command, falling back to the first frame when it writes none.
+
+        FFmpeg's ``fps`` filter (nearest rounding) emits no frame when the sampled span is shorter
+        than half a sampling period and no later frame follows: media shorter than 2.5 s at the
+        Balanced coarse rate (0.2 FPS), or a final candidate window shorter than 0.5 s at 1 FPS.
+        The image2 muxer then fails with "Nothing was written into output file". In exactly that
+        case one frame is extracted at the start of the sampled span instead, which is the frame
+        the periodic sampler selects for any longer span. A command that wrote frames keeps its
+        output (and its failure, if any); media that cannot be decoded still raise.
+        """
+        failure: RuntimeError | None = None
+        try:
+            self.process_runner.run(command, cancellation=cancellation)
+        except AnalysisCancelled:
+            raise
+        except RuntimeError as error:
+            failure = error
+        paths = sorted(output_dir.glob("frame_*.jpg"))
+        if paths:
+            if failure is not None:
+                raise failure
+            return paths
+        try:
+            self.process_runner.run(first_frame_command, cancellation=cancellation)
+        except AnalysisCancelled:
+            raise
+        except RuntimeError as error:
+            raise error from failure
+        paths = sorted(output_dir.glob("frame_*.jpg"))
+        if not paths:
+            raise failure or RuntimeError("FFmpeg did not produce any readable sampled frames")
+        return paths
+
+
+def _first_frame_command(
+    ffmpeg_path,
+    video_path: str | Path,
+    output_pattern: Path,
+    frame_filter: str,
+    *,
+    start_seconds: float | None = None,
+) -> list:
+    seek = ["-ss", f"{start_seconds:.6f}"] if start_seconds is not None else []
+    return [
+        ffmpeg_path,
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-nostdin",
+        *seek,
+        "-i",
+        video_path,
+        "-map",
+        "0:v:0",
+        "-frames:v",
+        "1",
+        "-vf",
+        frame_filter,
+        "-q:v",
+        "3",
+        "-an",
+        "-sn",
+        "-dn",
+        "-start_number",
+        "0",
+        output_pattern,
+    ]
 
 
 def _deduplicate_frames(frames: list[SampledFrame], tolerance: float = 0.2) -> list[SampledFrame]:

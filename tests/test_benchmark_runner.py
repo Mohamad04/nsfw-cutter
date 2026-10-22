@@ -12,7 +12,7 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
-from evaluation.benchmark import runner, worker
+from evaluation.benchmark import runner, versions, worker
 from evaluation.benchmark.atomic import write_atomic
 from evaluation.benchmark.media import probe_packets
 from evaluation.benchmark.report import score
@@ -129,8 +129,10 @@ class Campaign:
         factory = lambda cache, journal: MockPipeline(self.behaviour, journal, self.calls)  # noqa: E731
         return ThreadHandle(lambda: worker.run_attempt(spec_path, pipeline_factory=factory))
 
-    def identity(self):
-        return {"commit": "2399e950aeb33dd7925690c78d3f5f25d50d07cb", "frozen_baseline": runner.BASELINE,
+    def identity(self, pipeline_version=runner.DEFAULT_PIPELINE_VERSION):
+        frozen = versions.version(pipeline_version)
+        return {"commit": "2399e950aeb33dd7925690c78d3f5f25d50d07cb", "frozen_baseline": frozen["commit"],
+                "pipeline_version": {"name": pipeline_version, "parent": frozen["parent"]},
                 "configuration_sha256": "c" * 64, "model_revisions": {"qwen": "q@r"}, "gpu": "Synthetic GPU, 0.0, 0 MiB",
                 "runtime_sha256": "r" * 64, "environment": {"synthetic": True}}
 
@@ -217,6 +219,24 @@ class RunnerCampaignTests(unittest.TestCase):
         self.assertEqual(spec["accepted_terminal_statuses"], ["completed", "partial"])
         statuses = {r.item_id: r.status for r in c.collect().results}
         self.assertEqual(statuses, {"v1": "partial", "v2": "completed", "v3": "completed"})
+
+    def test_pipeline_version_is_recorded_only_when_not_the_baseline(self):
+        c = Campaign(self.tmp)
+        c.behaviour.update({"v1.mp4": {"warnings": [NOT_APPLICABLE]}, "v2.mp4": {"warnings": [NOT_APPLICABLE]}})
+        self.assertIsNone(c.run(configs=("A2",), pipeline_version="short-media-coverage-bfe55cc")["stopped_at"])
+        identity = json.loads((c.dir / "campaign.json").read_text())
+        self.assertEqual(identity["frozen_baseline"], "bfe55cc0c7772a695269b97d1646f364e818c87e")
+        self.assertEqual(identity["pipeline_version"]["name"], "short-media-coverage-bfe55cc")
+        with self.assertRaisesRegex(ValueError, "campaign identity changed"):
+            c.run(configs=("A2",))  # the baseline version cannot continue a campaign of another version
+        with self.assertRaisesRegex(ValueError, "unknown pipeline version"):
+            versions.version("unregistered")
+
+    def test_derived_version_differs_from_its_parent_only_in_declared_files(self):
+        lineage = versions.verify_lineage("short-media-coverage-bfe55cc")
+        self.assertEqual(lineage["changed_files"], ["services/analysis/visual_sampling.py"])
+        self.assertEqual(lineage["parent_commit"], runner.BASELINE)
+        self.assertEqual(versions.verify_lineage(runner.DEFAULT_PIPELINE_VERSION)["changed_files"], [])
 
     def test_invalid_configuration_sets_are_refused(self):
         c = Campaign(self.tmp)

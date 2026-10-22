@@ -43,6 +43,8 @@ def main(argv=None):
     run.add_argument("--attempt-timeout", type=float, default=300.0)
     run.add_argument("--accept-partial", action="store_true",
                      help="record partial analyses (e.g. no frame sampled on clips under 2.5 s) and continue")
+    run.add_argument("--pipeline-version", default=None,
+                     help="registered frozen pipeline version (evaluation/benchmark/versions.py); default: baseline")
 
     analyze = commands.add_parser("analyze", help="build predictions, timings, metrics and the review sheet")
     analyze.add_argument("--run", nargs=2, action="append", metavar=("MANIFEST", "CAMPAIGN"), required=True)
@@ -76,7 +78,8 @@ def main(argv=None):
         outcome = runner.run(args.manifest, args.media_root, args.campaign, args.pilot_manifest,
                              allow_inference=args.allow_inference, retry_incomplete=args.retry_incomplete,
                              limits=runner.Limits(attempt_timeout_seconds=args.attempt_timeout), configs=("A2",),
-                             accept_partial=args.accept_partial)
+                             accept_partial=args.accept_partial,
+                             pipeline_version=args.pipeline_version or runner.DEFAULT_PIPELINE_VERSION)
         print(json.dumps(outcome, indent=2, default=str))
         return 0 if outcome.get("stopped_at") is None else 2
     if args.command == "analyze":

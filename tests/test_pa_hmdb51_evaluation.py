@@ -14,7 +14,7 @@ from evaluation.pa_hmdb51 import annotations as pa
 from evaluation.pa_hmdb51 import prepare
 from evaluation.pa_hmdb51.analyze import REVIEW_COLUMNS, analyze
 from evaluation.pa_hmdb51.review import score_review, validate_row
-from tests.test_benchmark_runner import HEALTHY, NOT_APPLICABLE, PILOT, Campaign
+from tests.test_benchmark_runner import HEALTHY, NOT_APPLICABLE, PILOT, Campaign, sha256
 
 FFMPEG = prepare.FFMPEG_BIN / "ffmpeg.exe"
 ENTRY = {"face": [[0, 9, 2]], "gender": [[0, 9, [1, 2]]], "skin_color": [[0, 9, 1]],
@@ -277,6 +277,73 @@ class AnalysisAndReviewTests(unittest.TestCase):
         report = score_review(self.fill({"v1": {**self.NEG, "nudity": "present"}}), self.out)
         self.assertEqual(len(report["invalid_rows"]), 1)
         self.assertEqual(report["reviewed"], 0)
+
+    def test_blind_package_is_built_from_the_manifest_only_and_scores_any_analysis(self):
+        from evaluation.pa_hmdb51.review import blind_package, media_tags
+        if not FFMPEG.is_file():
+            self.skipTest("project FFmpeg not available")
+
+        def titled_video(path):
+            # HMDB51 clips carry their original path, which names the action, in the stream title.
+            subprocess.run([str(FFMPEG), "-nostdin", "-v", "error", "-f", "lavfi", "-i", "testsrc=size=64x48:rate=30",
+                            "-t", "0.5", "-c:v", "libx264", "-metadata:s:v:0", r"title=E:\HMDB\kiss\x.avi",
+                            "-metadata", "comment=kiss", "-f", "matroska", str(path)], check=True)
+
+        (self.tmp / "real").mkdir()
+        real = Campaign(self.tmp / "real", names=("v1", "v2", "v3"), media=titled_video)
+        self.assertIn("title", media_tags(real.media_root / "v1.mp4"))
+        package = self.tmp / "package"
+        record = blind_package(real.manifest, real.media_root, package)
+        sheet, key = read_csv(package / "manual_review.csv"), read_csv(package / "manual_review_key.csv")
+        self.assertEqual((record["videos"], record["prediction_independent"]), (3, True))
+        self.assertEqual(list(sheet[0]), list(REVIEW_COLUMNS))
+        self.assertFalse(any(item in json.dumps(sheet) for item in ("v1", "v2", "v3")))  # anonymous files
+        for row, entry in zip(sheet, key):
+            copy = package / row["file_to_watch"]
+            self.assertTrue(copy.name.endswith(".mkv"))
+            self.assertLessEqual(set(media_tags(copy)), {"DURATION", "encoder", "ENCODER"})  # no title, no comment
+            source = real.media_root / f"{entry['item_id']}.mp4"
+            self.assertEqual(prepare.decoded_frames(copy), prepare.decoded_frames(source))
+            self.assertEqual(sha256(source), entry["evaluated_sha256"])
+            self.assertEqual(sha256(copy), entry["review_copy_sha256"])
+        again = blind_package(real.manifest, real.media_root, self.tmp / "package2")
+        self.assertEqual(again["key_sha256"], record["key_sha256"])  # deterministic order and copies
+        with self.assertRaises(FileExistsError):
+            blind_package(real.manifest, real.media_root, package)
+        by_item = {k["item_id"]: k["review_id"] for k in key}
+        for row in sheet:
+            row.update(self.NEG)
+        filled = self.tmp / "package_filled.csv"
+        write_csv(filled, sheet)
+        report = score_review(filled, self.out, key_csv=package / "manual_review_key.csv")
+        self.assertEqual(report["status"], "complete_review")
+        self.assertEqual(report["video_level"]["exclude"]["fp"], 1)  # v1 alerted, reviewed negative
+        self.assertIn("v1", by_item)
+
+    def test_partial_analyses_are_never_scored_as_misses_or_negatives(self):
+        import shutil
+        analysis = self.tmp / "analysis_with_partial"
+        shutil.copytree(self.out, analysis)
+        videos = read_csv(analysis / "per_video.csv")
+        for row in videos:
+            if row["item_id"] == "v3":
+                row.update({"status": "partial", "A2_alert": ""})  # as the baseline's short clips
+        write_csv(analysis / "per_video.csv", videos)
+        positive = {**self.NEG, "nudity": "present", "video_label": "positive", "events": "0.5-1.5:nudity"}
+        key = {r["review_id"]: r["item_id"] for r in read_csv(analysis / "manual_review_key.csv")}
+        sheet = read_csv(analysis / "manual_review.csv")
+        for row in sheet:
+            row.update(positive if key[row["review_id"]] in ("v1", "v3") else self.NEG)
+        filled = self.tmp / "filled_partial.csv"
+        write_csv(filled, sheet)
+        report = score_review(filled, analysis)
+        self.assertEqual(report["analysis_status"], {"completed": 2, "partial": 1})
+        self.assertEqual(report["reviewed_without_usable_analysis"], 1)
+        excluded, worst = report["video_level"]["exclude"], report["video_level"]["worst_case"]
+        self.assertEqual((excluded["tp"], excluded["fn"], excluded["failed_positive"]), (1, 0, 1))
+        self.assertEqual(worst["fn"], 1)  # only the explicit worst-case policy counts it as missed
+        self.assertEqual(report["event_level"]["videos"], 2)  # v3 is not scored as a missed event
+        self.assertEqual(report["localization_on_reviewed_positives"]["videos"], 1)
 
     def test_analysis_never_overwrites(self):
         with self.assertRaises(FileExistsError):

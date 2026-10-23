@@ -36,13 +36,31 @@ Aucune valeur ne décrit `sexual_activity` ni `sexual_context`. **Le niveau 2 n'
   du projet a vu les métriques agrégées. Si le relecteur est aussi celui qui a lancé la campagne,
   l'aveugle reste partiel : il faut le déclarer dans le rapport.
 
+### Paquet entièrement indépendant des prédictions (recommandé)
+
+`python -m evaluation.pa_hmdb51 review-package MANIFESTE --media-root … --output …` construit la
+feuille **à partir du manifeste seulement** : aucune prédiction, aucune alerte ni aucun attribut
+n'est lu, si bien que la composition de la feuille ne dépend d'aucune version du pipeline.
+
+- Chaque vidéo est remultiplexée sans réencodage, sous un nom anonyme (`R001.mkv`, …), et **sans
+  métadonnées de conteneur**. Les noms HMDB51 révèlent en effet l'action et le film source, et les
+  clips gardent le chemin AVI d'origine (qui contient l'action) dans le titre du flux, que les
+  lecteurs affichent. Les images décodées et leurs horodatages sont vérifiés identiques au fichier
+  évalué, et toute balise autre que celles écrites par le multiplexeur fait échouer la construction.
+- La version 1 du paquet (22 octobre 2026) était une copie bit à bit et gardait ce titre : elle est
+  remplacée par la version 2 (nouvelle graine, donc nouvel ordre) et ne doit pas servir à la revue.
+- La clé doit être déplacée hors du dossier remis au relecteur.
+- Une même revue peut ensuite être notée contre plusieurs versions du pipeline :
+  `score-review … --key <clé du paquet> --analysis <analyse de la version>`.
+
 ## 3. Visionnage et saisie
 
 - Relecteur **majeur**, qui a lu le guide (sections 2 à 7). Visionnage local uniquement, sans
   capture d'écran, sans téléversement et sans copie des médias hors du poste.
-- Visionner le fichier indiqué (`file_to_watch`, l'AVI original) **en entier**, avec un lecteur
-  qui permet d'avancer image par image (VLC, par exemple). Le MKV évalué a des images décodées
-  identiques, vérifiées par MD5.
+- Visionner le fichier indiqué par `file_to_watch` **en entier**, avec un lecteur qui permet
+  d'avancer image par image (VLC, par exemple). Dans le paquet aveugle, c'est la copie anonyme
+  `media/Rxxx.mkv` ; dans la feuille produite par `analyze`, c'est l'AVI original. Les images
+  décodées sont identiques à celles du MKV évalué, vérifiées par MD5.
 - Colonnes à remplir, selon le vocabulaire du guide :
 
   | Colonne | Valeurs |
@@ -76,7 +94,13 @@ Aucune valeur ne décrit `sexual_activity` ni `sexual_context`. **Le niveau 2 n'
 
 ## 5. Ce que la notation publie
 
-Elle refuse les lignes incohérentes avec le guide (par exemple `negative` sans visionnage
+Une vidéo dont l'analyse n'a pas abouti (`partial` ou `failed`, comme les plongeons courts de la
+version de référence `baseline-2399e95`) n'a pas de prédiction utilisable. Elle n'est jamais comptée
+comme une prédiction négative ni comme un événement manqué : elle est exclue et comptée à part
+(`analysis_status`, `reviewed_without_usable_analysis`, `failed_positive` et `failed_negative`), sauf
+dans la politique explicite `worst_case`, qui la compte comme une erreur.
+
+La notation refuse aussi les lignes incohérentes avec le guide (par exemple `negative` sans visionnage
 complet, ou une catégorie `present` avec une étiquette autre que `positive`). Ces lignes sont
 listées et non notées.
 

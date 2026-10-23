@@ -13,6 +13,7 @@ Uncertain and excluded labels are never scored as negatives; they are counted. U
 from __future__ import annotations
 
 import csv
+import json
 import re
 from collections import Counter
 from pathlib import Path
@@ -29,6 +30,79 @@ CONTEXTS = ("", "nonsexual_everyday", "nonsexual_medical", "nonsexual_artistic",
             "sexual", "unclear")
 ESCALATIONS = ("", "age_uncertain", "consent_uncertain", "other_sensitive")
 EVENT = re.compile(r"^\s*(\d+(?:\.\d+)?)\s*-\s*(\d+(?:\.\d+)?)\s*:\s*([a-z_]+)\s*$")
+
+
+# v1 (2026-10-22) copied the evaluated files bit for bit, which kept the original AVI path in the stream title
+# (it names the action). v2 strips container metadata; a new seed also gives a new, unrelated order.
+PACKAGE_SEED = "nsfw-cutter/pa-hmdb51/blind-package/v2"
+# Tags the Matroska muxer writes itself; any other tag (title, filename, comment...) fails the package.
+NEUTRAL_TAGS = {"DURATION", "encoder", "ENCODER"}
+
+
+def blind_package(manifest_path: Path, media_root: Path, output: Path, seed: str = PACKAGE_SEED) -> dict:
+    """Review package built from a benchmark manifest only: no prediction, score, alert or PA-HMDB51 attribute
+    is read. Each video is remuxed (stream copy, no re-encoding) under an anonymous name (R001.mkv, ...) without
+    container metadata, because file names and the stream title left by HMDB51 reveal the action and source. The
+    decoded frames and their timestamps are verified identical to the evaluated file. Order: sha256(seed | item_id).
+    """
+    import hashlib
+
+    from evaluation.benchmark.manifest import load_manifest, manifest_digest
+    from evaluation.pa_hmdb51.prepare import FFMPEG_BIN, _run, decoded_frames
+    from evaluation.pilot.manifest import file_digest
+
+    manifest, output = load_manifest(manifest_path), Path(output)
+    output.mkdir(parents=True, exist_ok=False)
+    (output / "media").mkdir()
+    items = sorted(manifest.evaluable(), key=lambda i: hashlib.sha256(f"{seed}|{i.item_id}".encode()).hexdigest())
+    sheet, key = [], []
+    for index, item in enumerate(items, 1):
+        review_id = f"R{index:03d}"
+        source = Path(media_root) / item.file_name
+        if file_digest(source) != item.sha256:
+            raise ValueError(f"{item.item_id}: media does not match the manifest")
+        target = output / "media" / f"{review_id}.mkv"
+        _run([FFMPEG_BIN / "ffmpeg.exe", "-nostdin", "-v", "error", "-n", "-i", source, "-map", "0:v:0", "-c", "copy",
+              "-map_metadata", "-1", "-map_chapters", "-1", "-fflags", "+bitexact", target])
+        if decoded_frames(target) != decoded_frames(source):
+            raise ValueError(f"{review_id}: decoded frames differ from the evaluated file")
+        leaked = sorted(set(media_tags(target)) - NEUTRAL_TAGS)
+        if leaked:
+            raise ValueError(f"{review_id}: metadata left in the review copy: {leaked}")
+        sheet.append({"review_id": review_id, "review_batch": 1, "file_to_watch": f"media/{target.name}",
+                      "duration_seconds": item.duration_seconds})
+        key.append({"review_id": review_id, "item_id": item.item_id, "evaluated_sha256": item.sha256,
+                    "review_copy_sha256": file_digest(target), "selection": f"manifest:{manifest.benchmark_id}"})
+    columns = ("review_id", "review_batch", "file_to_watch", "duration_seconds", "reviewer_id", "review_date",
+               "watched_in_full", "nudity", "nudity_context", "sexual_activity", "sexual_context", "video_label",
+               "events", "escalation", "exclusion_reason", "notes")
+    for name, rows, fields in (("manual_review.csv", sheet, columns), ("manual_review_key.csv", key, list(key[0]))):
+        with (output / name).open("x", newline="", encoding="utf-8") as handle:
+            writer = csv.DictWriter(handle, fieldnames=list(fields), extrasaction="ignore")
+            writer.writeheader()
+            writer.writerows(rows)
+    record = {"benchmark_id": manifest.benchmark_id, "manifest_digest": manifest_digest(manifest), "seed": seed,
+              "videos": len(sheet), "prediction_independent": True,
+              "media": "stream-copy remux without container metadata; decoded frames and timestamps verified "
+                       "identical to the evaluated files",
+              "empty_sheet_sha256": file_digest(output / "manual_review.csv"),
+              "key_sha256": file_digest(output / "manual_review_key.csv")}
+    (output / "package.json").write_text(json.dumps(record, indent=2), encoding="utf-8")
+    return record
+
+
+def media_tags(path: Path) -> dict:
+    """Container and stream tags of a media file (ffprobe), merged."""
+    from evaluation.pa_hmdb51.prepare import FFMPEG_BIN, _run
+
+    probe = json.loads(_run([FFMPEG_BIN / "ffprobe.exe", "-v", "error", "-show_entries", "format_tags:stream_tags",
+                             "-show_chapters", "-of", "json", path]).stdout)
+    tags = dict(probe.get("format", {}).get("tags", {}))
+    for stream in probe.get("streams", []):
+        tags.update(stream.get("tags", {}))
+    for chapter in probe.get("chapters", []):
+        tags.update({f"chapter:{k}": v for k, v in chapter.get("tags", {}).items()} or {"chapter": ""})
+    return tags
 
 
 def _read(path: Path):
@@ -115,10 +189,12 @@ def _clip(item_id: str, duration: float, row: dict) -> Clip | None:
                                 excluded_intervals=masks)
 
 
-def score_review(review_csv: Path, analysis_dir: Path) -> dict:
+def score_review(review_csv: Path, analysis_dir: Path, key_csv: Path | None = None) -> dict:
+    """key_csv defaults to the analysis' own key; pass a blind package key to score one prediction-independent
+    review against the predictions of any analysis of the same videos (e.g. two pipeline versions)."""
     analysis_dir = Path(analysis_dir)
     sheet = {r["review_id"]: r for r in _read(review_csv)}
-    key = {r["review_id"]: r for r in _read(analysis_dir / "manual_review_key.csv")}
+    key = {r["review_id"]: r for r in _read(key_csv or analysis_dir / "manual_review_key.csv")}
     videos = {r["item_id"]: r for r in _read(analysis_dir / "per_video.csv")}
     predictions = {}
     for p in _read(analysis_dir / "predictions.csv"):
@@ -157,7 +233,9 @@ def score_review(review_csv: Path, analysis_dir: Path) -> dict:
               "review_basis": dict(Counter(r["review_basis"] for r in rows)),
               "single_reviewer": len({sheet[i].get("reviewer_id", "").strip() for i in sheet
                                       if sheet[i].get("video_label", "").strip()}) <= 1,
-              "alert_review": vm.alert_review(rows)}
+              "alert_review": vm.alert_review(rows),
+              "analysis_status": dict(Counter(videos[e["item_id"]]["status"] for e in key.values())),
+              "reviewed_without_usable_analysis": sum(r["alert"] is None for r in reviewed)}
     labelled_alerts = [r for r in alerted if r["label"] in ("positive", "negative")]
     if alerted and all(r["label"] != "missing" for r in alerted):
         positives = sum(r["label"] == "positive" for r in labelled_alerts)
@@ -184,6 +262,8 @@ def score_review(review_csv: Path, analysis_dir: Path) -> dict:
 
     # Temporal localization on reviewed positive videos with exhaustive intervals (describes those videos only).
     for r in reviewed:
+        if r["alert"] is None:
+            continue  # no usable analysis (partial, failed): never scored as a miss or as a clean negative
         clip = _clip(r["item_id"], r["duration_seconds"], r["row"])
         if clip is None:
             continue

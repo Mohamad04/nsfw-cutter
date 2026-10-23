@@ -43,6 +43,8 @@ def main(argv=None):
     run.add_argument("--attempt-timeout", type=float, default=300.0)
     run.add_argument("--accept-partial", action="store_true",
                      help="record partial analyses (e.g. no frame sampled on clips under 2.5 s) and continue")
+    run.add_argument("--pipeline-version", default=None,
+                     help="registered frozen pipeline version (evaluation/benchmark/versions.py); default: baseline")
 
     analyze = commands.add_parser("analyze", help="build predictions, timings, metrics and the review sheet")
     analyze.add_argument("--run", nargs=2, action="append", metavar=("MANIFEST", "CAMPAIGN"), required=True)
@@ -51,7 +53,14 @@ def main(argv=None):
     analyze.add_argument("--pilot-manifest", type=Path, default=DEFAULT_PILOT_MANIFEST)
     analyze.add_argument("--output", type=Path, required=True)
 
+    package = commands.add_parser("review-package",
+                                  help="blind review package from a manifest only (anonymised media copies)")
+    package.add_argument("manifest", type=Path)
+    package.add_argument("--media-root", type=Path, required=True)
+    package.add_argument("--output", type=Path, required=True, help="new directory (keep it outside Git)")
+
     review = commands.add_parser("score-review", help="score predictions against a completed manual_review.csv")
+    review.add_argument("--key", type=Path, default=None, help="key of a blind review package (default: the analysis key)")
     review.add_argument("review_csv", type=Path)
     review.add_argument("--analysis", type=Path, required=True,
                         help="output directory of analyze (per_video.csv, predictions.csv, manual_review_key.csv)")
@@ -76,7 +85,8 @@ def main(argv=None):
         outcome = runner.run(args.manifest, args.media_root, args.campaign, args.pilot_manifest,
                              allow_inference=args.allow_inference, retry_incomplete=args.retry_incomplete,
                              limits=runner.Limits(attempt_timeout_seconds=args.attempt_timeout), configs=("A2",),
-                             accept_partial=args.accept_partial)
+                             accept_partial=args.accept_partial,
+                             pipeline_version=args.pipeline_version or runner.DEFAULT_PIPELINE_VERSION)
         print(json.dumps(outcome, indent=2, default=str))
         return 0 if outcome.get("stopped_at") is None else 2
     if args.command == "analyze":
@@ -85,8 +95,12 @@ def main(argv=None):
                         media_root=args.media_root, pilot_manifest=args.pilot_manifest, output=args.output)
         print(json.dumps(summary, indent=2, ensure_ascii=False))
         return 0
+    if args.command == "review-package":
+        from evaluation.pa_hmdb51.review import blind_package
+        print(json.dumps(blind_package(args.manifest, args.media_root, args.output), indent=2))
+        return 0
     from evaluation.pa_hmdb51.review import score_review
-    report = score_review(args.review_csv, args.analysis)
+    report = score_review(args.review_csv, args.analysis, key_csv=args.key)
     if args.output.exists():
         raise FileExistsError(args.output)
     args.output.write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")

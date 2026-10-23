@@ -5,7 +5,7 @@ import math
 from collections.abc import Callable
 from pathlib import Path
 
-from services.analysis.cancellation import CancellationToken
+from services.analysis.cancellation import AnalysisCancelled, CancellationToken
 from services.analysis.contracts import (
     AnalysisSettings,
     CandidateWindow,
@@ -200,8 +200,16 @@ class VisualSamplingService:
             "0",
             output_pattern,
         ]
-        self.process_runner.run(command, cancellation=cancellation)
-        paths = sorted(output_dir.glob("frame_*.jpg"))
+        paths = self._extract_frames(
+            command,
+            [
+                _first_frame_command(
+                    self.ffmpeg_service.ffmpeg_path, video_path, output_pattern, _CLASSIFIER_FRAME_FILTER
+                )
+            ],
+            output_dir,
+            cancellation,
+        )
         return [
             SampledFrame(
                 timestamp_seconds=min(duration_seconds, index / sample_rate_fps),
@@ -297,8 +305,29 @@ class VisualSamplingService:
             "0",
             output_pattern,
         ]
-        self.process_runner.run(command, cancellation=cancellation)
-        paths = sorted(output_dir.glob("frame_*.jpg"))
+        paths = self._extract_frames(
+            command,
+            [
+                _first_frame_command(
+                    self.ffmpeg_service.ffmpeg_path,
+                    video_path,
+                    output_pattern,
+                    _REFINED_FRAME_FILTER,
+                    start_seconds=start_seconds,
+                ),
+                # A final window can start after the last frame but before the container
+                # duration (within the last frame's display time): keep the displayed frame.
+                _displayed_frame_command(
+                    self.ffmpeg_service.ffmpeg_path,
+                    video_path,
+                    output_dir / "frame_00000000.jpg",
+                    _REFINED_FRAME_FILTER,
+                    start_seconds=start_seconds,
+                ),
+            ],
+            output_dir,
+            cancellation,
+        )
         return [
             SampledFrame(
                 timestamp_seconds=min(
@@ -311,6 +340,124 @@ class VisualSamplingService:
             )
             for index, path in enumerate(paths)
         ]
+
+    def _extract_frames(
+        self,
+        command: list,
+        fallback_commands: list[list],
+        output_dir: Path,
+        cancellation: CancellationToken,
+    ) -> list[Path]:
+        """Run a periodic sampling command, falling back to a single frame when it writes none.
+
+        FFmpeg's ``fps`` filter (nearest rounding) emits no frame when the sampled span is shorter
+        than half a sampling period and no later frame follows: media shorter than 2.5 s at the
+        Balanced coarse rate (0.2 FPS), or a final candidate window shorter than 0.5 s at 1 FPS.
+        The image2 muxer then fails with "Nothing was written into output file". In exactly that
+        case the fallback commands run in order until one writes the frame shown at the start of
+        the sampled span, which is the frame the periodic sampler selects for any longer span. A
+        command that wrote frames keeps its output (and its failure, if any); media that cannot be
+        decoded still raise, and cancellation is never turned into a fallback.
+        """
+        failure: RuntimeError | None = None
+        try:
+            self.process_runner.run(command, cancellation=cancellation)
+        except AnalysisCancelled:
+            raise
+        except RuntimeError as error:
+            failure = error
+        paths = sorted(output_dir.glob("frame_*.jpg"))
+        if paths:
+            if failure is not None:
+                raise failure
+            return paths
+        for fallback_command in fallback_commands:
+            cancellation.raise_if_cancelled()
+            try:
+                self.process_runner.run(fallback_command, cancellation=cancellation)
+            except AnalysisCancelled:
+                raise
+            except RuntimeError as error:
+                failure = failure or error
+                continue
+            paths = sorted(output_dir.glob("frame_*.jpg"))
+            if paths:
+                return paths
+        raise failure or RuntimeError("FFmpeg did not produce any readable sampled frames")
+
+
+def _first_frame_command(
+    ffmpeg_path,
+    video_path: str | Path,
+    output_pattern: Path,
+    frame_filter: str,
+    *,
+    start_seconds: float | None = None,
+) -> list:
+    seek = ["-ss", f"{start_seconds:.6f}"] if start_seconds is not None else []
+    return [
+        ffmpeg_path,
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-nostdin",
+        *seek,
+        "-i",
+        video_path,
+        "-map",
+        "0:v:0",
+        "-frames:v",
+        "1",
+        "-vf",
+        frame_filter,
+        "-q:v",
+        "3",
+        "-an",
+        "-sn",
+        "-dn",
+        "-start_number",
+        "0",
+        output_pattern,
+    ]
+
+
+def _displayed_frame_command(
+    ffmpeg_path,
+    video_path: str | Path,
+    output_path: Path,
+    frame_filter: str,
+    *,
+    start_seconds: float,
+    lookback_seconds: float = 1.0,
+) -> list:
+    """Keep the last frame decoded from shortly before ``start_seconds`` to the end of the stream.
+
+    Only used once no frame starts at or after ``start_seconds``, so that last frame is the one
+    displayed at ``start_seconds``.
+    """
+    return [
+        ffmpeg_path,
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-nostdin",
+        "-ss",
+        f"{max(0.0, start_seconds - lookback_seconds):.6f}",
+        "-i",
+        video_path,
+        "-map",
+        "0:v:0",
+        "-vf",
+        frame_filter,
+        "-update",
+        "1",
+        "-q:v",
+        "3",
+        "-an",
+        "-sn",
+        "-dn",
+        output_path,
+    ]
 
 
 def _deduplicate_frames(frames: list[SampledFrame], tolerance: float = 0.2) -> list[SampledFrame]:

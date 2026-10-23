@@ -24,6 +24,7 @@ from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
+from evaluation.benchmark import versions
 from evaluation.benchmark.atomic import write_atomic
 from evaluation.benchmark.manifest import BenchmarkManifest, assert_disjoint_from_pilot, load_manifest, manifest_digest
 from evaluation.benchmark.media import prepare_video_only_copy
@@ -31,8 +32,10 @@ from evaluation.benchmark.results import ResultsFile
 from evaluation.pilot.manifest import canonical_digest, file_digest
 
 ROOT = Path(__file__).resolve().parents[2]
-BASELINE = "2399e950aeb33dd7925690c78d3f5f25d50d07cb"
-ANALYSIS_DIRS = ("services/analysis", "models", "core")
+DEFAULT_PIPELINE_VERSION = versions.DEFAULT_PIPELINE_VERSION
+# Commit of the original experimental freeze (2026-10-19), the version of every unversioned campaign.
+BASELINE = versions.PIPELINE_VERSIONS[versions.UNRECORDED_PIPELINE_VERSION]["commit"]
+ANALYSIS_DIRS = versions.ANALYSIS_DIRS
 CONFIGS = ("A2", "A1")
 TERMINAL_OK = "completed"
 
@@ -50,13 +53,15 @@ class Limits:
 
 # --------------------------------------------------------------------------- identity and provenance
 
-def verify_identity():
-    """Frozen analysis code must equal the experimental baseline; returns runtime provenance."""
+def verify_identity(pipeline_version: str = DEFAULT_PIPELINE_VERSION):
+    """Frozen analysis code must equal the commit of the pipeline version; returns runtime provenance."""
     from evaluation.pilot.runner import environment_metadata
     from evaluation.technical.benchmark import CONFIG_DIGEST, frozen_settings
 
     git = ["git", "-c", f"safe.directory={ROOT.as_posix()}"]
-    subprocess.run(git + ["diff", "--exit-code", BASELINE, "--", *ANALYSIS_DIRS], cwd=ROOT, check=True,
+    frozen = versions.version(pipeline_version)
+    lineage = versions.verify_lineage(pipeline_version, git=git)
+    subprocess.run(git + ["diff", "--exit-code", frozen["commit"], "--", *ANALYSIS_DIRS], cwd=ROOT, check=True,
                    capture_output=True)
     untracked = subprocess.run(git + ["ls-files", "--others", "--exclude-standard", "--", *ANALYSIS_DIRS],
                                cwd=ROOT, check=True, capture_output=True, text=True).stdout
@@ -64,7 +69,8 @@ def verify_identity():
         raise ValueError("untracked files in the frozen analysis code")
     settings = frozen_settings()
     env = environment_metadata()
-    return {"commit": env["git_commit"], "frozen_baseline": BASELINE, "configuration_sha256": CONFIG_DIGEST,
+    return {"commit": env["git_commit"], "frozen_baseline": frozen["commit"], "configuration_sha256": CONFIG_DIGEST,
+            "pipeline_version": {"name": pipeline_version, "description": frozen["description"], **lineage},
             "model_revisions": {"qwen": f"{settings.model_id}@{settings.model_revision}",
                                 "marqo": f"{settings.prefilter_model_id}@{settings.prefilter_model_revision}",
                                 "whisper": f"{settings.whisper_model_id}@{settings.whisper_model_revision}"},
@@ -322,7 +328,7 @@ def campaign_configs(identity: dict):
 def run(manifest_path: Path, media_root: Path, campaign: Path, pilot_manifest: Path, *, allow_inference=False,
         retry_incomplete=False, limits: Limits = Limits(), launcher=subprocess_launcher, sampler=system_sample,
         identity_factory=verify_identity, prepare=None, preload_whisper_cuda12=True, split="test",
-        configs=CONFIGS, accept_partial=False):
+        configs=CONFIGS, accept_partial=False, pipeline_version=DEFAULT_PIPELINE_VERSION):
     """configs=("A2",) runs only the original input, e.g. for a corpus without audio, where A1 would repeat A2.
 
     accept_partial=True records a "partial" attempt (the pipeline returned an incomplete analysis, e.g. no
@@ -345,7 +351,7 @@ def run(manifest_path: Path, media_root: Path, campaign: Path, pilot_manifest: P
         vendor = ROOT / "vendor" / "ffmpeg" / "bin"
         prepare = lambda s, t: prepare_video_only_copy(s, t, ffmpeg=vendor / "ffmpeg.exe",  # noqa: E731
                                                        ffprobe=vendor / "ffprobe.exe")
-    identity = identity_factory()
+    identity = identity_factory(pipeline_version)
     campaign_identity = {"benchmark_id": manifest.benchmark_id, "manifest_digest": manifest_digest(manifest),
                          "pilot_manifest_digest": disjoint["pilot_manifest_digest"], "split": split,
                          **{k: identity[k] for k in ("commit", "frozen_baseline", "configuration_sha256",
@@ -355,6 +361,10 @@ def run(manifest_path: Path, media_root: Path, campaign: Path, pilot_manifest: P
     if configs != CONFIGS:
         # Recorded only when non-default, so the identity of existing two-configuration campaigns is unchanged.
         campaign_identity["configs"] = list(configs)
+    if pipeline_version != versions.UNRECORDED_PIPELINE_VERSION:
+        # Recorded for every version but the original freeze, whose campaigns predate the registry and must keep
+        # their identity; frozen_baseline above already holds the version's commit.
+        campaign_identity["pipeline_version"] = identity["pipeline_version"]
     campaign.mkdir(parents=True, exist_ok=True)
     with campaign_lock(campaign):
         marker = campaign / "campaign.json"

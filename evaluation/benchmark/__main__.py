@@ -46,6 +46,8 @@ def main(argv=None):
     running.add_argument("--attempt-timeout", type=float, default=300.0)
     running.add_argument("--configs", nargs="+", choices=("A2", "A1"), default=["A2", "A1"],
                          help="configurations to run (A2 is required; A2 alone suits media without audio)")
+    running.add_argument("--pipeline-version", default="baseline-2399e95",
+                         help="registered frozen pipeline version (evaluation/benchmark/versions.py)")
     collecting.add_argument("--campaign", type=Path, required=True)
     collecting.add_argument("--output", type=Path, required=True, help="new ResultsFile path; must not exist")
     args = parser.parse_args(argv)
@@ -56,7 +58,7 @@ def main(argv=None):
             outcome = runner.run(args.manifest, args.media_root, args.campaign, args.pilot_manifest,
                                  allow_inference=args.allow_inference, retry_incomplete=args.retry_incomplete,
                                  limits=runner.Limits(attempt_timeout_seconds=args.attempt_timeout),
-                                 configs=tuple(args.configs))
+                                 configs=tuple(args.configs), pipeline_version=args.pipeline_version)
             print(json.dumps(outcome, indent=2, default=str))
             return 0 if outcome.get("stopped_at") is None else 2
         results = runner.collect(args.manifest, args.campaign, args.pilot_manifest, args.output)

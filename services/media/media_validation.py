@@ -8,7 +8,9 @@ This is a bounded, quick check, not a guarantee that every frame decodes:
    audio-only file or a cover picture) with a codec name, a frame size and a positive duration;
 3. ffprobe decodes the first video frame (the codec is decodable and the start is intact);
 4. ffprobe reads, without decoding, the video packets of the last seconds: an incomplete file
-   (interrupted download or copy) has none, or FFmpeg reports a partial file.
+   (interrupted download or copy) has none, or FFmpeg reports a partial file. That bounded read
+   (``-read_intervals``) occasionally lists too few packets of an intact file, so a file is only
+   rejected as incomplete when a scan of all its video packets, which never seeks, confirms it.
 
 Damage in the middle of an otherwise complete file is not detected here; it surfaces later as an
 analysis, playback or export error. Every ffprobe call has a timeout. Input files are only read.
@@ -34,6 +36,8 @@ SUPPORTED_CONTAINERS = {".mp4": "mov,mp4,m4a,3gp,3g2,mj2", ".mkv": "matroska,web
 CONTAINER_LABELS = {"mov,mp4,m4a,3gp,3g2,mj2": ("MP4", ".mp4"), "matroska,webm": ("MKV", ".mkv")}
 HEADER_PROBE_TIMEOUT_SECONDS = 30.0
 STREAM_CHECK_TIMEOUT_SECONDS = 60.0
+# Reads every packet (demuxing only), so it scales with the file size; run only to confirm a rejection.
+FULL_SCAN_TIMEOUT_SECONDS = 300.0
 TAIL_CHECK_SECONDS = 1.5
 END_TOLERANCE_SECONDS = 1.0
 DAMAGE_MARKERS = (
@@ -183,22 +187,29 @@ def _validate(path: Path, run, ffprobe_path) -> MediaCheck:
             raise _damaged(name, first.stderr)
         raise _rejected("unsupported_codec", "media.undecodable", first.stderr.strip()[-500:], name=name, codec=codec)
 
-    packets = _entries(tail.stdout, "packets")
     video_duration = _stream_duration(video)
-    last_end = _last_packet_end(packets)
-    incomplete = (
-        tail.returncode != 0
-        or not packets
-        or _has_damage_marker(tail.stderr)
-        or (video_duration is not None and last_end is not None and last_end < video_duration - END_TOLERANCE_SECONDS)
-    )
-    if incomplete:
-        raise _rejected(
-            "corrupted_media", "media.incomplete",
-            f"tail packets={len(packets)} last_end={last_end} video_duration={video_duration} "
-            f"stderr={tail.stderr.strip()[-500:]}",
-            name=name,
-        )
+    packets = _entries(tail.stdout, "packets")
+    tail_detail = _end_check_detail("tail", tail, packets, video_duration)
+    if _incomplete(tail, packets, video_duration):
+        # Measured 2026-10-22/23 with the bundled ffprobe 8.1.1: on intact files the bounded tail read lists too few
+        # packets in about 0.5 % of probes (19 of 3 890), with exit code 0 and no message, whereas a scan of every
+        # packet never did (0 of 2 400) and detected every truncated test file (108 of 108). The cause inside ffprobe
+        # is unknown; the tail read stays the fast path and the scan only decides when it reports an incomplete file.
+        try:
+            scan = _probe(run, [ffprobe, "-v", "error", "-select_streams", stream_index,
+                                "-show_entries", "packet=pts_time,duration_time", "-of", "csv=p=0", str(path)],
+                          FULL_SCAN_TIMEOUT_SECONDS, name)
+        except MediaValidationError as exc:
+            if exc.category != "timeout":
+                raise
+            raise _rejected("corrupted_media", "media.incomplete", f"{tail_detail}; full scan timed out",
+                            name=name) from exc
+        scan_packets = _csv_packets(scan.stdout)
+        scan_detail = _end_check_detail("full scan", scan, scan_packets, video_duration)
+        if _incomplete(scan, scan_packets, video_duration):
+            raise _rejected("corrupted_media", "media.incomplete", f"{tail_detail}; {scan_detail}", name=name)
+        logger.warning("[Media validation] Inconclusive tail probe of %s (%s); %s: complete", path, tail_detail,
+                       scan_detail)
 
     return MediaCheck(path.resolve(), container, duration, codec, width, height, has_audio)
 
@@ -233,6 +244,31 @@ def _probe(run, command: list[str], timeout: float, name: str) -> subprocess.Com
         raise _rejected("timeout", "media.timeout", " ".join(command), name=name, seconds=f"{timeout:g}") from exc
     except OSError as exc:
         raise _rejected("ffmpeg_unavailable", "media.ffmpeg_not_started", repr(exc)) from exc
+
+
+def _incomplete(completed: subprocess.CompletedProcess, packets: list[dict], video_duration: float | None) -> bool:
+    last_end = _last_packet_end(packets)
+    return (
+        completed.returncode != 0
+        or not packets
+        or _has_damage_marker(completed.stderr)
+        or (video_duration is not None and last_end is not None and last_end < video_duration - END_TOLERANCE_SECONDS)
+    )
+
+
+def _end_check_detail(label: str, completed: subprocess.CompletedProcess, packets: list[dict],
+                      video_duration: float | None) -> str:
+    return (f"{label} packets={len(packets)} last_end={_last_packet_end(packets)} video_duration={video_duration} "
+            f"stderr={(completed.stderr or '').strip()[-500:]}")
+
+
+def _csv_packets(stdout: str) -> list[dict]:
+    packets = []
+    for line in (stdout or "").splitlines():
+        fields = line.strip().split(",")
+        if fields[0] and fields[0] != "N/A":
+            packets.append({"pts_time": fields[0], "duration_time": fields[1] if len(fields) > 1 else None})
+    return packets
 
 
 def _damaged(name: str, stderr: str) -> MediaValidationError:

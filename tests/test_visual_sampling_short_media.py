@@ -22,11 +22,13 @@ from services.analysis.contracts import (
     AnalysisStatus,
     CandidateWindow,
     PrefilterFrameScore,
+    SampledFrame,
     TextEvidenceOutput,
     VLMReviewResponse,
 )
 from services.analysis.pipeline import AnalysisPipeline, AnalysisServices
 from services.analysis.preflight import PreflightService
+from services.analysis.prefilter import group_candidate_windows
 from services.analysis.process import CancellableProcessRunner
 from services.analysis.visual_sampling import VisualSamplingService
 from services.infrastructure.ffmpeg.paths import FFmpegNotFoundError, get_ffmpeg_path, get_ffprobe_path
@@ -176,6 +178,70 @@ class ShortMediaSamplingTests(unittest.TestCase):
                 self.assertEqual([f.timestamp_seconds for f in frames], expected)
                 self.assertEqual(len(runner.commands), 1)
                 self.assertNotIn("-frames:v", runner.commands[0])
+
+    def test_planned_final_window_after_the_last_frame_keeps_the_displayed_frame(self):
+        # Measured 2026-10-23: at 30 frames/s the last frame of a 40 s video starts at 39.967 s, and the
+        # planner splits a 30.02 s padded window into [9.98, 39.98] and [39.98, 40]. No frame starts in
+        # the final window, so seeking to its start writes nothing either; the frame shown there is kept.
+        video = self.root / "clip_40_30fps.mkv"
+        if not video.exists():
+            subprocess.run([str(self.ffmpeg), "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i",
+                            "testsrc2=size=160x120:rate=30", "-t", "40", "-c:v", "libx264", "-pix_fmt", "yuv420p",
+                            "-y", str(video)], check=True, capture_output=True)
+        scores = [PrefilterFrameScore(frame=SampledFrame(timestamp_seconds=t, path=video, source="scene"),
+                                      nsfw_probability=0.9) for t in (14.98, 18.0, 22.0, 26.0, 30.0, 34.0, 38.0)]
+        windows = group_candidate_windows(scores, duration_seconds=40.0, settings=AnalysisSettings())
+        self.assertEqual([(round(w.start_seconds, 3), round(w.end_seconds, 3)) for w in windows], [(9.98, 39.98), (39.98, 40.0)])
+        service, runner = self.service()
+        frames, batches = service.refine_candidates(video, self.root / "dense-planned-tail", 40.0, AnalysisSettings(),
+                                                    windows, [], CancellationToken())
+        self.assertEqual(batches[-1].candidate_window_id, windows[1].window_id)
+        self.assertEqual(len(batches[-1].frames), 1)
+        self.assertEqual(frames[-1].timestamp_seconds, windows[1].start_seconds)
+        self.assertEqual(len(frames), 31)  # 30 periodic frames of the first window, then the displayed frame
+        self.assertEqual(len(runner.commands), 4)  # first window: periodic; final window: periodic + 2 fallbacks
+        self.assertIn("-update", runner.commands[-1])
+
+    def test_failed_command_that_wrote_frames_still_raises(self):
+        class FailingAfterOutputRunner(RecordingRunner):
+            def run(self, command, *, cancellation, check=True):
+                self.commands.append(command)
+                Path(str(command[-1]) % 0).write_bytes(b"partial")
+                raise RuntimeError("decoding error after the first frame")
+
+        runner = FailingAfterOutputRunner()
+        service = VisualSamplingService(ffmpeg_service=FFmpegService(self.ffmpeg, self.ffprobe), process_runner=runner)
+        with self.assertRaisesRegex(RuntimeError, "after the first frame"):
+            service.sample_coarse(self.videos[1.0], self.root / "failed-with-output", 1.0, AnalysisSettings(),
+                                  CancellationToken())
+        self.assertEqual(len(runner.commands), 1)
+
+    def test_cancellation_during_or_before_the_fallback_is_propagated(self):
+        from services.analysis.cancellation import AnalysisCancelled
+
+        class Runner(RecordingRunner):
+            def __init__(self, token, cancel_in_fallback):
+                super().__init__()
+                self.token, self.cancel_in_fallback = token, cancel_in_fallback
+
+            def run(self, command, *, cancellation, check=True):
+                self.commands.append(command)
+                if len(self.commands) == 1:
+                    if not self.cancel_in_fallback:
+                        self.token.cancel()  # requested while the periodic command was finishing
+                    raise RuntimeError("Nothing was written into output file")
+                raise AnalysisCancelled("cancelled")
+
+        for cancel_in_fallback, expected_commands in ((False, 1), (True, 2)):
+            with self.subTest(cancel_in_fallback=cancel_in_fallback):
+                token = CancellationToken()
+                runner = Runner(token, cancel_in_fallback)
+                service = VisualSamplingService(ffmpeg_service=FFmpegService(self.ffmpeg, self.ffprobe),
+                                                process_runner=runner)
+                with self.assertRaises(AnalysisCancelled):
+                    service.sample_coarse(self.videos[1.0], self.root / f"cancel-fallback-{cancel_in_fallback}", 1.0,
+                                          AnalysisSettings(), token)
+                self.assertEqual(len(runner.commands), expected_commands)
 
     def test_undecodable_media_still_fails_instead_of_being_masked(self):
         broken = self.root / "broken.mkv"

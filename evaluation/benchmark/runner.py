@@ -33,7 +33,8 @@ from evaluation.pilot.manifest import canonical_digest, file_digest
 
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_PIPELINE_VERSION = versions.DEFAULT_PIPELINE_VERSION
-BASELINE = versions.PIPELINE_VERSIONS[DEFAULT_PIPELINE_VERSION]["commit"]
+# Commit of the original experimental freeze (2026-10-19), the version of every unversioned campaign.
+BASELINE = versions.PIPELINE_VERSIONS[versions.UNRECORDED_PIPELINE_VERSION]["commit"]
 ANALYSIS_DIRS = versions.ANALYSIS_DIRS
 CONFIGS = ("A2", "A1")
 TERMINAL_OK = "completed"
@@ -360,8 +361,9 @@ def run(manifest_path: Path, media_root: Path, campaign: Path, pilot_manifest: P
     if configs != CONFIGS:
         # Recorded only when non-default, so the identity of existing two-configuration campaigns is unchanged.
         campaign_identity["configs"] = list(configs)
-    if pipeline_version != DEFAULT_PIPELINE_VERSION:
-        # Likewise non-default only; frozen_baseline above already holds the version's commit.
+    if pipeline_version != versions.UNRECORDED_PIPELINE_VERSION:
+        # Recorded for every version but the original freeze, whose campaigns predate the registry and must keep
+        # their identity; frozen_baseline above already holds the version's commit.
         campaign_identity["pipeline_version"] = identity["pipeline_version"]
     campaign.mkdir(parents=True, exist_ok=True)
     with campaign_lock(campaign):

@@ -13,7 +13,11 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 ANALYSIS_DIRS = ("services/analysis", "models", "core")
-DEFAULT_PIPELINE_VERSION = "baseline-2399e95"
+# Campaigns started before this registry (2026-10-22) do not record a version: they all ran this one. A campaign
+# records its version whenever it is another one, so changing the default never changes a recorded identity.
+UNRECORDED_PIPELINE_VERSION = "baseline-2399e95"
+# Reference freeze used by new campaigns unless another registered version is requested explicitly.
+DEFAULT_PIPELINE_VERSION = "reference-20261023-50b04b6"
 
 PIPELINE_VERSIONS = {
     "baseline-2399e95": {
@@ -28,6 +32,14 @@ PIPELINE_VERSIONS = {
         "changed_files": ["services/analysis/visual_sampling.py"],
         "description": "baseline plus at least one sampled frame for media shorter than half a coarse period and "
                        "for end-of-stream candidate windows shorter than half a dense period",
+    },
+    "reference-20261023-50b04b6": {
+        "commit": "50b04b63a5e73d69711b75777cf420e2343c9307",
+        "parent": "short-media-coverage-bfe55cc",
+        "changed_files": ["services/analysis/visual_sampling.py"],
+        "description": "reference freeze of 2026-10-23, merged into feature/vlm-analysis-mvp: short-media coverage "
+                       "after code review (final windows that start after the last frame keep the displayed frame; "
+                       "cancellation is checked before any fallback)",
     },
 }
 

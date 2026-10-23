@@ -228,15 +228,32 @@ class RunnerCampaignTests(unittest.TestCase):
         self.assertEqual(identity["frozen_baseline"], "bfe55cc0c7772a695269b97d1646f364e818c87e")
         self.assertEqual(identity["pipeline_version"]["name"], "short-media-coverage-bfe55cc")
         with self.assertRaisesRegex(ValueError, "campaign identity changed"):
-            c.run(configs=("A2",))  # the baseline version cannot continue a campaign of another version
+            c.run(configs=("A2",))  # the default version cannot continue a campaign of another version
         with self.assertRaisesRegex(ValueError, "unknown pipeline version"):
             versions.version("unregistered")
+
+    def test_default_reference_freeze_is_recorded_and_the_original_freeze_keeps_its_identity(self):
+        for version, recorded in ((runner.DEFAULT_PIPELINE_VERSION, True),
+                                  (versions.UNRECORDED_PIPELINE_VERSION, False)):
+            with self.subTest(version=version):
+                (Path(self.tmp) / version).mkdir()
+                c = Campaign(Path(self.tmp) / version)
+                c.behaviour.update({"v1.mp4": {"warnings": [NOT_APPLICABLE]},
+                                    "v2.mp4": {"warnings": [NOT_APPLICABLE]}})
+                kwargs = {} if version == runner.DEFAULT_PIPELINE_VERSION else {"pipeline_version": version}
+                self.assertIsNone(c.run(configs=("A2",), **kwargs)["stopped_at"])
+                identity = json.loads((c.dir / "campaign.json").read_text())
+                self.assertEqual("pipeline_version" in identity, recorded)
+                self.assertEqual(identity["frozen_baseline"], versions.version(version)["commit"])
 
     def test_derived_version_differs_from_its_parent_only_in_declared_files(self):
         lineage = versions.verify_lineage("short-media-coverage-bfe55cc")
         self.assertEqual(lineage["changed_files"], ["services/analysis/visual_sampling.py"])
         self.assertEqual(lineage["parent_commit"], runner.BASELINE)
-        self.assertEqual(versions.verify_lineage(runner.DEFAULT_PIPELINE_VERSION)["changed_files"], [])
+        self.assertEqual(versions.verify_lineage(versions.UNRECORDED_PIPELINE_VERSION)["changed_files"], [])
+        reference = versions.verify_lineage(runner.DEFAULT_PIPELINE_VERSION)
+        self.assertEqual(reference["parent"], "short-media-coverage-bfe55cc")
+        self.assertEqual(reference["changed_files"], ["services/analysis/visual_sampling.py"])
 
     def test_invalid_configuration_sets_are_refused(self):
         c = Campaign(self.tmp)

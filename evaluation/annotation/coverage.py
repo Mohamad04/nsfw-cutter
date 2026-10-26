@@ -4,7 +4,9 @@ The player reports its position every few tens of milliseconds. A step from one 
 the next counts as watched only when it is consistent with real playback: it moves forward, and by no
 more than playback rate x elapsed wall-clock time (plus a small jitter allowance). A seek, a skipped
 segment or a jump forward therefore never counts, whatever the playback speed; replaying a segment
-counts it once. The interface also interrupts tracking explicitly on every pause, seek and rate change.
+counts it once. The interface also interrupts tracking explicitly on every seek, stop, rate change and
+media change. A pause followed by a resume with no seek in between keeps the paused position as the
+anchor, so the frames shown between the pause and the next position report are not lost at each pause.
 """
 from __future__ import annotations
 
@@ -57,6 +59,11 @@ class PlaybackTracker:
     def interrupt(self):
         """Pause, stop, seek, rate change or media change: the next observation starts a new segment."""
         self._anchor = None
+
+    def resume(self, wall: float):
+        """Playback resumes after a pause: the paused position stays the anchor, re-timed to the resume."""
+        if self._anchor is not None:
+            self._anchor = (self._anchor[0], wall, self._anchor[2])
 
     def observe(self, position: float, wall: float, rate: float) -> bool:
         """Records one position report made while playing; returns whether a step was counted."""

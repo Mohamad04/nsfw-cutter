@@ -23,6 +23,7 @@ from evaluation.annotation.record import (
     CATEGORIES,
     MEDIA_EXCLUSIONS,
     empty_record,
+    interval_status,
     validate,
     video_label,
 )
@@ -244,18 +245,22 @@ def to_reference(record, track: str):
             # Protocol: NSFW discovered in the presumed-negative corpus is excluded and still counted.
             excluded, reason = True, "nsfw_discovered"
         if record["watched_in_full"]:
-            events = [e for e in record["events"] if states[e["category"]] == "present"]
-            ambiguous = [e for e in record["events"] if states[e["category"]] == "uncertain"]
+            # Uncertain intervals (of an uncertain category, or marked uncertain inside a present one) are
+            # masked from scoring, never counted as target or as negative time.
+            events = [e for e in record["events"] if interval_status(e, states) == "present"]
+            ambiguous = [e for e in record["events"] if interval_status(e, states) == "uncertain"]
             temporal = {
                 "binary_exhaustive": True,
                 "exhaustive_categories": [c for c in CATEGORIES if states[c] in ("present", "absent")],
                 "events": [{"event_id": f"{record['item_id']}-e{n}", "start_seconds": float(e["start_seconds"]),
-                            "end_seconds": float(e["end_seconds"]), "categories": [e["category"]], "notes": ""}
+                            "end_seconds": float(e["end_seconds"]), "categories": [e["category"]],
+                            "notes": e.get("note", "").strip()}
                            for n, e in enumerate(events, 1)],
                 "excluded_intervals": [{"exclusion_id": f"{record['item_id']}-u{n}", "kind": "ambiguous",
                                         "start_seconds": float(e["start_seconds"]),
                                         "end_seconds": float(e["end_seconds"]),
-                                        "reason": f"reviewer uncertain: {e['category']}"}
+                                        "reason": f"reviewer uncertain: {e['category']}"
+                                                  + (f" ({e['note'].strip()})" if e.get("note", "").strip() else "")}
                                        for n, e in enumerate(ambiguous, 1)]}
     return {"video_label": label, "review_basis": "complete", "category_labels": category_labels,
             "temporal": temporal, "excluded": excluded, "exclusion_reason": reason,

@@ -54,8 +54,9 @@ les étapes 1 et 4 sont automatiques :
 
 L'outil enregistre aussi les **intervalles réellement lus**. Une avancée de lecture n'est comptée
 que si elle est cohérente avec le temps réel écoulé et la vitesse choisie (0,5× à 2×). Un saut, une
-avance rapide, une pause ou un changement de vitesse ne comptent jamais comme visionnés, et un
-passage revu n'est compté qu'une fois.
+avance rapide ou un changement de vitesse ne comptent jamais comme visionnés, et un passage revu
+n'est compté qu'une fois. Une pause suivie d'une reprise, sans déplacement entre les deux, ne crée
+pas de trou dans la lecture.
 
 La case « vu en entier » ne peut être cochée que lorsque **toute** la vidéo a été lue. Une
 tolérance de 0,5 s au total couvre la granularité des positions du lecteur et l'écart de fin de
@@ -193,6 +194,16 @@ dans les fiches, dans l'adjudication et dans le rapport.
 - Pour toute catégorie `present` ou `uncertain`, reporter un ou plusieurs intervalles
   `début-fin:catégorie`, en secondes, à 0,5 s près, par exemple `12.0-18.5:nudity`.
 - Deux apparitions séparées de moins de 2 s forment un seul intervalle.
+- **Statut de l'intervalle.** Chaque intervalle est `present` ou `uncertain`.
+  - Dans une catégorie `present`, un passage douteux peut être marqué `uncertain` sans rendre toute
+    la catégorie incertaine. Au moins un intervalle doit alors rester `present`.
+  - Dans une catégorie `uncertain`, tous les intervalles sont `uncertain`.
+  - Un intervalle `present` et un intervalle `uncertain` de la même catégorie ne se chevauchent pas.
+    La règle des 2 s s'applique entre intervalles de même catégorie et de même statut.
+  - Les intervalles `uncertain` sont retirés du calcul des métriques. Ils ne comptent ni comme
+    contenu cible ni comme temps négatif.
+- Un intervalle peut porter un **commentaire** court, par exemple la raison du doute ou « image
+  dans l'image ». Les paroles ne sont jamais transcrites.
 - Une vidéo `negative` n'a aucun intervalle.
 - Ces intervalles ne sont exhaustifs que si le relecteur a vu la vidéo en entier. Dans le cas
   contraire, ils ne servent pas à des mesures temporelles.
@@ -277,7 +288,13 @@ Conséquences à déclarer dans tout rapport :
 
 - **Une vidéo à la fois**, dans l'ordre aléatoire de la graine 1001 : c'est le même ordre que
   `reviewer_1.csv` du kit.
-- **Brouillons :** enregistrés automatiquement, la reprise est possible à tout moment.
+- **Brouillons :** enregistrés automatiquement, la reprise est possible à tout moment. La couverture
+  de lecture est aussi enregistrée toutes les 30 s.
+- **Vidéos longues :**
+  - les positions s'affichent aussi en h:mm:ss ;
+  - la liste des passages non lus est affichée, et un bouton permet de reprendre une seconde avant
+    le premier d'entre eux ;
+  - un double-clic sur un intervalle relit la vidéo à partir de 2 s avant son début.
 - **Verrouillage :** il est définitif. Une correction devient une nouvelle version motivée
   (`locked/<vidéo>/v002.json`), sans écraser la précédente. Chaque événement est inscrit dans
   `audit.jsonl`.
@@ -288,6 +305,17 @@ Conséquences à déclarer dans tout rapport :
   manifeste ni les résultats.
 - **Isolement :** l'outil ne charge aucun modèle et ne lit aucun dossier de campagne ni de
   résultats. Les sessions et exports restent locaux (`artifacts/`, hors Git).
+
+## Amendement du 2026-10-26 (annotation d'un long métrage)
+
+Cet amendement ne change aucune définition de catégorie ni l'étiquette de la vidéo. Il ajoute
+trois éléments :
+- le statut et le commentaire de chaque intervalle (section 6) ;
+- la continuité de la lecture après une pause (section 3) ;
+- les aides de l'outil pour les vidéos longues (section 11).
+
+Les fiches verrouillées auparavant n'ont pas de statut d'intervalle. Leurs intervalles prennent le
+statut de leur catégorie, ce qui donne le même export qu'avant.
 
 ## Changements par rapport à la version 1
 

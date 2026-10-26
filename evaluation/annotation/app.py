@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QInputDialog,
     QLabel,
+    QLineEdit,
     QListWidget,
     QMainWindow,
     QMessageBox,
@@ -41,19 +42,34 @@ from evaluation.annotation.coverage import (
     covered_seconds,
     fully_played,
     unplayed_seconds,
+    unplayed_segments,
 )
 from evaluation.annotation.record import (
     CATEGORIES,
     CATEGORY_STATES,
     ESCALATIONS,
+    INTERVAL_STATES,
     MEDIA_EXCLUSIONS,
     NUDITY_CONTEXTS,
+    interval_status,
     validate,
     video_label,
 )
 from evaluation.annotation.session import LockedError, Session
 
 STATE_TEXT = {"absent": "absent", "present": "présent", "uncertain": "incertain"}
+# Statuses after which the reported position no longer continues the played segment (source change, end).
+INTERRUPTING_MEDIA_STATUSES = (QMediaPlayer.MediaStatus.NoMedia, QMediaPlayer.MediaStatus.LoadingMedia,
+                               QMediaPlayer.MediaStatus.LoadedMedia, QMediaPlayer.MediaStatus.EndOfMedia,
+                               QMediaPlayer.MediaStatus.InvalidMedia)
+PERIODIC_SAVE_MS = 30_000
+
+
+def clock(seconds: float) -> str:
+    seconds = max(0.0, seconds)
+    return f"{int(seconds // 3600)}:{int(seconds % 3600 // 60):02d}:{seconds % 60:04.1f}"
+
+
 LABEL_TEXT = {"positive": "POSITIVE", "negative": "NÉGATIVE", "uncertain": "INCERTAINE", "excluded": "EXCLUE",
               None: "— (catégories incomplètes)"}
 
@@ -73,11 +89,17 @@ class ReviewWindow(QMainWindow):
         self.player.setVideoOutput(self.video)
         self.video.setAspectRatioMode(Qt.AspectRatioMode.KeepAspectRatio)
         self.player.positionChanged.connect(self._position_changed)
-        # Any pause, stop, end of media or source change ends the current played segment.
-        self.player.playbackStateChanged.connect(lambda *_: self.tracker.interrupt())
-        self.player.mediaStatusChanged.connect(lambda *_: self.tracker.interrupt())
+        # A stop, end of media or source change ends the current played segment; a pause keeps it open
+        # until playback resumes (seeks and rate changes interrupt it themselves).
+        self.player.playbackStateChanged.connect(self._playback_state_changed)
+        self.player.mediaStatusChanged.connect(
+            lambda status: self.tracker.interrupt() if status in INTERRUPTING_MEDIA_STATUSES else None)
         self.player.durationChanged.connect(lambda ms: self.slider.setRange(0, ms))
         self.autosave = QTimer(self, singleShot=True, interval=800, timeout=self.save_draft)
+        # Long videos: playback coverage is saved regularly, so a crash never loses more than this.
+        self.periodic_save = QTimer(self, interval=PERIODIC_SAVE_MS, timeout=self.save_coverage)
+        self.periodic_save.start()
+        self._saved_intervals = None
         self._build()
         self._shortcuts()
         start = session.progress()["next"] or session.order[0]
@@ -102,11 +124,18 @@ class ReviewWindow(QMainWindow):
         controls = QHBoxLayout()
         for widget in (self.play_button, back, forward, self.speed, self.time_label, self.coverage_label):
             controls.addWidget(widget)
+        self.gaps_label = QLabel()
+        self.gaps_label.setWordWrap(True)
+        self.next_gap_button = QPushButton("Aller au prochain passage non lu", clicked=self.seek_next_unplayed)
+        gaps = QHBoxLayout()
+        gaps.addWidget(self.next_gap_button)
+        gaps.addWidget(self.gaps_label, 1)
         left = QVBoxLayout()
         left.addWidget(self.header)
         left.addWidget(self.video, 1)
         left.addWidget(self.slider)
         left.addLayout(controls)
+        left.addLayout(gaps)
 
         form = QVBoxLayout()
         self.category_groups = {}
@@ -132,17 +161,23 @@ class ReviewWindow(QMainWindow):
         events = QGroupBox("Intervalles (catégories présentes ou incertaines)")
         events_layout = QVBoxLayout()
         self.events_list = QListWidget()
-        self.events_list.setMaximumHeight(90)
+        self.events_list.setMaximumHeight(160)
         self.events_list.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.events_list.itemDoubleClicked.connect(self.seek_to_event)
         self.event_category = QComboBox()
         self.event_category.addItems(CATEGORIES)
+        self.event_status = QComboBox()
+        for state in INTERVAL_STATES:
+            self.event_status.addItem(STATE_TEXT[state], state)
+        self.event_note = QLineEdit()
+        self.event_note.setPlaceholderText("Commentaire de l'intervalle (facultatif, sans transcription)")
         self.event_start, self.event_end = QDoubleSpinBox(), QDoubleSpinBox()
         for spin in (self.event_start, self.event_end):
             spin.setDecimals(1)
             spin.setSingleStep(0.5)
             spin.setSuffix(" s")
         row = QHBoxLayout()
-        for widget in (self.event_category, self.event_start,
+        for widget in (self.event_category, self.event_status, self.event_start,
                        QPushButton("Début = position", clicked=lambda: self.event_start.setValue(self.position())),
                        self.event_end,
                        QPushButton("Fin = position", clicked=lambda: self.event_end.setValue(self.position()))):
@@ -152,6 +187,7 @@ class ReviewWindow(QMainWindow):
         buttons.addWidget(QPushButton("Supprimer la sélection", clicked=self.remove_event))
         events_layout.addWidget(self.events_list)
         events_layout.addLayout(row)
+        events_layout.addWidget(self.event_note)
         events_layout.addLayout(buttons)
         events.setLayout(events_layout)
         form.addWidget(events)
@@ -233,6 +269,7 @@ class ReviewWindow(QMainWindow):
         self.item_id, self.editing_locked = item_id, False
         self.record, self.state = self.session.load(item_id)
         self.tracker = PlaybackTracker(self.record.get("played_intervals", []))
+        self._saved_intervals = [list(i) for i in self.tracker.intervals]
         self.opened_at = time.monotonic()
         view = self.session.view(item_id)
         self.view = view
@@ -266,7 +303,11 @@ class ReviewWindow(QMainWindow):
         self.nudity_context.setCurrentText(record["nudity_context"] or "")
         self.events_list.clear()
         for event in record["events"]:
-            self.events_list.addItem(f"{event['category']} : {event['start_seconds']:.1f} – {event['end_seconds']:.1f} s")
+            status = STATE_TEXT.get(interval_status(event, record["categories"]), "?")
+            note = f" · {event['note']}" if event.get("note") else ""
+            self.events_list.addItem(f"{event['category']} ({status}) : {event['start_seconds']:.1f} – "
+                                     f"{event['end_seconds']:.1f} s [{clock(event['start_seconds'])} – "
+                                     f"{clock(event['end_seconds'])}]{note}")
         self.watched.setChecked(record["watched_in_full"])
         self.listened.setChecked(record["audio_listened"])
         self.listened.setEnabled(self.view["has_audio"])
@@ -326,8 +367,13 @@ class ReviewWindow(QMainWindow):
 
     def add_event(self):
         start, end = round(self.event_start.value(), 1), round(self.event_end.value(), 1)
-        self.record["events"] = [*self.record["events"], {"category": self.event_category.currentText(),
-                                                          "start_seconds": start, "end_seconds": end}]
+        event = {"category": self.event_category.currentText(), "status": self.event_status.currentData(),
+                 "start_seconds": start, "end_seconds": end}
+        if self.event_note.text().strip():
+            event["note"] = self.event_note.text().strip()
+        self.record["events"] = sorted([*self.record["events"], event],
+                                       key=lambda e: (e["start_seconds"], e["end_seconds"], e["category"]))
+        self.event_note.clear()
         self._load_form()
         self._changed()
 
@@ -347,6 +393,29 @@ class ReviewWindow(QMainWindow):
             return
         playing = self.player.playbackState() == QMediaPlayer.PlaybackState.PlayingState
         self.player.pause() if playing else self.player.play()
+
+    def seek_to_event(self, *_):
+        row = self.events_list.currentRow()
+        if row >= 0:  # replay from just before the interval to check its bounds
+            self.seek_to(int(max(0.0, self.record["events"][row]["start_seconds"] - 2.0) * 1000))
+
+    def seek_next_unplayed(self):
+        """Seeks one second before the first unplayed passage, so the replay joins the played time."""
+        gaps = self.unplayed()
+        if gaps:
+            self.seek_to(int(max(0.0, gaps[0][0] - 1.0) * 1000))
+
+    def unplayed(self):
+        return unplayed_segments(self.tracker.intervals, self.view["duration_seconds"], minimum=0.01)
+
+    def _playback_state_changed(self, state):
+        now = time.monotonic()
+        if state == QMediaPlayer.PlaybackState.PausedState:
+            self.observe(self.player.position() / 1000, now, self.player.playbackRate())
+        elif state == QMediaPlayer.PlaybackState.PlayingState:
+            self.tracker.resume(now)
+        else:
+            self.tracker.interrupt()
 
     def seek_relative(self, seconds: float):
         self.seek_to(max(0, self.player.position() + int(seconds * 1000)))
@@ -385,10 +454,15 @@ class ReviewWindow(QMainWindow):
         return fully_played(self.tracker.intervals, self.view["duration_seconds"])
 
     def _update_time(self):
-        self.time_label.setText(f"{self.player.position() / 1000:.1f} / {self.view['duration_seconds']:.1f} s")
-        remaining = unplayed_seconds(self.tracker.intervals, self.view["duration_seconds"])
-        self.coverage_label.setText(f"lu : {self.coverage():.0%} · non lu : {remaining:.1f} s"
+        position, duration = self.player.position() / 1000, self.view["duration_seconds"]
+        self.time_label.setText(f"{position:.1f} / {duration:.1f} s ({clock(position)} / {clock(duration)})")
+        remaining = unplayed_seconds(self.tracker.intervals, duration)
+        self.coverage_label.setText(f"lu : {self.coverage():.1%} · non lu : {remaining:.1f} s"
                                     + (" (complet)" if remaining <= TIMING_TOLERANCE_SECONDS else ""))
+        gaps = self.unplayed()
+        shown = ", ".join(f"{clock(a)}–{clock(b)}" for a, b in gaps[:4]) + (" …" if len(gaps) > 4 else "")
+        self.gaps_label.setText(f"Passages non lus : {len(gaps)}" + (f" ({shown})" if gaps else ""))
+        self.next_gap_button.setEnabled(bool(gaps) and not self.player.source().isEmpty())
 
     # ------------------------------------------------------------------ escalation, save, lock
 
@@ -409,6 +483,12 @@ class ReviewWindow(QMainWindow):
             self.player.setSource(QUrl())
         self._changed()
 
+    def save_coverage(self):
+        """Periodic save while reviewing a long video: only when the played intervals changed."""
+        if self.record is None or self.tracker.intervals == self._saved_intervals:
+            return
+        self.save_draft()
+
     def save_draft(self):
         if self.record is None or (self.state == "locked" and not self.editing_locked):
             return
@@ -416,6 +496,7 @@ class ReviewWindow(QMainWindow):
         if self.state == "locked":
             return  # an amendment is kept in memory until it is locked as a new version
         self.session.save_draft(self.record)
+        self._saved_intervals = [list(i) for i in self.tracker.intervals]
         self.state = "draft"
 
     def lock(self):

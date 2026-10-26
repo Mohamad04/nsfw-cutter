@@ -19,7 +19,15 @@ NUDITY_CONTEXTS = ("nonsexual_everyday", "nonsexual_medical", "nonsexual_artisti
                    "sexual", "unclear")
 ESCALATIONS = ("none", "age_uncertain", "consent_uncertain", "other_sensitive")
 MEDIA_EXCLUSIONS = ("unreadable_media", "sha256_mismatch")
+# Guide section 6: an interval of a present category may itself be uncertain; an uncertain category has
+# only uncertain intervals. An interval without a status (records locked before 2026-10-26) has its
+# category's state. An interval may also carry a free-text note.
+INTERVAL_STATES = ("present", "uncertain")
 MIN_GAP_SECONDS = 2.0
+
+
+def interval_status(event, states) -> str | None:
+    return event.get("status") or states.get(event.get("category"))
 
 
 def empty_record(item_id: str, sha256: str, duration_seconds: float, has_audio: bool):
@@ -92,7 +100,7 @@ def validate(record) -> list[str]:
 
 def _event_problems(record, excluded):
     problems, states, duration = [], record["categories"], record["duration_seconds"]
-    by_category = {}
+    by_category, by_status = {}, {}
     for n, event in enumerate(record["events"], 1):
         category, start, end = event.get("category"), event.get("start_seconds"), event.get("end_seconds")
         if category not in CATEGORIES:
@@ -100,17 +108,31 @@ def _event_problems(record, excluded):
             continue
         if states[category] not in ("present", "uncertain"):
             problems.append(f"interval {n}: {category} is not present or uncertain")
+        status = interval_status(event, states)
+        if status not in INTERVAL_STATES:
+            problems.append(f"interval {n}: status must be present or uncertain")
+        elif status == "present" and states[category] == "uncertain":
+            problems.append(f"interval {n}: {category} is uncertain, so its intervals are uncertain too")
+        if not isinstance(event.get("note", ""), str):
+            problems.append(f"interval {n}: the note must be text")
         if not (isinstance(start, (int, float)) and isinstance(end, (int, float)) and 0 <= start < end <= duration):
             problems.append(f"interval {n}: need 0 <= start < end <= {duration:.3f} s")
             continue
         by_category.setdefault(category, []).append((start, end))
-    for category, intervals in by_category.items():
+        by_status.setdefault((category, status), []).append((start, end))
+    for (category, status), intervals in by_status.items():
         intervals.sort()
         for (_, end), (start, _) in pairwise(intervals):
             if start - end < MIN_GAP_SECONDS:
-                problems.append(f"{category}: intervals closer than {MIN_GAP_SECONDS:g} s must be merged")
+                problems.append(f"{category}: {status} intervals closer than {MIN_GAP_SECONDS:g} s must be merged")
+    for category in CATEGORIES:
+        present, uncertain = by_status.get((category, "present"), []), by_status.get((category, "uncertain"), [])
+        if any(a < d and c < b for a, b in present for c, d in uncertain):
+            problems.append(f"{category}: a present interval and an uncertain interval overlap")
     if not excluded:
         for category in CATEGORIES:
             if states[category] in ("present", "uncertain") and category not in by_category:
                 problems.append(f"{category} is {states[category]}: record at least one interval")
+            elif states[category] == "present" and not by_status.get((category, "present")):
+                problems.append(f"{category} is present: record at least one present interval")
     return problems

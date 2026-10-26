@@ -163,6 +163,37 @@ class RecordRuleTests(unittest.TestCase):
         record["events"][1] = {"category": "nudity", "start_seconds": 12.0, "end_seconds": 14.0}
         self.assertEqual(validate(record), [])
 
+    def test_an_interval_of_a_present_category_may_be_uncertain(self):
+        record = positive(self.blank())
+        record["events"].append({"category": "nudity", "status": "uncertain", "start_seconds": 10.0,
+                                 "end_seconds": 12.0, "note": "zone floue"})
+        self.assertEqual(validate(record), [])  # 0.5 s from a present interval: statuses differ, no merge
+        record["events"].append({"category": "nudity", "status": "uncertain", "start_seconds": 13.0,
+                                 "end_seconds": 15.0})
+        self.assertTrue(any("uncertain intervals closer" in p for p in validate(record)))
+        record["events"][2] = {"category": "nudity", "status": "uncertain", "start_seconds": 8.0, "end_seconds": 9.0}
+        self.assertTrue(any("overlap" in p for p in validate(record)))
+        only_uncertain = positive(self.blank())
+        only_uncertain["events"][0]["status"] = "uncertain"
+        self.assertTrue(any("at least one present interval" in p for p in validate(only_uncertain)))
+        unknown = positive(self.blank())
+        unknown["events"][0]["status"] = "maybe"
+        self.assertTrue(any("status must be" in p for p in validate(unknown)))
+        doubtful = negative(self.blank())
+        doubtful["categories"]["sexual_context"] = "uncertain"
+        doubtful["events"] = [{"category": "sexual_context", "status": "present", "start_seconds": 1.0,
+                               "end_seconds": 3.0}]
+        doubtful["notes"] = "x"
+        self.assertTrue(any("intervals are uncertain too" in p for p in validate(doubtful)))
+
+    def test_intervals_without_status_keep_their_category_state(self):
+        # Records locked before interval statuses existed export exactly as before.
+        record = positive(self.blank())
+        mapped = to_reference(record, "accuracy")
+        self.assertEqual([e["notes"] for e in mapped["temporal"]["events"]], [""])
+        record["events"][0]["status"] = "present"
+        self.assertEqual(to_reference(record, "accuracy"), mapped)
+
 
 class PlaybackTrackerTests(unittest.TestCase):
     """Positions reported every 50 ms of wall-clock time, as the player does while playing."""
@@ -222,6 +253,26 @@ class PlaybackTrackerTests(unittest.TestCase):
         self.assertEqual(tracker.intervals, [[0.0, 30.0]])
         resumed = PlaybackTracker(tracker.intervals[:1])  # restored from a saved draft
         self.assertTrue(fully_played(resumed.intervals, 30.0))
+
+    def test_pause_then_resume_without_seek_leaves_no_gap(self):
+        # Measured on a real 1080p film: the first report after a resume comes 85-127 ms after the paused
+        # position; interrupting there left one gap per pause against a 0.5 s total tolerance.
+        tracker = PlaybackTracker()
+        wall = self.play(tracker, 0.0, 14.0)
+        tracker.resume(wall + 600)  # ten-minute pause, no seek
+        tracker.observe(14.1, wall + 600.1, 1.0)
+        self.play(tracker, 14.1, 30.0, wall=wall + 600.1)
+        self.assertEqual(tracker.intervals, [[0.0, 30.0]])
+        seeked = PlaybackTracker()
+        wall = self.play(seeked, 0.0, 10.0)
+        seeked.interrupt()  # a seek during the pause
+        seeked.resume(wall + 5)
+        self.assertFalse(seeked.observe(20.0, wall + 5.05, 1.0))
+        self.assertEqual(seeked.intervals, [[0.0, 10.0]])
+        jumped = PlaybackTracker()
+        wall = self.play(jumped, 0.0, 10.0)
+        jumped.resume(wall + 300)  # an unannounced jump after a resume still outruns the wall clock
+        self.assertFalse(jumped.observe(20.0, wall + 300.05, 1.0))
 
     def test_incomplete_viewing_cannot_be_confirmed(self):
         tracker = PlaybackTracker()
@@ -469,6 +520,29 @@ class BenchmarkCompatibilityTests(unittest.TestCase):
         self.assertEqual(scored["subset"]["already_excluded"], {"b": "nsfw_discovered"})
         self.assertEqual(scored["excluded_reference_positives_outcomes"]["count"], 1)
 
+    def test_uncertain_intervals_of_a_present_category_are_masked_not_targets(self):
+        record = positive(self.session.load("a")[0], "sexual_activity")
+        record["events"] += [{"category": "sexual_activity", "status": "uncertain", "start_seconds": 12.0,
+                              "end_seconds": 16.0, "note": "sous un drap"},
+                             {"category": "sexual_activity", "status": "present", "start_seconds": 20.0,
+                              "end_seconds": 25.0, "note": "image dans l'image"}]
+        mapped = to_reference(record, "accuracy")
+        temporal = mapped["temporal"]
+        self.assertEqual(mapped["category_labels"]["sexual_activity"], "present")
+        self.assertIn("sexual_activity", temporal["exhaustive_categories"])
+        self.assertEqual([(e["start_seconds"], e["notes"]) for e in temporal["events"]],
+                         [(4.0, ""), (20.0, "image dans l'image")])
+        self.assertEqual([(x["start_seconds"], x["kind"], x["reason"]) for x in temporal["excluded_intervals"]],
+                         [(12.0, "ambiguous", "reviewer uncertain: sexual_activity (sous un drap)")])
+        data = json.loads(self.manifest.read_text(encoding="utf-8"))
+        data["track"] = "accuracy"
+        item = data["items"][0]
+        item.update({k: mapped[k] for k in ("video_label", "category_labels", "temporal", "excluded",
+                                            "exclusion_reason")}, review_basis="complete")
+        data["items"] = [item]
+        labelled = BenchmarkManifest.model_validate(data)  # the benchmark contract accepts the mixed statuses
+        self.assertEqual(len(labelled.items[0].temporal.events), 2)
+
     def test_reference_mapping_keeps_partial_judgements_of_stopped_reviews(self):
         record = empty_record("x", "0" * 64, 30.0, True)
         record["categories"]["nudity"] = "present"
@@ -527,6 +601,55 @@ class ReviewWindowSmokeTests(unittest.TestCase):
                 window.escalation.setCurrentText("age_uncertain")
                 self.assertTrue(window.player.source().isEmpty())  # video unloaded immediately
                 self.assertIn("EXCLUE", window.label_view.text())
+            finally:
+                window.close()
+                window.deleteLater()
+                self.app.processEvents()
+
+    def test_long_video_helpers_record_interval_status_gaps_and_periodic_saves(self):
+        from PySide6.QtMultimedia import QMediaPlayer
+
+        from evaluation.annotation.app import ReviewWindow
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
+            tmp = Path(tmp)
+            video = tmp / "pattern.mp4"
+            subprocess.run([str(FFMPEG), "-v", "error", "-f", "lavfi", "-i", "testsrc=size=160x120:rate=10:duration=3",
+                            "-pix_fmt", "yuv420p", str(video)], check=True, timeout=120)
+            manifest, media = write_campaign(tmp, names=("a",), media={"a": video.read_bytes()})
+            session = Session.create(tmp / "s", manifest, media, reviewer_id="R1", guide_path=GUIDE, seed=1)
+            window = ReviewWindow(session)
+            try:
+                draft = tmp / "s" / "drafts" / "a.json"
+                for n in range(201):  # 0-10 s played, then a pause handled like the player's state change
+                    window.observe(n * 0.05, n * 0.05, 1.0)
+                window.player.position = lambda: 10000  # offscreen: the paused position the player reports
+                window._playback_state_changed(QMediaPlayer.PlaybackState.PausedState)
+                window._playback_state_changed(QMediaPlayer.PlaybackState.PlayingState)
+                window.observe(10.1, window.tracker._anchor[1] + 0.1, 1.0)
+                self.assertEqual(window.tracker.intervals, [[0.0, 10.1]])
+                window.save_coverage()  # the periodic save writes coverage that changed
+                self.assertEqual(json.loads(draft.read_text(encoding="utf-8"))["played_intervals"], [[0.0, 10.1]])
+                stamp = draft.stat().st_mtime_ns
+                window.save_coverage()  # unchanged coverage: nothing rewritten
+                self.assertEqual(draft.stat().st_mtime_ns, stamp)
+                window._update_time()  # the player's position reports refresh the labels
+                self.assertIn("Passages non lus : 1", window.gaps_label.text())
+                self.assertIn("0:00:10.1", window.gaps_label.text())
+                window.seek_next_unplayed()
+                self.assertIsNone(window.tracker._anchor)  # a seek never joins the skipped time
+                next(b for b in window.category_groups["nudity"].buttons()
+                     if b.property("state") == "present").click()
+                window.event_status.setCurrentIndex(window.event_status.findData("uncertain"))
+                window.event_start.setValue(3.0)
+                window.event_end.setValue(6.0)
+                window.event_note.setText("contre-jour")
+                window.add_event()
+                self.assertEqual(window.record["events"], [{"category": "nudity", "status": "uncertain", "start_seconds": 3.0,
+                                                    "end_seconds": 6.0, "note": "contre-jour"}])
+                self.assertIn("(incertain)", window.events_list.item(0).text())
+                self.assertIn("contre-jour", window.events_list.item(0).text())
+                self.assertTrue(any("at least one present interval" in p for p in validate(window.record)))
+                self.assertFalse(window.lock_button.isEnabled())
             finally:
                 window.close()
                 window.deleteLater()

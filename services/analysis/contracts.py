@@ -83,7 +83,8 @@ class AnalysisSettings(BaseModel):
 
     settings_version: int = Field(default=2, ge=2)
     analysis_mode: AnalysisMode = AnalysisMode.BALANCED
-    sampling_profile_revision: int = Field(default=1, ge=1)
+    # 2: periodic frames are timed by their source presentation time (showinfo), not index / rate.
+    sampling_profile_revision: int = Field(default=2, ge=1)
     provider: Literal["local_qwen"] = "local_qwen"
     model_id: str = DEFAULT_QWEN_MODEL_ID
     model_revision: str = DEFAULT_QWEN_MODEL_REVISION

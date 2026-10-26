@@ -255,6 +255,19 @@ class RunnerCampaignTests(unittest.TestCase):
         self.assertEqual(reference["parent"], "short-media-coverage-bfe55cc")
         self.assertEqual(reference["changed_files"], ["services/analysis/visual_sampling.py"])
 
+    def test_every_version_records_the_configuration_it_ran_with(self):
+        from evaluation.technical.benchmark import CONFIG_DIGEST, frozen_settings
+
+        for name, entry in versions.PIPELINE_VERSIONS.items():
+            with self.subTest(version=name):
+                self.assertIn(entry["configuration_sha256"],
+                              (versions.PROFILE_1_CONFIGURATION, versions.PROFILE_2_CONFIGURATION))
+        # This checkout freezes sampling profile 2 (source-timed frames); the earlier freezes keep profile 1.
+        self.assertEqual(frozen_settings().sampling_profile_revision, 2)
+        self.assertEqual(CONFIG_DIGEST, versions.PROFILE_2_CONFIGURATION)
+        self.assertEqual(versions.version(runner.DEFAULT_PIPELINE_VERSION)["configuration_sha256"],
+                         versions.PROFILE_1_CONFIGURATION)
+
     def test_invalid_configuration_sets_are_refused(self):
         c = Campaign(self.tmp)
         for configs in ((), ("A1",), ("A2", "A2"), ("A2", "A3")):

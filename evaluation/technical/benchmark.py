@@ -27,7 +27,7 @@ from evaluation.pilot.runner import (
 
 BASELINE = "ca7a6732aa0d4e153b06dada6d54c076a929db27"
 PROPOSAL_DIGEST = "ff2e84d512bbf095a566ec4187ab7bde2bce0809deae1c6c65ad2565e9dd7b23"
-CONFIG_DIGEST = "3348307d7491fc3406b8bac5aa3cb34fab7434fa316ce71d04d02d84bf85c5db"
+CONFIG_DIGEST = "922d5e32164317c7c0b26e767446a23d8fc90d530ce3524ffba30fbf0f8b954c"
 RUNTIME_DIRS = ["services", "core", "models", "controllers/app", "workers", "evaluation/pilot"]
 SHA = Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
 Positive = Annotated[float, Field(gt=0, allow_inf_nan=False)]

@@ -67,6 +67,9 @@ def verify_identity(pipeline_version: str = DEFAULT_PIPELINE_VERSION):
                                cwd=ROOT, check=True, capture_output=True, text=True).stdout
     if untracked.strip():
         raise ValueError("untracked files in the frozen analysis code")
+    if frozen["configuration_sha256"] != CONFIG_DIGEST:
+        raise ValueError(f"{pipeline_version} ran with configuration {frozen['configuration_sha256'][:8]}, "
+                         f"not the frozen configuration {CONFIG_DIGEST[:8]} of this checkout")
     settings = frozen_settings()
     env = environment_metadata()
     return {"commit": env["git_commit"], "frozen_baseline": frozen["commit"], "configuration_sha256": CONFIG_DIGEST,

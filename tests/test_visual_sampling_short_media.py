@@ -138,10 +138,15 @@ class ShortMediaSamplingTests(unittest.TestCase):
         for duration, periodic in LONG_DURATIONS.items():
             with self.subTest(duration=duration):
                 frames, runner = self.coarse(duration, f"coarse-long-{duration}")
-                # Exactly the two historical FFmpeg invocations (periodic, then scene); no fallback.
+                # Exactly two FFmpeg invocations (periodic, then scene); no fallback. Since sampling profile 2
+                # the periodic pass selects frames on source timestamps and times them with showinfo (see
+                # tests/test_visual_sampling_timestamps.py); for these durations its frame counts equal the former
+                # fps filter's (spans with a fraction of a period under one half now get one more frame).
                 self.assertEqual(len(runner.commands), 2)
-                self.assertIn("fps=0.200000,scale=384:384:force_original_aspect_ratio=decrease,"
-                              "pad=384:384:(ow-iw)/2:(oh-ih)/2", runner.commands[0])
+                self.assertTrue(any(part.startswith("select=if(isnan(prev_selected_t)") and
+                                    part.endswith(",showinfo,scale=384:384:force_original_aspect_ratio=decrease,"
+                                                  "pad=384:384:(ow-iw)/2:(oh-ih)/2")
+                                    for part in runner.commands[0]), runner.commands[0])
                 self.assertNotIn("-frames:v", runner.commands[0] + runner.commands[1])
                 interval = sorted((self.root / f"coarse-long-{duration}" / "frames" / "interval").glob("frame_*.jpg"))
                 self.assertEqual(len(interval), periodic)
@@ -197,7 +202,10 @@ class ShortMediaSamplingTests(unittest.TestCase):
                                                     windows, [], CancellationToken())
         self.assertEqual(batches[-1].candidate_window_id, windows[1].window_id)
         self.assertEqual(len(batches[-1].frames), 1)
-        self.assertEqual(frames[-1].timestamp_seconds, windows[1].start_seconds)
+        # The displayed frame is timed at its own presentation time (frame 1199, 39.967 s in this 1/1000 time
+        # base), just before the window it is shown in; it used to be labelled with the window start.
+        self.assertAlmostEqual(frames[-1].timestamp_seconds, 39.967, delta=0.001)
+        self.assertLess(frames[-1].timestamp_seconds, windows[1].start_seconds)
         self.assertEqual(len(frames), 31)  # 30 periodic frames of the first window, then the displayed frame
         self.assertEqual(len(runner.commands), 4)  # first window: periodic; final window: periodic + 2 fallbacks
         self.assertIn("-update", runner.commands[-1])

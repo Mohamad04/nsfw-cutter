@@ -1,6 +1,6 @@
 {
   "settings": {
-    "settings_version": 2, "analysis_mode": "balanced", "sampling_profile_revision": 1,
+    "settings_version": 2, "analysis_mode": "balanced", "sampling_profile_revision": 2,
     "provider": "local_qwen", "model_id": "Qwen/Qwen2.5-VL-3B-Instruct",
     "model_revision": "66285546d2b821cf421d4f5eb2576359d3770cd3", "quantization_mode": "auto",
     "whisper_model_id": "Systran/faster-whisper-small", "whisper_model_revision": "536b0662742c02347bc0e980a01041f333bce120",

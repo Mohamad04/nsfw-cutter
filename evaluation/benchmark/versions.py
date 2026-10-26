@@ -49,6 +49,15 @@ PIPELINE_VERSIONS = {
                        "after code review (final windows that start after the last frame keep the displayed frame; "
                        "cancellation is checked before any fallback)",
     },
+    "source-timestamps-5ba9e3a": {
+        "commit": "5ba9e3a42916908051974f12b35a66372da834ac",
+        "configuration_sha256": PROFILE_2_CONFIGURATION,
+        "parent": "reference-20261023-50b04b6",
+        "changed_files": ["services/analysis/contracts.py", "services/analysis/visual_sampling.py"],
+        "description": "experimental, 2026-10-26: periodic coarse and dense frames selected and timed on source "
+                       "presentation times (select + showinfo) instead of the fps filter grid, which showed content "
+                       "about half a period after the frame timestamp; sampling profile revision 2",
+    },
 }
 
 

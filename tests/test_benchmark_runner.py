@@ -268,6 +268,14 @@ class RunnerCampaignTests(unittest.TestCase):
         self.assertEqual(versions.version(runner.DEFAULT_PIPELINE_VERSION)["configuration_sha256"],
                          versions.PROFILE_1_CONFIGURATION)
 
+    def test_source_timestamp_version_derives_from_the_reference_freeze(self):
+        lineage = versions.verify_lineage("source-timestamps-5ba9e3a")
+        self.assertEqual(lineage["parent"], runner.DEFAULT_PIPELINE_VERSION)
+        self.assertEqual(lineage["changed_files"],
+                         ["services/analysis/contracts.py", "services/analysis/visual_sampling.py"])
+        self.assertEqual(versions.version("source-timestamps-5ba9e3a")["configuration_sha256"],
+                         versions.PROFILE_2_CONFIGURATION)
+
     def test_invalid_configuration_sets_are_refused(self):
         c = Campaign(self.tmp)
         for configs in ((), ("A1",), ("A2", "A2"), ("A2", "A3")):

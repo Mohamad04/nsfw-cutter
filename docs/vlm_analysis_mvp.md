@@ -66,6 +66,39 @@ Mode profiles are versioned and included in cache identities. Changing the mode,
 prompt schema, sampling settings, or relevant thresholds causes the affected work to be
 recomputed instead of reusing incompatible evidence.
 
+### Frame timestamps (sampling profile revision 2)
+
+Every sampled frame carries the presentation time of the source frame it shows, on the
+container-start-relative timeline used by FFmpeg `-ss` and by the player:
+
+- **Periodic coarse and dense frames** are chosen by an FFmpeg `select` expression on
+  source timestamps: the first frame of the span, then the first frame at or after each
+  later tick (`k / rate` seconds after the span start). `showinfo`, placed after `select`
+  and before scaling, logs each kept frame's integer `pts` and time base; the timestamp is
+  `pts x time_base` (plus the seek point for dense windows). A span of length `L` yields
+  `ceil(L x rate)` frames, all strictly before its end, so contiguous candidate windows
+  never share a frame.
+- **Scene-change frames** were already timed by `showinfo` and are unchanged.
+- **The last-resort frame** of a final window that starts after the last frame is timed at
+  its own presentation time, just before the window.
+- Dense windows are seeked without `-copyts`: FFmpeg then rebases timestamps to the seek
+  point on the same timeline as the coarse pass, whereas `-copyts` would add the container
+  start time (non-zero for some MP4/MKV files). The rebasing rounds the seek point to the
+  stream time base, so dense timestamps are exact to less than one millisecond.
+- An image whose source time cannot be read from `showinfo` stops the analysis instead of
+  being given a guessed time.
+
+Revision 1 (until October 2026) used FFmpeg's `fps` filter and timed frame `k` as
+`k / rate`. That filter rewrites timestamps to its own tick grid, and the frame it writes
+for a tick lies about half a period later: periodic frames showed content about 2.5 s
+(coarse, 0.2 FPS) or 0.5 s (dense, 1 FPS) after their timestamp. It also wrote about
+`round(L x rate)` frames per span instead of `ceil(L x rate)`. Revision 2 cache identities
+differ, so records, Marqo scores and VLM checkpoints computed with revision 1 are never
+reused; they are not deleted. `tests/test_visual_sampling_timestamps.py` checks every
+path against bar-coded synthetic clips (23.976 and 25 FPS, variable frame rate, non-zero
+start times, short media, scene cuts, end-of-stream windows) and end to end up to the
+times shown in the application.
+
 ## Models and GPU placement
 
 The final provider is `Qwen/Qwen2.5-VL-3B-Instruct`, pinned to revision
@@ -86,7 +119,9 @@ bitsandbytes initialization becomes a clear error rather than a fallback. Settin
 **GPU + CPU offload**, or **CPU**, together with the quantization name once Qwen is
 loaded. The lightweight Marqo prefilter uses FP16 CUDA when available and FP32 CPU as a
 fallback. Whisper independently uses CTranslate2 CUDA when its runtime is available and
-otherwise retries with int8 CPU inference.
+otherwise retries with int8 CPU inference. CTranslate2 needs CUDA 12 cuBLAS, which PyTorch
+(CUDA 13) does not provide: the packaged app bundles it, while a source run from the virtual
+environment uses the CPU fallback (see [CUDA 12 cuBLAS distribution](cuda12_cublas_distribution.md)).
 
 ## Compact, reliable structured output
 

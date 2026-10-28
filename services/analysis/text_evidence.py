@@ -183,7 +183,11 @@ class TextEvidenceService:
         settings: AnalysisSettings,
         cancellation: CancellationToken,
         progress_callback: ProgressCallback | None = None,
+        *,
+        has_audio: bool = True,
     ) -> TextEvidenceOutput:
+        # The pipeline supplies this from preflight stream metadata. The default
+        # preserves the extraction/error behavior of callers without metadata.
         warnings: list[str] = []
         transcript_segments: list[TranscriptSegment] = []
         cancellation.raise_if_cancelled()
@@ -197,11 +201,19 @@ class TextEvidenceService:
                     workspace,
                     cancellation,
                 )
+            except AnalysisCancelled:
+                raise
             except Exception as exc:  # noqa: BLE001 - a broken subtitle must fall back to audio
                 logger.warning("Selected subtitle could not be read; falling back to audio: %s", exc)
-                warnings.append("Selected subtitle could not be read; audio fallback was used.")
+                warnings.append("Selected subtitle could not be read; audio fallback was requested.")
 
         if not transcript_segments:
+            cancellation.raise_if_cancelled()
+            if not has_audio:
+                message = "Text evidence not applicable: no audio stream and no usable selected subtitles."
+                if progress_callback is not None:
+                    progress_callback(100, message)
+                return TextEvidenceOutput(warnings=[*warnings, message])
             if progress_callback is not None:
                 progress_callback(10, "Extracting speech audio")
             audio_path = self._extract_audio(video_path, workspace, cancellation)

@@ -3,6 +3,8 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
+from services.user_messages import coded, english
+
 
 logger = logging.getLogger(__name__)
 
@@ -13,12 +15,12 @@ class OutputPreferences:
 
     def resolve_output_dir(self, input_file: Path, output_dir: str) -> Path:
         if output_dir and str(output_dir).strip():
-            return Path(output_dir)
-
-        settings = self._settings_service.load()
-        if settings.default_export_dir or settings.export_dir:
-            return settings.default_export_dir or settings.export_dir
-        return input_file.parent / "cuts"
+            resolved = Path(output_dir)
+        else:
+            settings = self._settings_service.load()
+            resolved = Path(settings.default_export_dir or settings.export_dir or input_file.parent / "cuts")
+        _require_usable_output_dir(resolved)
+        return resolved
 
     def remember(self, output_dir: Path, export_mode: str) -> None:
         try:
@@ -29,3 +31,13 @@ class OutputPreferences:
             )
         except (OSError, ValidationError):
             logger.exception("Unable to persist video export settings")
+
+
+def _require_usable_output_dir(output_dir: Path) -> None:
+    """Refuse, before any FFmpeg command, an output folder that is an existing file or lies under one."""
+    for candidate in (output_dir, *output_dir.parents):
+        if candidate.exists():
+            if not candidate.is_dir():
+                raise coded(ValueError(english("export.output_not_a_folder", name=candidate.name)),
+                            "export.output_not_a_folder", name=candidate.name)
+            return

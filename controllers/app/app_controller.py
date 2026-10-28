@@ -40,6 +40,8 @@ from services.export.cut_json_service import CutJsonError, CutJsonService
 from services.media.import_service import VideoImportService
 from services.settings_service import SettingsService
 from services.subtitles.processing_service import SubtitleService
+from services.user_errors import technical_details, user_message
+from services.user_messages import localized_text, translated
 from services.subtitles.selection_service import (
     OFF_SUBTITLE_OPTION_ID,
     analysis_subtitle_status_text,
@@ -59,6 +61,7 @@ from workers.keyframe_index_worker import KeyframeIndexWorker
 from workers.model_provisioning_worker import ModelProvisioningWorker
 from workers.prepare_export_job_worker import PrepareExportJobWorker
 from workers.subtitle_discovery_worker import SubtitleDiscoveryWorker
+from workers.video_load_worker import VideoLoadWorker
 from workers.video_export_worker import VideoExportWorker
 
 logger = logging.getLogger(__name__)
@@ -107,6 +110,8 @@ class AppController(QObject):
     activePreviewSubtitleTrackIndexChanged = Signal()
     previewSubtitleTextChanged = Signal()
     projectStatusChanged = Signal()
+    videoLoadErrorChanged = Signal()
+    videoLoadingChanged = Signal()
     currentFolderChanged = Signal()
     availableVideosChanged = Signal()
     selectedVideoPathChanged = Signal()
@@ -152,6 +157,8 @@ class AppController(QObject):
         analysis_worker_factory=None,
         model_provisioner=None,
         model_provisioning_worker_factory=None,
+        video_load_worker_factory=None,
+        video_load_thread_pool=None,
     ):
         super().__init__()
         self.video_import_service = video_import_service or VideoImportService()
@@ -181,6 +188,20 @@ class AppController(QObject):
             model_provisioning_worker_factory or ModelProvisioningWorker
         )
         self._model_setup_workers = {}
+        self._video_load_worker_factory = video_load_worker_factory or VideoLoadWorker
+        # Video checks get their own threads: the shared pool (2 threads) may be busy with an analysis
+        # or an export, and a file selection must never wait behind them. An injected pool (tests) is
+        # used for everything.
+        if video_load_thread_pool is not None:
+            self._video_load_pool = video_load_thread_pool
+        elif thread_pool is not None:
+            self._video_load_pool = thread_pool
+        else:
+            self._video_load_pool = QThreadPool(self)
+            self._video_load_pool.setMaxThreadCount(2)
+        self._video_load_workers = {}
+        self._video_load_token = ""
+        self._video_load_request = {}
 
         self._state = AppState()
         self._state.ai_model_setup_total = len(PRODUCTION_MODELS)
@@ -248,6 +269,24 @@ class AppController(QObject):
     @Property(str, notify=projectStatusChanged)
     def projectStatus(self):
         return self._state.project_status
+
+    @Property(str, notify=videoLoadErrorChanged)
+    def videoLoadError(self):
+        """Why the last file could not be opened; empty once a video loads or the message is dismissed."""
+        return self._state.video_load_error
+
+    @Property(bool, notify=videoLoadingChanged)
+    def videoLoading(self):
+        """True while a selected file is being checked in the background."""
+        return self._state.video_loading
+
+    @Property(str, notify=videoLoadingChanged)
+    def videoLoadingName(self):
+        return self._state.video_loading_name
+
+    @Slot()
+    def dismissVideoLoadError(self):
+        self._set_video_load_error("")
 
     @Property(str, notify=currentFolderChanged)
     def currentFolder(self):
@@ -476,20 +515,114 @@ class AppController(QObject):
 
     @Slot("QVariantList")
     def loadVideoFiles(self, file_paths):
-        valid_videos = []
-        skipped = 0
-        for file_path in file_paths or []:
-            try:
-                video = self.video_import_service.build_video_listing_for_file(file_path)
-            except ValueError:
-                skipped += 1
-                continue
+        self._start_video_load([str(path) for path in file_paths or []], multiple=True)
 
-            if not any(existing["path"] == video["path"] for existing in valid_videos):
-                valid_videos.append(video)
+    def _load_video_file(self, file_path: str) -> bool:
+        """Start checking ``file_path``; it is loaded once the off-thread validation accepts it."""
+        return self._start_video_load([str(file_path)], multiple=False)
+
+    def _start_video_load(self, file_paths: list[str], *, multiple: bool) -> bool:
+        if not file_paths:
+            self._set_project_status("No supported videos selected.")
+            return False
+        request_key = (tuple(file_paths), multiple)
+        if self._state.video_loading and self._video_load_request.get("key") == request_key:
+            logger.info("Ignoring duplicate video load request: %s", file_paths)
+            return False
+        # A newer selection always wins: the older check is cancelled and its late result ignored.
+        self._cancel_video_load(publish=False)
+
+        job_token = uuid.uuid4().hex
+        try:
+            worker = self._video_load_worker_factory(
+                job_token=job_token,
+                file_paths=file_paths,
+                validate=self._video_loader.validate_for_loading,
+            )
+            worker.signals.finished.connect(self._on_video_load_finished)
+            worker.signals.cancelled.connect(self._on_video_load_cancelled)
+            self._video_load_workers[job_token] = worker
+            self._video_load_token = job_token
+            self._video_load_request = {"key": request_key, "multiple": multiple}
+            name = Path(file_paths[0]).name if len(file_paths) == 1 else f"{len(file_paths)} selected files"
+            self._set_video_loading(True, name)
+            self._set_project_status(f"Checking {name}...")
+            self._video_load_pool.start(worker)
+        except Exception as exc:
+            logger.exception("Unable to start video validation: %s\n%s", file_paths, technical_details(exc))
+            self._video_load_workers.pop(job_token, None)
+            self._finish_video_load()
+            self._reject_video_file(translated("media.could_not_open", reason=user_message(exc)))
+            return False
+        return True
+
+    @Slot()
+    def cancelVideoLoad(self):
+        if self._cancel_video_load(publish=True):
+            self._set_project_status("Video loading cancelled.")
+
+    @Slot()
+    def shutdown(self):
+        """Stop pending video checks (their ffprobe processes are terminated) before the application exits."""
+        self._cancel_video_load(publish=False)
+        for worker in list(self._video_load_workers.values()):
+            worker.cancel()
+        wait_for_done = getattr(self._video_load_pool, "waitForDone", None)
+        if callable(wait_for_done):
+            wait_for_done(10000)
+
+    def _cancel_video_load(self, *, publish: bool) -> bool:
+        job_token = self._video_load_token
+        if not job_token:
+            return False
+        worker = self._video_load_workers.get(job_token)
+        if worker is not None:
+            worker.cancel()
+        self._finish_video_load(publish=publish)
+        return True
+
+    def _finish_video_load(self, *, publish: bool = True) -> None:
+        self._video_load_token = ""
+        self._video_load_request = {}
+        if publish:
+            self._set_video_loading(False, "")
+        else:
+            self._state.video_loading = False
+            self._state.video_loading_name = ""
+
+    @Slot(str, object)
+    def _on_video_load_finished(self, job_token: str, outcomes) -> None:
+        self._video_load_workers.pop(job_token, None)
+        if job_token != self._video_load_token:
+            logger.info("Ignoring superseded video check: job=%s", job_token)
+            return
+        multiple = bool(self._video_load_request.get("multiple"))
+        self._finish_video_load()
+
+        outcomes = list(outcomes or [])
+        errors = [str(item["error"]) for item in outcomes if "error" in item]
+        valid_videos = []
+        for item in outcomes:
+            listing = item.get("listing")
+            if listing and not any(existing["path"] == listing["path"] for existing in valid_videos):
+                valid_videos.append(listing)
+        first_error = errors[0] if errors else ""
+
+        if not multiple:
+            if not valid_videos:
+                self._reject_video_file(first_error or translated("media.could_not_open", reason="").strip())
+                return
+            self._register_and_apply_video(valid_videos[0]["path"])
+            return
 
         if not valid_videos:
-            self._set_project_status("No supported videos selected.")
+            if len(errors) == 1:
+                message = first_error
+            elif first_error:
+                message = translated("media.none_opened", reason=first_error)
+            else:
+                message = "No supported videos selected."
+            self._reject_video_file(message)
             return
 
         self._append_available_videos(valid_videos)
@@ -497,29 +630,43 @@ class AppController(QObject):
         self.settings_service.add_recent_videos([video["path"] for video in valid_videos])
         self.recentFilesChanged.emit()
 
-        loaded = self._load_video_file(valid_videos[0]["path"])
-        if not loaded:
+        if not self._register_and_apply_video(valid_videos[0]["path"]):
             return
-
-        if skipped:
+        if errors:
             self._set_project_status(
-                f"Loaded {len(valid_videos)} video(s); skipped {skipped} unsupported or missing file(s)."
+                f"Loaded {len(valid_videos)} video(s); skipped {len(errors)} file(s) that could not be opened. "
+                f"First problem: {first_error}"
             )
         elif len(valid_videos) > 1:
             self._set_project_status(f"Loaded {len(valid_videos)} selected video(s).")
 
-    def _load_video_file(self, file_path: str) -> bool:
+    @Slot(str, str)
+    def _on_video_load_cancelled(self, job_token: str, _message: str) -> None:
+        self._video_load_workers.pop(job_token, None)
+        if job_token != self._video_load_token:
+            return
+        self._finish_video_load()
+        self._set_project_status("Video loading cancelled.")
+
+    def _register_and_apply_video(self, video_path: str) -> bool:
+        """GUI thread: record the validated video, then make it the loaded one."""
         try:
-            result = self._video_loader.import_video_file(file_path)
+            result = self._video_loader.register_video_file(video_path)
             self._apply_loaded_video(result)
             return True
         except ValueError as exc:
-            self._set_project_status(str(exc))
+            logger.warning("Video not loaded: %s\n%s", video_path, technical_details(exc))
+            self._reject_video_file(localized_text(exc))
             return False
-        except Exception:
-            logger.exception("Unexpected error while loading video")
-            self._set_project_status("Unexpected error while loading video")
+        except Exception as exc:
+            logger.exception("Unexpected error while loading video: %s\n%s", video_path, technical_details(exc))
+            self._reject_video_file(translated("media.could_not_open", reason=user_message(exc)))
             return False
+
+    def _reject_video_file(self, message: str) -> None:
+        # The previously loaded video, if any, stays loaded; only the status and the notice change.
+        self._set_project_status(message)
+        self._set_video_load_error(message)
 
     @Slot(str)
     def openRecentFile(self, file_path: str):
@@ -530,7 +677,7 @@ class AppController(QObject):
         if not video_path.is_file():
             self.settings_service.remove_recent_video(video_path)
             self.recentFilesChanged.emit()
-            self._set_project_status("Recent file no longer exists.")
+            self._reject_video_file(translated("media.recent_missing", name=video_path.name))
             return
 
         self.loadVideoFile(str(video_path))
@@ -569,12 +716,14 @@ class AppController(QObject):
     @Slot()
     def clearVideo(self):
         self._cancel_active_ai_analysis(publish=False)
+        self._cancel_video_load(publish=True)
         self._state.video_url = ""
         self._state.video_name = "No video selected"
         self._clear_subtitle_discovery()
         self._clear_ai_suggestions()
         self._state.project_status = "Ready"
         self._state.selected_video_path = ""
+        self._set_video_load_error("")
         self.keyframe_service.clear_active_media()
 
         self.videoUrlChanged.emit()
@@ -844,6 +993,7 @@ class AppController(QObject):
         self._state.video_name = result.get("video_name", "No video selected")
         self._state.selected_video_path = selected_video_path
         self._state.project_status = result.get("status", "Video loaded")
+        self._set_video_load_error("")
         self._clear_ai_suggestions()
 
         self.videoUrlChanged.emit()
@@ -1716,6 +1866,17 @@ class AppController(QObject):
     def _set_project_status(self, status: str):
         self._state.project_status = status
         self.projectStatusChanged.emit()
+
+    def _set_video_loading(self, loading: bool, name: str) -> None:
+        if (self._state.video_loading, self._state.video_loading_name) != (loading, name):
+            self._state.video_loading = loading
+            self._state.video_loading_name = name
+            self.videoLoadingChanged.emit()
+
+    def _set_video_load_error(self, message: str) -> None:
+        if self._state.video_load_error != message:
+            self._state.video_load_error = message
+            self.videoLoadErrorChanged.emit()
 
     def _set_current_folder(self, folder: str):
         if self._state.current_folder != folder:

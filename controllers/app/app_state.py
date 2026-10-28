@@ -20,6 +20,9 @@ class AppState:
     preview_subtitle_candidate_id: str = ""
     preview_subtitle_text: str = ""
     project_status: str = "Ready"
+    video_load_error: str = ""
+    video_loading: bool = False
+    video_loading_name: str = ""
     current_folder: str = ""
     available_videos: list = field(default_factory=list)
     selected_video_path: str = ""

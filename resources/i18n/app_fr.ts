@@ -158,75 +158,85 @@
     <message>
         <location filename="../../vue/qml/WindowsApplication/AppShell/CleanShellPage.qml" line="284"/>
         <source>Invalid JSON content</source>
-        <translation type="unfinished"></translation>
+        <translation>Contenu JSON invalide</translation>
     </message>
     <message>
         <location filename="../../vue/qml/WindowsApplication/AppShell/CleanShellPage.qml" line="290"/>
         <source>Could not import cuts</source>
-        <translation type="unfinished"></translation>
+        <translation>Impossible d&apos;importer les coupes</translation>
     </message>
     <message>
         <location filename="../../vue/qml/WindowsApplication/AppShell/CleanShellPage.qml" line="308"/>
         <source>No cuts to export</source>
-        <translation type="unfinished"></translation>
+        <translation>Aucune coupe à exporter</translation>
     </message>
     <message>
         <location filename="../../vue/qml/WindowsApplication/AppShell/CleanShellPage.qml" line="312"/>
         <source>Could not export cuts</source>
-        <translation type="unfinished"></translation>
+        <translation>Impossible d&apos;exporter les coupes</translation>
     </message>
     <message>
         <location filename="../../vue/qml/WindowsApplication/AppShell/CleanShellPage.qml" line="324"/>
         <location filename="../../vue/qml/WindowsApplication/AppShell/CleanShellPage.qml" line="330"/>
         <source>No JSON content to copy</source>
-        <translation type="unfinished"></translation>
+        <translation>Aucun contenu JSON à copier</translation>
     </message>
     <message>
         <location filename="../../vue/qml/WindowsApplication/AppShell/CleanShellPage.qml" line="329"/>
         <location filename="../../vue/qml/WindowsApplication/AppShell/CleanShellPage.qml" line="622"/>
         <source>Cuts copied to clipboard</source>
-        <translation type="unfinished"></translation>
+        <translation>Coupes copiées dans le presse-papiers</translation>
     </message>
     <message>
         <location filename="../../vue/qml/WindowsApplication/AppShell/CleanShellPage.qml" line="482"/>
         <source>Import Cuts JSON</source>
-        <translation type="unfinished"></translation>
+        <translation>Importer les coupes (JSON)</translation>
     </message>
     <message>
         <location filename="../../vue/qml/WindowsApplication/AppShell/CleanShellPage.qml" line="491"/>
         <source>Paste your cuts JSON below.</source>
-        <translation type="unfinished"></translation>
+        <translation>Collez ci-dessous le JSON de vos coupes.</translation>
     </message>
     <message>
         <location filename="../../vue/qml/WindowsApplication/AppShell/CleanShellPage.qml" line="499"/>
         <location filename="../../vue/qml/WindowsApplication/AppShell/CleanShellPage.qml" line="593"/>
         <source>JSON content</source>
-        <translation type="unfinished"></translation>
+        <translation>Contenu JSON</translation>
     </message>
     <message>
         <location filename="../../vue/qml/WindowsApplication/AppShell/CleanShellPage.qml" line="539"/>
         <source>Cancel</source>
-        <translation type="unfinished">Annuler</translation>
+        <translation>Annuler</translation>
     </message>
     <message>
         <location filename="../../vue/qml/WindowsApplication/AppShell/CleanShellPage.qml" line="548"/>
         <source>Import</source>
-        <translation type="unfinished">Importer</translation>
+        <translation>Importer</translation>
     </message>
     <message>
         <location filename="../../vue/qml/WindowsApplication/AppShell/CleanShellPage.qml" line="584"/>
         <source>Export Cuts JSON</source>
-        <translation type="unfinished"></translation>
+        <translation>Exporter les coupes (JSON)</translation>
     </message>
     <message>
         <location filename="../../vue/qml/WindowsApplication/AppShell/CleanShellPage.qml" line="636"/>
         <source>Copy</source>
-        <translation type="unfinished"></translation>
+        <translation>Copier</translation>
     </message>
     <message>
         <location filename="../../vue/qml/WindowsApplication/AppShell/CleanShellPage.qml" line="645"/>
         <source>Close</source>
-        <translation type="unfinished"></translation>
+        <translation>Fermer</translation>
+    </message>
+    <message>
+        <location filename="../../vue/qml/WindowsApplication/AppShell/CleanShellPage.qml" line="453"/>
+        <source>Checking %1…</source>
+        <translation>Vérification de %1…</translation>
+    </message>
+    <message>
+        <location filename="../../vue/qml/WindowsApplication/AppShell/CleanShellPage.qml" line="499"/>
+        <source>Dismiss</source>
+        <translation>Fermer</translation>
     </message>
 </context>
 <context>
@@ -952,12 +962,12 @@ puis sélectionnez Ajouter une coupe.</translation>
     <message>
         <location filename="../../vue/qml/WindowsApplication/CutList/CutManagementPanelRoot.qml" line="310"/>
         <source>Import JSON</source>
-        <translation type="unfinished"></translation>
+        <translation>Importer JSON</translation>
     </message>
     <message>
         <location filename="../../vue/qml/WindowsApplication/CutList/CutManagementPanelRoot.qml" line="322"/>
         <source>Export JSON</source>
-        <translation type="unfinished"></translation>
+        <translation>Exporter JSON</translation>
     </message>
     <message>
         <location filename="../../vue/qml/WindowsApplication/CutList/CutManagementPanelRoot.qml" line="370"/>
@@ -1153,6 +1163,46 @@ puis sélectionnez Ajouter une coupe.</translation>
         <source>Export Clean Video</source>
         <translation>Exporter la vidéo nettoyée</translation>
     </message>
+    <message>
+        <location filename="../../vue/qml/WindowsApplication/CutList/ExportActionBar.qml" line="208"/>
+        <source>Cancel</source>
+        <translation>Annuler</translation>
+    </message>
+    <message>
+        <location filename="../../vue/qml/WindowsApplication/CutList/ExportActionBar.qml" line="216"/>
+        <source>Stop the export; no partial file is kept</source>
+        <translation>Arrêter l&apos;export ; aucun fichier partiel n&apos;est conservé</translation>
+    </message>
+    <message>
+        <location filename="../../vue/qml/WindowsApplication/CutList/ExportActionBar.qml" line="268"/>
+        <source>Export cancelled. No file was kept.</source>
+        <translation>Export annulé. Aucun fichier n&apos;a été conservé.</translation>
+    </message>
+    <message>
+        <location filename="../../vue/qml/WindowsApplication/CutList/ExportActionBar.qml" line="269"/>
+        <source>Export failed</source>
+        <translation>Échec de l&apos;export</translation>
+    </message>
+    <message>
+        <location filename="../../vue/qml/WindowsApplication/CutList/ExportActionBar.qml" line="269"/>
+        <source>Export completed</source>
+        <translation>Export terminé</translation>
+    </message>
+    <message>
+        <location filename="../../vue/qml/WindowsApplication/CutList/ExportActionBar.qml" line="283"/>
+        <source>Output: %1</source>
+        <translation>Sortie : %1</translation>
+    </message>
+    <message>
+        <location filename="../../vue/qml/WindowsApplication/CutList/ExportActionBar.qml" line="302"/>
+        <source>Warning: %1</source>
+        <translation>Avertissement : %1</translation>
+    </message>
+    <message>
+        <location filename="../../vue/qml/WindowsApplication/CutList/ExportActionBar.qml" line="343"/>
+        <source>Details: %1</source>
+        <translation>Détails : %1</translation>
+    </message>
 </context>
 <context>
     <name>ForwardFiveSeekButton</name>
@@ -1330,17 +1380,17 @@ puis sélectionnez Ajouter une coupe.</translation>
     <message>
         <location filename="../../vue/qml/WindowsApplication/Settings/SettingsDialog.qml" line="32"/>
         <source>Remove intervals</source>
-        <translation>Supprimer les intervalles</translation>
+        <translation type="vanished">Supprimer les intervalles</translation>
     </message>
     <message>
         <location filename="../../vue/qml/WindowsApplication/Settings/SettingsDialog.qml" line="33"/>
         <source>Export clips separately</source>
-        <translation>Exporter les clips séparément</translation>
+        <translation type="vanished">Exporter les clips séparément</translation>
     </message>
     <message>
         <location filename="../../vue/qml/WindowsApplication/Settings/SettingsDialog.qml" line="34"/>
         <source>Export merged clips</source>
-        <translation>Exporter les clips fusionnés</translation>
+        <translation type="vanished">Exporter les clips fusionnés</translation>
     </message>
     <message>
         <location filename="../../vue/qml/WindowsApplication/Settings/SettingsDialog.qml" line="37"/>
@@ -1482,6 +1532,11 @@ puis sélectionnez Ajouter une coupe.</translation>
         <source>Save</source>
         <translation>Enregistrer</translation>
     </message>
+    <message>
+        <location filename="../../vue/qml/WindowsApplication/Settings/SettingsDialog.qml" line="202"/>
+        <source>Export Clean Video removes every cut in the list and keeps the rest of the video.</source>
+        <translation>« Exporter la vidéo nettoyée » supprime toutes les coupes de la liste et conserve le reste de la vidéo.</translation>
+    </message>
 </context>
 <context>
     <name>SubtitleSelectorPopup</name>
@@ -1522,6 +1577,255 @@ puis sélectionnez Ajouter une coupe.</translation>
         <location filename="../../vue/qml/WindowsApplication/Settings/ThemeToggleButton.qml" line="15"/>
         <source>Switch to Light Mode</source>
         <translation>Passer au mode clair</translation>
+    </message>
+</context>
+<context>
+    <name>UserMessages</name>
+    <message>
+        <location filename="../../services/user_messages.py" line="16"/>
+        <source>&quot;{name}&quot; cannot be found. It may have been moved, renamed or deleted.</source>
+        <translation>« {name} » est introuvable. Il a peut-être été déplacé, renommé ou supprimé.</translation>
+    </message>
+    <message>
+        <location filename="../../services/user_messages.py" line="18"/>
+        <source>&quot;{name}&quot; is a folder, not a video file.</source>
+        <translation>« {name} » est un dossier, pas un fichier vidéo.</translation>
+    </message>
+    <message>
+        <location filename="../../services/user_messages.py" line="19"/>
+        <source>&quot;{name}&quot; is not a supported video. Open an MP4 or MKV file.</source>
+        <translation>« {name} » n&apos;est pas une vidéo prise en charge. Ouvrez un fichier MP4 ou MKV.</translation>
+    </message>
+    <message>
+        <location filename="../../services/user_messages.py" line="21"/>
+        <source>&quot;{name}&quot; cannot be read. Check that you have access to it and that no other program is locking it.</source>
+        <translation>« {name} » ne peut pas être lu. Vérifiez que vous y avez accès et qu&apos;aucun autre programme ne le verrouille.</translation>
+    </message>
+    <message>
+        <location filename="../../services/user_messages.py" line="24"/>
+        <source>&quot;{name}&quot; is empty (0 bytes). It is not a usable video.</source>
+        <translation>« {name} » est vide (0 octet). Ce n&apos;est pas une vidéo utilisable.</translation>
+    </message>
+    <message>
+        <location filename="../../services/user_messages.py" line="25"/>
+        <source>FFmpeg is not available, so the video cannot be checked. Reinstall the application or run scripts/prepare_ffmpeg.ps1.</source>
+        <translation>FFmpeg n&apos;est pas disponible, la vidéo ne peut donc pas être vérifiée. Réinstallez l&apos;application ou exécutez scripts/prepare_ffmpeg.ps1.</translation>
+    </message>
+    <message>
+        <location filename="../../services/user_messages.py" line="29"/>
+        <source>FFmpeg could not be started, so the video cannot be checked. Reinstall the application or run scripts/prepare_ffmpeg.ps1.</source>
+        <translation>FFmpeg n&apos;a pas pu être démarré, la vidéo ne peut donc pas être vérifiée. Réinstallez l&apos;application ou exécutez scripts/prepare_ffmpeg.ps1.</translation>
+    </message>
+    <message>
+        <location filename="../../services/user_messages.py" line="33"/>
+        <source>&quot;{name}&quot; is damaged or incomplete and cannot be opened (for example after an interrupted download or copy).</source>
+        <translation>« {name} » est endommagé ou incomplet et ne peut pas être ouvert (par exemple après un téléchargement ou une copie interrompus).</translation>
+    </message>
+    <message>
+        <location filename="../../services/user_messages.py" line="37"/>
+        <source>&quot;{name}&quot; is actually an {label} video, not {suffix}. Rename it with the {extension} extension, then open it again.</source>
+        <translation>« {name} » est en réalité une vidéo {label}, pas {suffix}. Renommez-le avec l&apos;extension {extension}, puis ouvrez-le à nouveau.</translation>
+    </message>
+    <message>
+        <location filename="../../services/user_messages.py" line="41"/>
+        <source>&quot;{name}&quot; is not an MP4 or MKV video (FFmpeg reads it as &quot;{container}&quot;). Open an MP4 or MKV file.</source>
+        <translation>« {name} » n&apos;est pas une vidéo MP4 ou MKV (FFmpeg la lit comme « {container} »). Ouvrez un fichier MP4 ou MKV.</translation>
+    </message>
+    <message>
+        <location filename="../../services/user_messages.py" line="44"/>
+        <source>&quot;{name}&quot; has no video to edit: it contains only a still cover picture.</source>
+        <translation>« {name} » ne contient aucune vidéo à modifier : seulement une image de couverture fixe.</translation>
+    </message>
+    <message>
+        <location filename="../../services/user_messages.py" line="46"/>
+        <source>&quot;{name}&quot; has no video to edit: it contains only audio.</source>
+        <translation>« {name} » ne contient aucune vidéo à modifier : seulement de l&apos;audio.</translation>
+    </message>
+    <message>
+        <location filename="../../services/user_messages.py" line="48"/>
+        <source>&quot;{name}&quot; has no video to edit: it contains no audio or video.</source>
+        <translation>« {name} » ne contient aucune vidéo à modifier : ni audio ni vidéo.</translation>
+    </message>
+    <message>
+        <location filename="../../services/user_messages.py" line="50"/>
+        <source>&quot;{name}&quot; uses a video codec that FFmpeg cannot identify, so it cannot be played or edited.</source>
+        <translation>« {name} » utilise un codec vidéo que FFmpeg ne reconnaît pas ; il ne peut donc être ni lu ni modifié.</translation>
+    </message>
+    <message>
+        <location filename="../../services/user_messages.py" line="53"/>
+        <source>&quot;{name}&quot; has missing or invalid video information (frame size or duration). The file is probably damaged.</source>
+        <translation>Les informations vidéo de « {name} » sont manquantes ou invalides (taille d&apos;image ou durée). Le fichier est probablement endommagé.</translation>
+    </message>
+    <message>
+        <location filename="../../services/user_messages.py" line="57"/>
+        <source>&quot;{name}&quot; cannot be decoded: FFmpeg could not read its first video frame ({codec}).</source>
+        <translation>« {name} » ne peut pas être décodé : FFmpeg n&apos;a pas pu lire sa première image vidéo ({codec}).</translation>
+    </message>
+    <message>
+        <location filename="../../services/user_messages.py" line="59"/>
+        <source>&quot;{name}&quot; is incomplete: the end of the video is missing or damaged (for example after an interrupted download or copy).</source>
+        <translation>« {name} » est incomplet : la fin de la vidéo manque ou est endommagée (par exemple après un téléchargement ou une copie interrompus).</translation>
+    </message>
+    <message>
+        <location filename="../../services/user_messages.py" line="63"/>
+        <source>Checking &quot;{name}&quot; took too long (over {seconds} s). The drive may be very slow or the file may be damaged.</source>
+        <translation>La vérification de « {name} » a pris trop de temps (plus de {seconds} s). Le disque est peut-être très lent ou le fichier endommagé.</translation>
+    </message>
+    <message>
+        <location filename="../../services/user_messages.py" line="67"/>
+        <source>&quot;{name}&quot; no longer exists. It was removed from the recent files.</source>
+        <translation>« {name} » n&apos;existe plus. Il a été retiré des fichiers récents.</translation>
+    </message>
+    <message>
+        <location filename="../../services/user_messages.py" line="69"/>
+        <source>Could not open the video. {reason}</source>
+        <translation>Impossible d&apos;ouvrir la vidéo. {reason}</translation>
+    </message>
+    <message>
+        <location filename="../../services/user_messages.py" line="70"/>
+        <source>None of the selected files could be opened. {reason}</source>
+        <translation>Aucun des fichiers sélectionnés n&apos;a pu être ouvert. {reason}</translation>
+    </message>
+    <message>
+        <location filename="../../services/user_messages.py" line="72"/>
+        <source>Fast Cutting cannot remove audio exactly: stream copy keeps whole audio frames around each cut, so up to about 0.1 s of sound from every removed interval would remain. Nothing was exported. Use Smart Cutting, which rebuilds the audio exactly.</source>
+        <translation>La coupe rapide ne peut pas supprimer l&apos;audio exactement : la copie de flux conserve des trames audio entières autour de chaque coupe, donc jusqu&apos;à environ 0,1 s du son de chaque intervalle supprimé resterait. Rien n&apos;a été exporté. Utilisez la coupe intelligente, qui reconstruit l&apos;audio exactement.</translation>
+    </message>
+    <message>
+        <location filename="../../services/user_messages.py" line="77"/>
+        <source>Fast Cutting cannot merge clips with exact audio: stream copy keeps whole audio frames around each clip, so up to about 0.1 s of sound from outside the selected clips would be included. Nothing was exported. Use Smart Cutting, which rebuilds the audio exactly.</source>
+        <translation>La coupe rapide ne peut pas fusionner des clips avec un audio exact : la copie de flux conserve des trames audio entières autour de chaque clip, donc jusqu&apos;à environ 0,1 s de son situé hors des clips sélectionnés serait inclus. Rien n&apos;a été exporté. Utilisez la coupe intelligente, qui reconstruit l&apos;audio exactement.</translation>
+    </message>
+    <message>
+        <location filename="../../services/user_messages.py" line="82"/>
+        <source>Fast Cutting cannot export clips with exact audio: stream copy keeps whole audio frames around each clip, so up to about 0.1 s of sound from outside every clip would be included. Nothing was exported. Use Smart Cutting, which rebuilds the audio exactly.</source>
+        <translation>La coupe rapide ne peut pas exporter des clips avec un audio exact : la copie de flux conserve des trames audio entières autour de chaque clip, donc jusqu&apos;à environ 0,1 s de son situé hors de chaque clip serait inclus. Rien n&apos;a été exporté. Utilisez la coupe intelligente, qui reconstruit l&apos;audio exactement.</translation>
+    </message>
+    <message>
+        <location filename="../../services/user_messages.py" line="87"/>
+        <source>Fast Cutting cannot remove the selected intervals exactly: stream copy can only cut on a keyframe that starts an independent group of frames, and these cut boundaries are not on one: {details}. Nothing was exported and the cuts were not changed. Use Smart Cutting for frame-exact removal, or move these boundaries onto the listed keyframes.</source>
+        <translation>La coupe rapide ne peut pas supprimer exactement les intervalles sélectionnés : la copie de flux ne peut couper que sur une image clé qui ouvre un groupe d&apos;images indépendant, et ces limites de coupe n&apos;en sont pas : {details}. Rien n&apos;a été exporté et les coupes n&apos;ont pas été modifiées. Utilisez la coupe intelligente pour une suppression exacte à l&apos;image près, ou placez ces limites sur les images clés indiquées.</translation>
+    </message>
+    <message>
+        <location filename="../../services/user_messages.py" line="93"/>
+        <source>Fast Cutting cannot export the selected clips exactly: stream copy can only cut on a keyframe that starts an independent group of frames, and these cut boundaries are not on one: {details}. Nothing was exported and the cuts were not changed. Use Smart Cutting for frame-exact removal, or move these boundaries onto the listed keyframes.</source>
+        <translation>La coupe rapide ne peut pas exporter exactement les clips sélectionnés : la copie de flux ne peut couper que sur une image clé qui ouvre un groupe d&apos;images indépendant, et ces limites de coupe n&apos;en sont pas : {details}. Rien n&apos;a été exporté et les coupes n&apos;ont pas été modifiées. Utilisez la coupe intelligente pour une suppression exacte à l&apos;image près, ou placez ces limites sur les images clés indiquées.</translation>
+    </message>
+    <message>
+        <location filename="../../services/user_messages.py" line="99"/>
+        <source>{time} (keyframe of an open GOP: earlier frames depend on it)</source>
+        <translation>{time} (image clé d&apos;un GOP ouvert : des images précédentes en dépendent)</translation>
+    </message>
+    <message>
+        <location filename="../../services/user_messages.py" line="101"/>
+        <source>{time} (nearest keyframes {first})</source>
+        <translation>{time} (images clés les plus proches : {first})</translation>
+    </message>
+    <message>
+        <location filename="../../services/user_messages.py" line="102"/>
+        <source>{time} (nearest keyframes {first} and {second})</source>
+        <translation>{time} (images clés les plus proches : {first} et {second})</translation>
+    </message>
+    <message>
+        <location filename="../../services/user_messages.py" line="104"/>
+        <source>The output folder cannot be used: &quot;{name}&quot; is an existing file, not a folder. Choose another output folder.</source>
+        <translation>Le dossier de sortie ne peut pas être utilisé : « {name} » est un fichier existant, pas un dossier. Choisissez un autre dossier de sortie.</translation>
+    </message>
+    <message>
+        <location filename="../../services/user_messages.py" line="108"/>
+        <location filename="../../services/user_messages.py" line="147"/>
+        <source>&quot;{name}&quot; can no longer be found. It may have been moved, renamed or deleted.</source>
+        <translation>« {name} » est désormais introuvable. Il a peut-être été déplacé, renommé ou supprimé.</translation>
+    </message>
+    <message>
+        <location filename="../../services/user_messages.py" line="111"/>
+        <source>The operation was cancelled. No output was kept.</source>
+        <translation>L&apos;opération a été annulée. Aucun fichier n&apos;a été conservé.</translation>
+    </message>
+    <message>
+        <location filename="../../services/user_messages.py" line="112"/>
+        <source>The video file is damaged or incomplete (for example after an interrupted download or copy), so it cannot be processed. Try another copy of the file.</source>
+        <translation>Le fichier vidéo est endommagé ou incomplet (par exemple après un téléchargement ou une copie interrompus) et ne peut donc pas être traité. Essayez une autre copie du fichier.</translation>
+    </message>
+    <message>
+        <location filename="../../services/user_messages.py" line="116"/>
+        <source>This video uses a codec or format that this operation cannot handle. Try Smart Cutting, or convert the video to H.264 MP4 or MKV.</source>
+        <translation>Cette vidéo utilise un codec ou un format que cette opération ne prend pas en charge. Essayez la coupe intelligente, ou convertissez la vidéo en MP4 ou MKV H.264.</translation>
+    </message>
+    <message>
+        <location filename="../../services/user_messages.py" line="120"/>
+        <source>FFmpeg is missing, so videos cannot be processed. Reinstall the application or run scripts/prepare_ffmpeg.ps1 to restore the bundled FFmpeg.</source>
+        <translation>FFmpeg est absent, les vidéos ne peuvent donc pas être traitées. Réinstallez l&apos;application ou exécutez scripts/prepare_ffmpeg.ps1 pour restaurer le FFmpeg fourni.</translation>
+    </message>
+    <message>
+        <location filename="../../services/user_messages.py" line="124"/>
+        <source>The FFmpeg program in use does not support an option this application needs. The application expects the bundled FFmpeg 8.1.1; run scripts/prepare_ffmpeg.ps1 to restore it.</source>
+        <translation>Le programme FFmpeg utilisé ne prend pas en charge une option dont cette application a besoin. L&apos;application attend le FFmpeg 8.1.1 fourni ; exécutez scripts/prepare_ffmpeg.ps1 pour le restaurer.</translation>
+    </message>
+    <message>
+        <location filename="../../services/user_messages.py" line="128"/>
+        <source>There is not enough free disk space to finish. Free some space or choose another output folder.</source>
+        <translation>L&apos;espace disque libre est insuffisant pour terminer. Libérez de l&apos;espace ou choisissez un autre dossier de sortie.</translation>
+    </message>
+    <message>
+        <location filename="../../services/user_messages.py" line="131"/>
+        <source>FFmpeg stopped responding ({reason}), so it was stopped. No output was kept. Try again; if it happens again, try the other cutting mode.</source>
+        <translation>FFmpeg ne répondait plus ({reason}) et a été arrêté. Aucun fichier n&apos;a été conservé. Réessayez ; si cela se reproduit, essayez l&apos;autre mode de coupe.</translation>
+    </message>
+    <message>
+        <location filename="../../services/user_messages.py" line="135"/>
+        <source>Access to a file was denied. Check that it is not open in another program.</source>
+        <translation>L&apos;accès à un fichier a été refusé. Vérifiez qu&apos;il n&apos;est pas ouvert dans un autre programme.</translation>
+    </message>
+    <message>
+        <location filename="../../services/user_messages.py" line="137"/>
+        <source>Access to &quot;{name}&quot; was denied. Check that it is not open in another program and that you are allowed to write to the output folder.</source>
+        <translation>L&apos;accès à « {name} » a été refusé. Vérifiez qu&apos;il n&apos;est pas ouvert dans un autre programme et que vous avez le droit d&apos;écrire dans le dossier de sortie.</translation>
+    </message>
+    <message>
+        <location filename="../../services/user_messages.py" line="141"/>
+        <source>Access to a file was denied. Check that it is not open in another program and that you are allowed to write to the output folder.</source>
+        <translation>L&apos;accès à un fichier a été refusé. Vérifiez qu&apos;il n&apos;est pas ouvert dans un autre programme et que vous avez le droit d&apos;écrire dans le dossier de sortie.</translation>
+    </message>
+    <message>
+        <location filename="../../services/user_messages.py" line="145"/>
+        <source>A required file can no longer be found. It may have been moved or deleted.</source>
+        <translation>Un fichier nécessaire est introuvable. Il a peut-être été déplacé ou supprimé.</translation>
+    </message>
+    <message>
+        <location filename="../../services/user_messages.py" line="149"/>
+        <source>A file can no longer be found. It may have been moved, renamed or deleted.</source>
+        <translation>Un fichier est désormais introuvable. Il a peut-être été déplacé, renommé ou supprimé.</translation>
+    </message>
+    <message>
+        <location filename="../../services/user_messages.py" line="151"/>
+        <source>A file named &quot;{name}&quot; already exists, so nothing was overwritten. Choose another name or folder.</source>
+        <translation>Un fichier nommé « {name} » existe déjà ; rien n&apos;a été écrasé. Choisissez un autre nom ou un autre dossier.</translation>
+    </message>
+    <message>
+        <location filename="../../services/user_messages.py" line="154"/>
+        <source>A file named a file already exists, so nothing was overwritten. Choose another name or folder.</source>
+        <translation>Un fichier portant ce nom existe déjà ; rien n&apos;a été écrasé. Choisissez un autre nom ou un autre dossier.</translation>
+    </message>
+    <message>
+        <location filename="../../services/user_messages.py" line="157"/>
+        <source>A file operation on &quot;{name}&quot; failed ({reason}). Technical details were written to the application log (logs/video-cut.log).</source>
+        <translation>Une opération sur « {name} » a échoué ({reason}). Les détails techniques ont été écrits dans le journal de l&apos;application (logs/video-cut.log).</translation>
+    </message>
+    <message>
+        <location filename="../../services/user_messages.py" line="161"/>
+        <source>A file operation on a file failed ({reason}). Technical details were written to the application log (logs/video-cut.log).</source>
+        <translation>Une opération sur un fichier a échoué ({reason}). Les détails techniques ont été écrits dans le journal de l&apos;application (logs/video-cut.log).</translation>
+    </message>
+    <message>
+        <location filename="../../services/user_messages.py" line="165"/>
+        <source>FFmpeg could not process this video (exit code {code}). No output was kept. Technical details were written to the application log (logs/video-cut.log).</source>
+        <translation>FFmpeg n&apos;a pas pu traiter cette vidéo (code de sortie {code}). Aucun fichier n&apos;a été conservé. Les détails techniques ont été écrits dans le journal de l&apos;application (logs/video-cut.log).</translation>
+    </message>
+    <message>
+        <location filename="../../services/user_messages.py" line="169"/>
+        <source>An unexpected internal error occurred ({type}). Technical details were written to the application log (logs/video-cut.log).</source>
+        <translation>Une erreur interne inattendue s&apos;est produite ({type}). Les détails techniques ont été écrits dans le journal de l&apos;application (logs/video-cut.log).</translation>
     </message>
 </context>
 <context>
@@ -1649,6 +1953,17 @@ puis sélectionnez Ajouter une coupe.</translation>
         <location filename="../../vue/qml/WindowsApplication/VideoPlayer/VideoStage.qml" line="79"/>
         <source>Open a video to get started</source>
         <translation>Ouvrez une vidéo pour commencer</translation>
+    </message>
+    <message>
+        <location filename="../../vue/qml/WindowsApplication/VideoPlayer/VideoStage.qml" line="67"/>
+        <location filename="../../vue/qml/WindowsApplication/VideoPlayer/VideoStage.qml" line="96"/>
+        <source>Open a video</source>
+        <translation>Ouvrir une vidéo</translation>
+    </message>
+    <message>
+        <location filename="../../vue/qml/WindowsApplication/VideoPlayer/VideoStage.qml" line="104"/>
+        <source>MP4 or MKV</source>
+        <translation>MP4 ou MKV</translation>
     </message>
 </context>
 <context>

@@ -100,7 +100,7 @@ Rectangle {
             size: "sm"
             lightMode: root.lightMode
             enabled: root.canAddCut
-            Layout.preferredWidth: 132
+            Layout.preferredWidth: Math.max(132, labelFitWidth)
             Layout.preferredHeight: 36
             onClicked: root.previewCutRequested()
         }

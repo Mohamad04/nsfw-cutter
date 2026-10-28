@@ -1,4 +1,5 @@
 import logging
+import shutil
 import uuid
 from pathlib import Path
 
@@ -11,7 +12,18 @@ from schemas.video_cut_schema import (
     VideoCutRequest,
     VideoCutResult,
 )
+from services.export.video_packet_index import (
+    VideoPacket,
+    VideoPacketIndexError,
+    copyable_range,
+    frame_signature,
+    hashes,
+    is_clean_cut_point,
+    nearest_keyframes,
+    packets_in_range,
+)
 from services.infrastructure.ffmpeg.cutting import FFmpegCuttingService
+from services.user_messages import coded, english
 
 
 logger = logging.getLogger(__name__)
@@ -26,6 +38,7 @@ class CutExecutionService:
         metadata_probe=None,
         cache_dir=None,
         cutting_service: FFmpegCuttingService | None = None,
+        packet_probe=None,
     ):
         self.cutting_service = cutting_service or FFmpegCuttingService(
             ffmpeg_service=ffmpeg_service,
@@ -33,7 +46,10 @@ class CutExecutionService:
             probe_runner=probe_runner,
         )
         self.metadata_probe = metadata_probe or self.cutting_service.probe_media
+        self.packet_probe = packet_probe or self.cutting_service.probe_video_packets
         self.cache_dir = Path(cache_dir) if cache_dir else get_cuts_cache_dir()
+        self._created_paths: list[Path] = []
+        self._temporary_dirs: list[Path] = []
 
     def export_segments(self, request: VideoCutRequest, progress_callback=None) -> VideoCutResult:
         request = VideoCutRequest.model_validate(request)
@@ -46,25 +62,43 @@ class CutExecutionService:
         logger.info("Video export mode: %s cut mode: %s", request.export_mode, request.cut_mode)
         logger.info("Video export input duration: %.3f", input_duration)
         logger.info("Video export selected intervals: %s", _segment_intervals(request))
+        if input_metadata.get("has_audio"):
+            if _mode_value(request.export_mode) == CutExportMode.REMOVE_INTERVALS.value:
+                raise coded(FastCuttingAudioError(FAST_CUTTING_AUDIO_REFUSED), "fast.audio_removal")
+            if _mode_value(request.export_mode) == CutExportMode.EXPORT_CLIPS_MERGED.value:
+                raise coded(FastCuttingAudioError(FAST_CUTTING_MERGED_AUDIO_REFUSED), "fast.audio_merged")
+            raise coded(FastCuttingAudioError(FAST_CUTTING_CLIPS_AUDIO_REFUSED), "fast.audio_clips")
 
-        if _mode_value(request.export_mode) == CutExportMode.REMOVE_INTERVALS.value:
-            result = self.remove_selected_intervals(
-                request,
-                input_duration,
-                progress_callback=progress_callback,
-            )
-        elif _mode_value(request.export_mode) == CutExportMode.EXPORT_CLIPS_MERGED.value:
-            result = self.export_selected_clips_merged(
-                request,
-                input_duration,
-                progress_callback=progress_callback,
-            )
-        else:
-            result = self.export_selected_clips(
-                request,
-                input_duration,
-                progress_callback=progress_callback,
-            )
+        self._created_paths = []
+        self._temporary_dirs = []
+        try:
+            if _mode_value(request.export_mode) == CutExportMode.REMOVE_INTERVALS.value:
+                result = self.remove_selected_intervals(
+                    request,
+                    input_duration,
+                    progress_callback=progress_callback,
+                )
+            elif _mode_value(request.export_mode) == CutExportMode.EXPORT_CLIPS_MERGED.value:
+                result = self.export_selected_clips_merged(
+                    request,
+                    input_duration,
+                    progress_callback=progress_callback,
+                )
+            else:
+                result = self.export_selected_clips(
+                    request,
+                    input_duration,
+                    progress_callback=progress_callback,
+                )
+        except Exception:
+            # Failure, cancellation or timeout: nothing this export created is kept.
+            self._discard_created_paths()
+            raise
+
+        leftovers = self._remove_temporary_dirs()
+        if leftovers:
+            cleanup_warning = f"Temporary files could not be removed: {', '.join(str(path) for path in leftovers)}"
+            result.duration_warning = "\n".join(filter(None, [result.duration_warning, cleanup_warning]))
 
         logger.info("Video export output files: %s", result.output_paths)
         logger.info(
@@ -83,19 +117,29 @@ class CutExecutionService:
         input_duration: float,
         progress_callback=None,
     ) -> VideoCutResult:
+        """One verified file per requested clip, in request order; clips are independent (never merged).
+
+        The batch is all-or-nothing: every clip is checked before any FFmpeg command, and if one clip
+        fails, the files already written for this batch are deleted by ``export_segments``.
+        """
+        clip_ranges = _clip_ranges(request, input_duration)
+        source_packets = self.packet_probe(request.input_path)
+        require_keyframe_aligned_removals(clip_ranges, source_packets, action="export the selected clips")
+
         segment_results = []
         output_paths = []
-
-        for offset, segment in enumerate(request.segments, start=1):
-            output_path = make_unique_path(
+        for offset, (segment, (start_seconds, end_seconds)) in enumerate(zip(request.segments, clip_ranges), start=1):
+            output_path = self._new_output_path(
                 request.output_dir
                 / _clip_output_name(request.input_path, segment.index, segment.start_seconds, segment.end_seconds)
             )
-            self.cutting_service.export_interval(
+            self._export_verified_kept_ranges(
                 request.input_path,
+                [(start_seconds, end_seconds)],
                 output_path,
-                segment.start_seconds,
-                segment.end_seconds,
+                cache_prefix=f"clip_{segment.index:03d}",
+                action="export the selected clips",
+                source_packets=source_packets,
             )
             output_paths.append(output_path)
             segment_results.append(_segment_result(segment, output_path))
@@ -105,14 +149,13 @@ class CutExecutionService:
                 f"Exported selected clip {offset}",
             )
 
-        expected_duration = sum(segment.duration_seconds for segment in segment_results)
         return self._result_with_duration_validation(
             request,
             output_paths,
             segment_results,
             input_duration,
-            expected_duration,
-            normalized_intervals=_segment_intervals(request),
+            intervals_duration(clip_ranges),
+            normalized_intervals=clip_ranges,
         )
 
     def export_selected_clips_merged(
@@ -121,17 +164,20 @@ class CutExecutionService:
         input_duration: float,
         progress_callback=None,
     ) -> VideoCutResult:
-        selected_intervals = _segment_intervals(request)
-        merged_name = request.merged_output_name or f"{request.input_path.stem}_selected_clips_merged{request.input_path.suffix}"
-        merged_path = make_unique_path(request.output_dir / Path(merged_name).name)
+        """Keep the union of the selected clips, once each, in source order (README: "stitch the kept ranges")."""
+        kept_intervals = normalize_intervals(_clip_ranges(request, input_duration), input_duration)
+        logger.info("Video export merged clips (union, source order): %s", kept_intervals)
 
-        temporary_segments = self._export_temporary_ranges(
+        merged_name = request.merged_output_name or f"{request.input_path.stem}_selected_clips_merged{request.input_path.suffix}"
+        merged_path = self._new_output_path(request.output_dir / Path(merged_name).name)
+        self._export_verified_kept_ranges(
             request.input_path,
-            selected_intervals,
+            kept_intervals,
+            merged_path,
             cache_prefix="selected_clips",
+            action="export the selected clips",
             progress_callback=progress_callback,
         )
-        self.cutting_service.concat_stream_copy_segments(temporary_segments, merged_path)
 
         _emit_progress(progress_callback, 100, "Merged selected clips")
         return self._result_with_duration_validation(
@@ -139,9 +185,10 @@ class CutExecutionService:
             [merged_path],
             [_segment_result(segment, merged_path) for segment in request.segments],
             input_duration,
-            intervals_duration(selected_intervals),
+            intervals_duration(kept_intervals),
             merged_output_path=merged_path,
-            normalized_intervals=selected_intervals,
+            normalized_intervals=kept_intervals,
+            kept_intervals=kept_intervals,
         )
 
     def remove_selected_intervals(
@@ -160,14 +207,16 @@ class CutExecutionService:
         logger.info("Video export computed kept intervals: %s", kept_intervals)
 
         output_name = request.merged_output_name or f"{request.input_path.stem}_removed_intervals{request.input_path.suffix}"
-        output_path = make_unique_path(request.output_dir / Path(output_name).name)
-        temporary_segments = self._export_temporary_ranges(
+        output_path = self._new_output_path(request.output_dir / Path(output_name).name)
+        self._export_verified_kept_ranges(
             request.input_path,
             kept_intervals,
+            output_path,
             cache_prefix="kept_ranges",
+            action="remove the selected intervals",
             progress_callback=progress_callback,
+            checked_intervals=normalized_removed,
         )
-        self.cutting_service.concat_stream_copy_segments(temporary_segments, output_path)
 
         _emit_progress(progress_callback, 100, "Removed selected intervals")
         return self._result_with_duration_validation(
@@ -181,15 +230,78 @@ class CutExecutionService:
             kept_intervals=kept_intervals,
         )
 
+    def _export_verified_kept_ranges(
+        self,
+        input_path: Path,
+        kept_intervals: list[tuple[float, float]],
+        output_path: Path,
+        cache_prefix: str,
+        action: str,
+        progress_callback=None,
+        checked_intervals: list[tuple[float, float]] | None = None,
+        source_packets: list[VideoPacket] | None = None,
+    ) -> None:
+        """Stream-copy exactly the frames of ``kept_intervals`` into ``output_path``, or refuse.
+
+        Every boundary of ``checked_intervals`` (the kept intervals by default) must be a clean keyframe
+        cut point; each copied range must reproduce the source packets (hash), and so must the joined file.
+        """
+        if source_packets is None:
+            source_packets = self.packet_probe(input_path)
+        require_keyframe_aligned_removals(checked_intervals or kept_intervals, source_packets, action=action)
+        copy_ranges = []
+        for start_seconds, end_seconds in kept_intervals:
+            if not packets_in_range(source_packets, start_seconds, end_seconds):
+                continue
+            packets = copyable_range(source_packets, start_seconds, end_seconds)
+            if packets is None:
+                raise FastCuttingPrecisionError(
+                    f"Fast Cutting cannot stream-copy {seconds_to_ffmpeg_time(start_seconds)}-"
+                    f"{seconds_to_ffmpeg_time(end_seconds)} exactly. {FAST_CUTTING_NOTHING_EXPORTED}"
+                )
+            copy_ranges.append((start_seconds, end_seconds, packets))
+        if not copy_ranges:
+            raise ValueError(f"The selected intervals contain no video frames. {FAST_CUTTING_NOTHING_EXPORTED}")
+
+        temporary_segments = self._export_temporary_ranges(
+            input_path,
+            [(start_seconds, end_seconds) for start_seconds, end_seconds, _ in copy_ranges],
+            cache_prefix=cache_prefix,
+            progress_callback=progress_callback,
+            video_frame_counts=[len(packets) for _, _, packets in copy_ranges],
+        )
+        for segment_path, (start_seconds, end_seconds, packets) in zip(temporary_segments, copy_ranges):
+            if hashes(self.packet_probe(segment_path)) != hashes(packets):
+                raise FastCuttingVerificationError(
+                    "Fast Cutting could not verify that the stream copy of "
+                    f"{seconds_to_ffmpeg_time(start_seconds)}-{seconds_to_ffmpeg_time(end_seconds)} contains exactly "
+                    f"the kept frames (FFmpeg started or stopped on another frame). {FAST_CUTTING_NOTHING_EXPORTED}"
+                )
+        self.cutting_service.concat_stream_copy_segments(temporary_segments, output_path)
+        expected_signature = frame_signature([packet for _, _, packets in copy_ranges for packet in packets])
+        try:
+            verified = frame_signature(self.packet_probe(output_path)) == expected_signature
+        except (VideoPacketIndexError, OSError):
+            verified = False
+        if not verified:
+            output_path.unlink(missing_ok=True)
+            raise FastCuttingVerificationError(
+                "Fast Cutting could not verify the joined video against the kept frames. The output was deleted. "
+                "Use Smart Cutting for frame-exact removal."
+            )
+
     def _export_temporary_ranges(
         self,
         input_path: Path,
         intervals: list[tuple[float, float]],
         cache_prefix: str,
         progress_callback=None,
+        video_frame_counts: list[int] | None = None,
     ) -> list[Path]:
         job_cache_dir = self.cache_dir / f"{cache_prefix}_{uuid.uuid4().hex}"
         job_cache_dir.mkdir(parents=True, exist_ok=True)
+        self._created_paths.append(job_cache_dir)
+        self._temporary_dirs.append(job_cache_dir)
         temporary_segments = []
 
         for offset, (start_seconds, end_seconds) in enumerate(intervals, start=1):
@@ -199,6 +311,7 @@ class CutExecutionService:
                 temp_output_path,
                 start_seconds,
                 end_seconds,
+                video_frame_count=video_frame_counts[offset - 1] if video_frame_counts else None,
             )
             temporary_segments.append(temp_output_path)
             _emit_progress(
@@ -208,6 +321,38 @@ class CutExecutionService:
             )
 
         return temporary_segments
+
+    def _new_output_path(self, path: Path) -> Path:
+        output_path = make_unique_path(path)
+        self._created_paths.append(output_path)
+        return output_path
+
+    def _discard_created_paths(self) -> None:
+        """After a failure, cancellation or timeout, remove only what this export created (never the source)."""
+        for path in self._created_paths:
+            try:
+                if path.is_dir():
+                    shutil.rmtree(path, ignore_errors=True)
+                else:
+                    path.unlink(missing_ok=True)
+            except OSError as exc:
+                logger.warning("Could not remove %s after a failed export: %s", path, exc)
+            if path.exists():
+                logger.warning("Could not remove %s after a failed export", path)
+        self._created_paths = []
+        self._temporary_dirs = []
+
+    def _remove_temporary_dirs(self) -> list[Path]:
+        """After a successful export, remove this job's own temporary folders; return those that remain."""
+        leftovers = []
+        for path in self._temporary_dirs:
+            shutil.rmtree(path, ignore_errors=True)
+            if path.exists():
+                logger.warning("Could not remove temporary export folder %s", path)
+                leftovers.append(path)
+        self._temporary_dirs = []
+        self._created_paths = []
+        return leftovers
 
     def _result_with_duration_validation(
         self,
@@ -241,6 +386,75 @@ class CutExecutionService:
             ffmpeg_commands=list(self.cutting_service.commands),
             ffmpeg_stderr=list(self.cutting_service.stderr),
         )
+
+
+FAST_CUTTING_NOTHING_EXPORTED = (
+    "Nothing was exported and the cuts were not changed. Use Smart Cutting for frame-exact removal."
+)
+
+
+class FastCuttingPrecisionError(ValueError):
+    pass
+
+
+class FastCuttingVerificationError(ValueError):
+    pass
+
+
+class FastCuttingAudioError(ValueError):
+    pass
+
+
+# Measured on decoded samples (marker-tone fixtures): stream-copied AAC keeps about 0.1 s of the
+# removed sound at every splice, because audio is copied in whole frames around each boundary.
+FAST_CUTTING_MERGED_AUDIO_REFUSED = english("fast.audio_merged")
+FAST_CUTTING_CLIPS_AUDIO_REFUSED = english("fast.audio_clips")
+FAST_CUTTING_AUDIO_REFUSED = english("fast.audio_removal")
+# The two refusal wordings of require_keyframe_aligned_removals, by action.
+_KEYFRAME_REFUSAL_CODES = {
+    "remove the selected intervals": "fast.keyframes_remove",
+    "export the selected clips": "fast.keyframes_clips",
+}
+
+
+def require_keyframe_aligned_removals(
+    removed_intervals: list[tuple[float, float]],
+    source_packets: list[VideoPacket],
+    action: str = "remove the selected intervals",
+) -> None:
+    """Refuse a Fast Cutting removal unless stream copy can honour every boundary exactly.
+
+    Stream copy can only start or stop where a keyframe opens a group of frames that does not depend
+    on earlier frames. Any other boundary would keep frames of the removed interval (or drop kept
+    ones); the intervals are never widened silently.
+    """
+    boundaries = sorted({value for interval in removed_intervals for value in interval})
+    unaligned = [value for value in boundaries if not is_clean_cut_point(source_packets, value)]
+    if not unaligned:
+        return
+    details = [_boundary_detail(source_packets, value) for value in unaligned]
+    code = _KEYFRAME_REFUSAL_CODES.get(action)
+    if code is None:
+        raise FastCuttingPrecisionError(
+            f"Fast Cutting cannot {action} exactly: stream copy can only cut on a keyframe "
+            "that starts an independent group of frames, and these cut boundaries are not on one: "
+            f"{'; '.join(english(code, **params) for code, params in details)}. "
+            "Nothing was exported and the cuts were not changed. Use Smart Cutting for frame-exact removal, "
+            "or move these boundaries onto the listed keyframes."
+        )
+    raise coded(FastCuttingPrecisionError(english(code, details=details)), code, details=details)
+
+
+def _boundary_detail(source_packets: list[VideoPacket], seconds: float) -> tuple[str, dict]:
+    """(message code, params) describing why ``seconds`` is not a clean Fast Cutting boundary."""
+    time = seconds_to_ffmpeg_time(seconds)
+    previous_keyframe, next_keyframe = nearest_keyframes(source_packets, seconds)
+    if previous_keyframe is not None and previous_keyframe == next_keyframe:
+        return "fast.boundary_open_gop", {"time": time}
+    keyframes = [seconds_to_ffmpeg_time(value) for value in (previous_keyframe, next_keyframe) if value is not None]
+    if len(keyframes) == 2:
+        return "fast.boundary_two_keyframes", {"time": time, "first": keyframes[0], "second": keyframes[1]}
+    return "fast.boundary_one_keyframe", {"time": time, "first": keyframes[0] if keyframes else ""}
 
 
 def make_unique_path(path: Path) -> Path:
@@ -286,6 +500,19 @@ def _required_duration(metadata: dict, path: Path) -> float:
     if duration is None or float(duration) <= 0:
         raise ValueError(f"Unable to read a positive duration for {path}.")
     return float(duration)
+
+
+def _clip_ranges(request: VideoCutRequest, input_duration: float) -> list[tuple[float, float]]:
+    """Requested keep ranges in request order, ends clamped to the video; a clip past the end is refused."""
+    ranges = []
+    for segment in request.segments:
+        if segment.start_seconds >= input_duration:
+            raise ValueError(
+                f"Clip {segment.index} starts at {seconds_to_ffmpeg_time(segment.start_seconds)}, after the end of "
+                f"the video ({seconds_to_ffmpeg_time(input_duration)}). Nothing was exported."
+            )
+        ranges.append((segment.start_seconds, min(segment.end_seconds, input_duration)))
+    return ranges
 
 
 def _segment_intervals(request: VideoCutRequest) -> list[tuple[float, float]]:

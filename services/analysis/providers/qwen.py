@@ -760,11 +760,16 @@ def _wire_schema_for_batch(batch: VisualBatch) -> dict:
     frame_count = len(batch.frames)
     suggestion_schema = schema["$defs"]["VLMWireSuggestion"]
     properties = suggestion_schema["properties"]
+    # LMFE 0.11.3 does not enforce numeric minimum/maximum. Numeric enums
+    # constrain decoding itself; keep the bounds and post-generation validation.
+    allowed_frames = list(range(1, frame_count + 1))
     properties["first_frame"]["maximum"] = frame_count
+    properties["first_frame"]["enum"] = allowed_frames
     properties["last_frame"]["maximum"] = frame_count
+    properties["last_frame"]["enum"] = allowed_frames
     evidence_schema = properties["evidence_frames"]
     evidence_schema["maxItems"] = min(frame_count, 8)
-    evidence_schema["items"].update(minimum=1, maximum=frame_count)
+    evidence_schema["items"].update(minimum=1, maximum=frame_count, enum=allowed_frames)
     return schema
 
 

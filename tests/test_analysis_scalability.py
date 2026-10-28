@@ -79,6 +79,8 @@ class _NoTextEvidence:
         _settings,
         cancellation,
         _progress_callback=None,
+        *,
+        has_audio=True,
     ):
         cancellation.raise_if_cancelled()
         return TextEvidenceOutput()

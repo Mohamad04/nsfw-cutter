@@ -83,7 +83,8 @@ class AnalysisSettings(BaseModel):
 
     settings_version: int = Field(default=2, ge=2)
     analysis_mode: AnalysisMode = AnalysisMode.BALANCED
-    sampling_profile_revision: int = Field(default=1, ge=1)
+    # 2: periodic frames are timed by their source presentation time (showinfo), not index / rate.
+    sampling_profile_revision: int = Field(default=2, ge=1)
     provider: Literal["local_qwen"] = "local_qwen"
     model_id: str = DEFAULT_QWEN_MODEL_ID
     model_revision: str = DEFAULT_QWEN_MODEL_REVISION
@@ -113,7 +114,8 @@ class AnalysisSettings(BaseModel):
     max_new_tokens: int = Field(default=192, ge=96, le=384)
     repair_max_new_tokens: int = Field(default=128, ge=64, le=192)
     batch_timeout_seconds: float = Field(default=75.0, ge=5.0, le=600.0)
-    prompt_schema_revision: int = Field(default=2, ge=1)
+    # Revision 3 constrains local frame IDs with numeric enums in both passes.
+    prompt_schema_revision: int = Field(default=3, ge=1)
 
     @field_validator(
         "model_id",

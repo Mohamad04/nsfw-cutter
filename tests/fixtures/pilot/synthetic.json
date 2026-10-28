@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "dataset_id": "synthetic_contract_only",
+  "synthetic": true,
+  "clips": [
+    {
+      "clip_id": "synthetic_01",
+      "source_video_id": "synthetic_source",
+      "file_path": "NOT_A_REAL_VIDEO.mp4",
+      "source_offset_seconds": 0,
+      "split": "tuning",
+      "duration_seconds": 10,
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "media_metadata": {
+        "note": "Synthetic metadata only. No video exists."
+      },
+      "annotation_version": "1",
+      "exhaustive": true,
+      "events": [
+        {
+          "event_id": "event_01",
+          "start_seconds": 2,
+          "end_seconds": 4,
+          "categories": [
+            "nudity"
+          ],
+          "notes": "Synthetic interval for automated tests, not a real annotation.",
+          "uncertainty": null
+        }
+      ],
+      "excluded_intervals": []
+    }
+  ]
+}

@@ -11,9 +11,21 @@ from services.export.smart_cut_planner import (
     SmartCutPlan,
     SmartCutPlanSegment,
 )
+from services.export.video_packet_index import (
+    VideoPacket,
+    VideoPacketIndexService,
+    copyable_range,
+    frame_signature,
+    hashes,
+    packets_in_range,
+    source_position,
+)
 from services.infrastructure.ffmpeg.runner import FFmpegService
 
 logger = logging.getLogger(__name__)
+
+# x264 B-frame settings giving a decoder reorder delay of 0 or 1 frame; delay 2 is x264's default.
+REORDER_DELAY_BFRAMES = {0: "0", 1: "1"}
 
 
 @dataclass(frozen=True)
@@ -23,6 +35,8 @@ class RenderedVideoChunk:
     output_path: Path
     start_seconds: float
     end_seconds: float
+    frame_signature: tuple[str, ...] = ()
+    fallback_reason: str | None = None
 
 
 class VideoSegmentRenderError(RuntimeError):
@@ -33,16 +47,24 @@ class VideoSegmentRenderError(RuntimeError):
         super().__init__("Smart Cutting failed while rendering video chunks.")
 
 
+class VideoSegmentVerificationError(RuntimeError):
+    pass
+
+
 class VideoSegmentRenderer:
     def __init__(
         self,
         ffmpeg_service: FFmpegService | None = None,
         command_runner=None,
+        packet_index_service: VideoPacketIndexService | None = None,
     ):
         self.ffmpeg_service = ffmpeg_service or FFmpegService()
         self.command_runner = command_runner or subprocess.run
+        self.packet_index_service = packet_index_service or VideoPacketIndexService(ffmpeg_service=self.ffmpeg_service)
         self.commands: list[list[str]] = []
         self.stderr: list[str] = []
+        self._track_timescale: int | None = None
+        self._reorder_delay: int | None = None
 
     def reset_diagnostics(self) -> None:
         self.commands = []
@@ -54,9 +76,27 @@ class VideoSegmentRenderer:
         plan: SmartCutPlan,
         chunks_dir: str | Path,
         progress_callback=None,
+        source_packets: list[VideoPacket] | None = None,
+        track_timescale: int | None = None,
+        reorder_delay: int | None = None,
     ) -> list[RenderedVideoChunk]:
+        """Render the kept plan segments.
+
+        With ``source_packets`` every chunk is rendered frame-exact and verified: a copy chunk must
+        contain exactly the source packets presented in [start, end) (compared by data hash), a
+        re-encoded chunk exactly as many frames. A copy segment that cannot be stream-copied without
+        carrying frames across its boundaries (open GOP, reordered frames) is re-encoded instead and
+        reported through ``fallback_reason``.
+
+        ``track_timescale`` gives every chunk the source video timescale: the concat demuxer does not
+        rescale timestamps between files whose time bases differ. ``reorder_delay`` (the source's
+        B-frame delay, ``has_b_frames``) makes re-encoded chunks reorder frames like the copied ones, so
+        decoding timestamps stay increasing across splices.
+        """
         chunks_dir = Path(chunks_dir)
         chunks_dir.mkdir(parents=True, exist_ok=True)
+        self._track_timescale = track_timescale
+        self._reorder_delay = reorder_delay
         render_segments = [segment for segment in plan.segments if segment.type != DELETE_SEGMENT]
         if not render_segments:
             raise ValueError("Smart Cutting has no kept video chunks to export.")
@@ -64,6 +104,16 @@ class VideoSegmentRenderer:
         chunks = []
         for offset, segment in enumerate(render_segments, start=1):
             output_path = chunks_dir / f"chunk_{offset:04d}_{segment.type}.mp4"
+            if source_packets is not None:
+                chunk = self._render_verified_chunk(Path(input_path), output_path, offset, segment, source_packets)
+                if chunk is not None:
+                    chunks.append(chunk)
+                _emit(
+                    progress_callback,
+                    int(offset / len(render_segments) * 100),
+                    f"Rendered smart video chunk {offset}/{len(render_segments)}",
+                )
+                continue
             command = self.build_command(Path(input_path), output_path, segment)
             stderr = self._run_command(command)
             if _ffmpeg_reported_empty_output(stderr):
@@ -113,8 +163,10 @@ class VideoSegmentRenderer:
         output_path: Path,
         start_seconds: float,
         end_seconds: float,
+        frame_count: int | None = None,
+        track_timescale: int | None = None,
     ) -> list[str]:
-        return [
+        command = [
             str(self.ffmpeg_service.ffmpeg_path),
             "-y",
             "-hide_banner",
@@ -130,10 +182,14 @@ class VideoSegmentRenderer:
             "-sn",
             "-c:v",
             "copy",
-            "-avoid_negative_ts",
-            "make_zero",
-            str(output_path),
         ]
+        if frame_count is not None:
+            # -to stops on decoding timestamps: with B-frames the next GOP's keyframe would be copied too.
+            command.extend(["-frames:v", str(frame_count)])
+        if track_timescale:
+            command.extend(["-video_track_timescale", str(track_timescale)])
+        command.extend(["-avoid_negative_ts", "make_zero", str(output_path)])
+        return command
 
     def build_reencode_command(
         self,
@@ -142,10 +198,12 @@ class VideoSegmentRenderer:
         decode_start_seconds: float,
         output_start_seconds: float,
         output_end_seconds: float,
+        track_timescale: int | None = None,
+        reorder_delay: int | None = None,
     ) -> list[str]:
         trim_start = max(0.0, output_start_seconds - decode_start_seconds)
         trim_end = max(trim_start, output_end_seconds - decode_start_seconds)
-        return [
+        command = [
             str(self.ffmpeg_service.ffmpeg_path),
             "-y",
             "-hide_banner",
@@ -170,8 +228,77 @@ class VideoSegmentRenderer:
             "veryfast",
             "-pix_fmt",
             "yuv420p",
-            str(output_path),
         ]
+        if reorder_delay in REORDER_DELAY_BFRAMES:
+            command.extend(["-bf", REORDER_DELAY_BFRAMES[reorder_delay]])
+        if track_timescale:
+            command.extend(["-video_track_timescale", str(track_timescale)])
+        command.append(str(output_path))
+        return command
+
+    def _render_verified_chunk(
+        self,
+        input_path: Path,
+        output_path: Path,
+        offset: int,
+        segment: SmartCutPlanSegment,
+        source_packets: list[VideoPacket],
+    ) -> RenderedVideoChunk | None:
+        expected = packets_in_range(source_packets, segment.start_seconds, segment.end_seconds)
+        if not expected:
+            logger.warning("Skipping Smart Cutting video chunk with no source frames: %s", segment)
+            return None
+
+        fallback_reason = None
+        decode_start = segment.decode_start_seconds if segment.decode_start_seconds is not None else segment.start_seconds
+        if segment.type == COPY_SEGMENT:
+            copy_packets = copyable_range(source_packets, segment.start_seconds, segment.end_seconds)
+            if copy_packets is not None:
+                self._run_command(
+                    self.build_copy_command(
+                        input_path,
+                        output_path,
+                        segment.start_seconds,
+                        segment.end_seconds,
+                        frame_count=len(copy_packets),
+                        track_timescale=self._track_timescale,
+                    )
+                )
+                actual = self.packet_index_service.probe(output_path)
+                if hashes(actual) != hashes(copy_packets):
+                    first = source_position(source_packets, actual[0]) if actual else None
+                    started = f"{first:.3f}s" if first is not None else "an unknown frame"
+                    raise VideoSegmentVerificationError(
+                        "Smart Cutting stopped: FFmpeg did not stream-copy exactly the source frames of "
+                        f"{segment.start_seconds:.3f}s-{segment.end_seconds:.3f}s (the copy started at {started}). "
+                        "Nothing was exported."
+                    )
+                return _chunk(offset, segment, output_path, actual, None)
+            fallback_reason = (
+                "Stream copy would carry frames across a cut boundary (open GOP or reordered frames); "
+                "this segment was re-encoded."
+            )
+            logger.warning("Smart Cutting re-encodes copy segment %s: %s", segment, fallback_reason)
+
+        self._run_command(
+            self.build_reencode_command(
+                input_path,
+                output_path,
+                decode_start,
+                segment.start_seconds,
+                segment.end_seconds,
+                track_timescale=self._track_timescale,
+                reorder_delay=self._reorder_delay,
+            )
+        )
+        actual = self.packet_index_service.probe(output_path)
+        if len(actual) != len(expected):
+            raise VideoSegmentVerificationError(
+                "Smart Cutting stopped: the re-encoded video chunk "
+                f"{segment.start_seconds:.3f}s-{segment.end_seconds:.3f}s has {len(actual)} frames, "
+                f"expected {len(expected)}. Nothing was exported."
+            )
+        return _chunk(offset, segment, output_path, actual, fallback_reason)
 
     def _run_command(self, command: list[str]) -> str:
         logger.info("Running Smart Cutting video command: %s", command)
@@ -188,6 +315,24 @@ class VideoSegmentRenderer:
         if completed.returncode != 0:
             raise VideoSegmentRenderError(command, completed.returncode, completed.stderr or "")
         return completed.stderr or ""
+
+
+def _chunk(
+    offset: int,
+    segment: SmartCutPlanSegment,
+    output_path: Path,
+    packets: list[VideoPacket],
+    fallback_reason: str | None,
+) -> RenderedVideoChunk:
+    return RenderedVideoChunk(
+        index=offset,
+        segment_type=segment.type,
+        output_path=output_path,
+        start_seconds=segment.start_seconds,
+        end_seconds=segment.end_seconds,
+        frame_signature=tuple(frame_signature(packets)),
+        fallback_reason=fallback_reason,
+    )
 
 
 def _ffmpeg_reported_empty_output(stderr: str) -> bool:

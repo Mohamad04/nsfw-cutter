@@ -31,11 +31,6 @@ Popup {
         { "code": "light", "name": qsTr("Light") },
         { "code": "system", "name": qsTr("System") }
     ]
-    readonly property var exportModeOptions: [
-        { "code": "remove_intervals", "name": qsTr("Remove intervals") },
-        { "code": "export_clips_separate", "name": qsTr("Export clips separately") },
-        { "code": "export_clips_merged", "name": qsTr("Export merged clips") }
-    ]
     readonly property var providerOptions: [
         { "code": "local", "name": qsTr("Local") },
         { "code": "openai", "name": qsTr("OpenAI") },
@@ -64,7 +59,6 @@ Popup {
         languageCombo.currentIndex = modelIndex(languageCombo.model, settingsController.getLanguage(), "code")
         providerCombo.currentIndex = modelIndex(providerCombo.model, settingsController.getAIProvider(), "code")
         exportFolderField.text = settingsController.getExportDir()
-        exportModeCombo.currentIndex = modelIndex(exportModeCombo.model, settingsController.getLastExportMode(), "code")
         promptArea.text = settingsController.getUserPrompt()
         modelNameField.text = settingsController.getAIModelName()
         gpuCheckbox.checked = settingsController.getEnableGpu()
@@ -108,7 +102,7 @@ Popup {
                 variant: "ghost"
                 size: "sm"
                 lightMode: root.lightMode
-                Layout.preferredWidth: 42
+                Layout.preferredWidth: Math.max(42, labelFitWidth)
                 onClicked: root.close()
             }
         }
@@ -179,7 +173,7 @@ Popup {
                                 variant: "secondary"
                                 size: "sm"
                                 lightMode: root.lightMode
-                                Layout.preferredWidth: 72
+                                Layout.preferredWidth: Math.max(72, labelFitWidth)
                                 onClicked: {
                                     var folder = settingsController.chooseExportDir()
                                     if (folder.length > 0) exportFolderField.text = folder
@@ -190,22 +184,23 @@ Popup {
                                 variant: "ghost"
                                 size: "sm"
                                 lightMode: root.lightMode
-                                Layout.preferredWidth: 62
+                                Layout.preferredWidth: Math.max(62, labelFitWidth)
                                 onClicked: exportFolderField.text = ""
                             }
                         }
 
-                        RowLayout {
+                        // Label above the text (like "Export folder"): a side label overlapped the text when
+                        // its translation was wider than the fixed label column.
+                        Text { text: qsTr("Export mode"); color: root.textMuted; font.pixelSize: 12 }
+                        // The only export the window offers: the cut list holds intervals to REMOVE. Clip
+                        // export (intervals to keep) exists in the backend but has no editor here, so it is
+                        // not offered; see docs/export_modes.md.
+                        Text {
+                            objectName: "exportModeDescription"
                             Layout.fillWidth: true
-                            spacing: 8
-                            Text { text: qsTr("Export mode"); color: root.textMuted; Layout.preferredWidth: 84 }
-                            ComboBox {
-                                id: exportModeCombo
-                                Layout.fillWidth: true
-                                model: root.exportModeOptions
-                                textRole: "name"
-                                valueRole: "code"
-                            }
+                            text: qsTr("Export Clean Video removes every cut in the list and keeps the rest of the video.")
+                            wrapMode: Text.WordWrap
+                            color: root.textMain
                         }
                     }
                 }
@@ -459,7 +454,6 @@ Popup {
                     settingsController.setTheme(themeCombo.currentValue)
                     settingsController.setLanguage(languageCombo.currentValue)
                     settingsController.setExportDir(exportFolderField.text)
-                    settingsController.setLastExportMode(exportModeCombo.currentValue)
                     settingsController.setUserPrompt(promptArea.text)
                     settingsController.setAIProvider(providerCombo.currentValue)
                     settingsController.setAIModelName(modelNameField.text)

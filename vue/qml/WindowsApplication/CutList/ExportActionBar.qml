@@ -25,7 +25,8 @@ Rectangle {
     readonly property string outputPathsText: root.joinOutputPaths(videoCutController.cutOutputPaths)
     readonly property bool exportFailed: !videoCutController.cutBusy && videoCutController.cutError.length > 0
     readonly property bool exportCompleted: !videoCutController.cutBusy && root.outputPathsText.length > 0
-    readonly property bool hasExportResult: root.exportFailed || root.exportCompleted
+    readonly property bool exportCancelled: !videoCutController.cutBusy && videoCutController.cutCancelled
+    readonly property bool hasExportResult: root.exportFailed || root.exportCompleted || root.exportCancelled
 
     implicitHeight: 66 + (root.hasExportResult ? exportResultPanel.implicitHeight + 8 : 0)
 
@@ -117,7 +118,7 @@ Rectangle {
             size: "sm"
             lightMode: root.lightMode
             enabled: !videoCutController.cutBusy
-            Layout.preferredWidth: 122
+            Layout.preferredWidth: Math.max(122, labelFitWidth)
             Layout.preferredHeight: 40
             onClicked: root.chooseFolderRequested()
         }
@@ -129,7 +130,7 @@ Rectangle {
             size: "sm"
             lightMode: root.lightMode
             enabled: false
-            Layout.preferredWidth: 144
+            Layout.preferredWidth: Math.max(144, labelFitWidth)
             Layout.preferredHeight: 40
             ToolTip.visible: hovered
             ToolTip.text: root.hasCuts
@@ -203,13 +204,28 @@ Rectangle {
         }
 
         AppButton {
+            objectName: "cancelExportButton"
+            text: qsTr("Cancel")
+            variant: "danger"
+            size: "sm"
+            lightMode: root.lightMode
+            visible: videoCutController.cutBusy
+            Layout.preferredWidth: videoCutController.cutBusy ? 112 : 0
+            Layout.preferredHeight: 40
+            ToolTip.visible: hovered
+            ToolTip.text: qsTr("Stop the export; no partial file is kept")
+            onClicked: videoCutController.cancelExport()
+        }
+
+        AppButton {
+            objectName: "exportCleanVideoButton"
             text: qsTr("Export Clean Video")
             iconName: "export"
             variant: "success"
             size: "sm"
             lightMode: root.lightMode
             enabled: root.hasVideo && root.hasCuts && !videoCutController.cutBusy
-            Layout.preferredWidth: 196
+            Layout.preferredWidth: Math.max(196, labelFitWidth)
             Layout.preferredHeight: 40
             onClicked: root.exportCleanVideoRequested()
         }
@@ -248,8 +264,12 @@ Rectangle {
             Text {
                 objectName: "exportResultStatusText"
                 Layout.fillWidth: true
-                text: root.exportFailed ? qsTr("Export failed") : qsTr("Export completed")
-                color: root.exportFailed
+                text: root.exportCancelled
+                    ? qsTr("Export cancelled. No file was kept.")
+                    : (root.exportFailed ? qsTr("Export failed") : qsTr("Export completed"))
+                color: root.exportCancelled
+                    ? root.mutedTextColor
+                    : root.exportFailed
                     ? (root.lightMode ? "#B91C1C" : "#FCA5A5")
                     : (root.lightMode ? "#166534" : "#86EFAC")
                 font.pixelSize: 12
@@ -301,6 +321,9 @@ Rectangle {
                 text: videoCutController.cutError
                 color: root.lightMode ? "#B91C1C" : "#FCA5A5"
                 font.pixelSize: 11
+                // A refusal explains what to do (for example which keyframes to use): show it in full.
+                wrapMode: Text.Wrap
+                maximumLineCount: 5
                 elide: Text.ElideRight
                 visible: root.exportFailed
                 ToolTip.visible: errorMouse.containsMouse

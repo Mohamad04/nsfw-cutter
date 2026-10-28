@@ -4,9 +4,9 @@ import tempfile
 import types
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
-from services.analysis.cancellation import CancellationToken
+from services.analysis.cancellation import AnalysisCancelled, CancellationToken
 from services.analysis.contracts import (
     DEFAULT_WHISPER_MODEL_ID,
     DEFAULT_WHISPER_MODEL_REVISION,
@@ -54,6 +54,90 @@ class _RecordingTranscriber:
 
 
 class TextEvidenceServiceTests(unittest.TestCase):
+    def make_mocked_service(self):
+        runner = Mock()
+        transcriber = Mock()
+        transcriber.transcribe.return_value = ([], [])
+        return TextEvidenceService(
+            ffmpeg_service=_FakeFFmpegService(),
+            process_runner=runner,
+            transcriber=transcriber,
+        ), runner, transcriber
+
+    def test_no_audio_or_subtitles_is_not_applicable_without_extraction(self):
+        service, runner, transcriber = self.make_mocked_service()
+        progress = Mock()
+        output = service.gather("synthetic.mp4", None, Path("synthetic-work"),
+                                AnalysisSettings(), CancellationToken(), progress,
+                                has_audio=False)
+        runner.run.assert_not_called()
+        transcriber.transcribe.assert_not_called()
+        self.assertEqual(output.evidence, [])
+        self.assertEqual(output.transcript_segments, [])
+        self.assertEqual(len(output.warnings), 1)
+        self.assertIn("not applicable", output.warnings[0])
+        progress.assert_called_once_with(100, output.warnings[0])
+
+    def test_existing_audio_is_extracted_and_transcribed(self):
+        service, runner, transcriber = self.make_mocked_service()
+        service.gather("synthetic.mp4", None, Path("synthetic-work"),
+                       AnalysisSettings(), CancellationToken(), has_audio=True)
+        runner.run.assert_called_once()
+        command = runner.run.call_args.args[0]
+        self.assertEqual(command[command.index("-map") + 1], "0:a:0")
+        transcriber.transcribe.assert_called_once()
+
+    def test_audio_extraction_failure_is_not_suppressed(self):
+        service, runner, transcriber = self.make_mocked_service()
+        runner.run.side_effect = RuntimeError("synthetic extraction failure")
+        with self.assertRaisesRegex(RuntimeError, "extraction failure"):
+            service.gather("synthetic.mp4", None, Path("synthetic-work"),
+                           AnalysisSettings(), CancellationToken(), has_audio=True)
+        transcriber.transcribe.assert_not_called()
+
+    def test_transcription_failure_is_not_suppressed(self):
+        service, runner, transcriber = self.make_mocked_service()
+        transcriber.transcribe.side_effect = RuntimeError("synthetic transcription failure")
+        with self.assertRaisesRegex(RuntimeError, "transcription failure"):
+            service.gather("synthetic.mp4", None, Path("synthetic-work"),
+                           AnalysisSettings(), CancellationToken(), has_audio=True)
+        runner.run.assert_called_once()
+
+    def test_silent_video_with_selected_embedded_subtitles_still_reads_them(self):
+        service, runner, transcriber = self.make_mocked_service()
+        with patch("services.analysis.text_evidence.load_subtitle_events",
+                   return_value=[{"start_ms": 1000, "end_ms": 2000, "text": "naked"}]):
+            output = service.gather("synthetic.mp4",
+                {"source": "embedded", "stream_index": 2, "is_text_readable": True},
+                Path("synthetic-work"), AnalysisSettings(), CancellationToken(), has_audio=False)
+        command = runner.run.call_args.args[0]
+        self.assertEqual(command[command.index("-map") + 1], "0:2")
+        transcriber.transcribe.assert_not_called()
+        self.assertEqual(len(output.evidence), 1)
+        self.assertEqual(output.warnings, [])
+
+    def test_empty_or_broken_selected_subtitle_without_audio_never_extracts_audio(self):
+        for failure in (None, RuntimeError("synthetic unreadable subtitle")):
+            with self.subTest(failure=failure):
+                service, runner, transcriber = self.make_mocked_service()
+                service._subtitle_segments = Mock(return_value=[], side_effect=failure)
+                output = service.gather("synthetic.mp4", {"is_text_readable": True},
+                    Path("synthetic-work"), AnalysisSettings(), CancellationToken(), has_audio=False)
+                service._subtitle_segments.assert_called_once()
+                runner.run.assert_not_called()
+                transcriber.transcribe.assert_not_called()
+                self.assertIn("not applicable", output.warnings[-1])
+                self.assertEqual(len(output.warnings), 2 if failure else 1)
+
+    def test_subtitle_cancellation_is_not_converted_to_not_applicable(self):
+        service, runner, transcriber = self.make_mocked_service()
+        service._subtitle_segments = Mock(side_effect=AnalysisCancelled("synthetic cancel"))
+        with self.assertRaises(AnalysisCancelled):
+            service.gather("synthetic.mp4", {"is_text_readable": True},
+                Path("synthetic-work"), AnalysisSettings(), CancellationToken(), has_audio=False)
+        runner.run.assert_not_called()
+        transcriber.transcribe.assert_not_called()
+
     def test_selected_readable_external_subtitle_avoids_audio_fallback(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -80,6 +164,7 @@ class TextEvidenceServiceTests(unittest.TestCase):
                 root,
                 AnalysisSettings(use_gpu=False),
                 CancellationToken(),
+                has_audio=False,
             )
 
         self.assertEqual(runner.commands, [])

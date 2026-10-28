@@ -3,9 +3,12 @@ from __future__ import annotations
 import re
 import math
 from collections.abc import Callable
+from dataclasses import dataclass
+from fractions import Fraction
 from pathlib import Path
+from typing import Literal
 
-from services.analysis.cancellation import CancellationToken
+from services.analysis.cancellation import AnalysisCancelled, CancellationToken
 from services.analysis.contracts import (
     AnalysisSettings,
     CandidateWindow,
@@ -17,6 +20,10 @@ from services.infrastructure.ffmpeg.runner import FFmpegService
 
 ProgressCallback = Callable[[int, str], None]
 _PTS_TIME_PATTERN = re.compile(r"\bpts_time:(-?\d+(?:\.\d+)?)")
+_SHOWINFO_FRAME_PATTERN = re.compile(r"\bn:\s*\d+\s+pts:\s*(-?\d+)\s+pts_time:(\S+)")
+_SHOWINFO_TIME_BASE_PATTERN = re.compile(r"\bconfig in time_base:\s*(\d+)/(\d+)")
+# Absorbs float rounding of source timestamps that fall exactly on a sampling tick.
+_GRID_EPSILON = "0.000001"
 _CLASSIFIER_FRAME_FILTER = (
     "scale=384:384:force_original_aspect_ratio=decrease,"
     "pad=384:384:(ow-iw)/2:(oh-ih)/2"
@@ -179,36 +186,49 @@ class VisualSamplingService:
         cancellation: CancellationToken,
     ) -> list[SampledFrame]:
         output_pattern = output_dir / "frame_%08d.jpg"
-        command = [
-            self.ffmpeg_service.ffmpeg_path,
-            "-hide_banner",
-            "-loglevel",
-            "error",
-            "-nostdin",
-            "-i",
-            video_path,
-            "-map",
-            "0:v:0",
-            "-vf",
-            f"fps={sample_rate_fps:.6f},{_CLASSIFIER_FRAME_FILTER}",
-            "-q:v",
-            "3",
-            "-an",
-            "-sn",
-            "-dn",
-            "-start_number",
-            "0",
-            output_pattern,
-        ]
-        self.process_runner.run(command, cancellation=cancellation)
-        paths = sorted(output_dir.glob("frame_*.jpg"))
+        command = _FrameCommand(
+            [
+                self.ffmpeg_service.ffmpeg_path,
+                "-hide_banner",
+                "-loglevel",
+                "info",
+                "-nostats",
+                "-nostdin",
+                "-i",
+                video_path,
+                "-map",
+                "0:v:0",
+                "-vf",
+                f"{_periodic_select_filter(sample_rate_fps)},showinfo,{_CLASSIFIER_FRAME_FILTER}",
+                "-fps_mode",
+                "passthrough",
+                "-q:v",
+                "3",
+                "-an",
+                "-sn",
+                "-dn",
+                "-start_number",
+                "0",
+                output_pattern,
+            ]
+        )
+        timed_paths = self._extract_frames(
+            command,
+            [
+                _first_frame_command(
+                    self.ffmpeg_service.ffmpeg_path, video_path, output_pattern, _CLASSIFIER_FRAME_FILTER
+                )
+            ],
+            output_dir,
+            cancellation,
+        )
         return [
             SampledFrame(
-                timestamp_seconds=min(duration_seconds, index / sample_rate_fps),
+                timestamp_seconds=max(0.0, min(duration_seconds, seconds)),
                 path=path,
                 source="interval",
             )
-            for index, path in enumerate(paths)
+            for path, seconds in timed_paths
         ]
 
     def _sample_scenes(
@@ -272,22 +292,209 @@ class VisualSamplingService:
     ) -> list[SampledFrame]:
         output_pattern = output_dir / "frame_%08d.jpg"
         clip_duration = max(0.001, end_seconds - start_seconds)
-        command = [
-            self.ffmpeg_service.ffmpeg_path,
+        # Without -copyts FFmpeg rebases timestamps to the seek point on the same start-relative
+        # timeline as the coarse and scene passes (-copyts would add the container start time).
+        # The input -t bounds decoding before the filters; the selection also bounds the span on source time.
+        command = _FrameCommand(
+            [
+                self.ffmpeg_service.ffmpeg_path,
+                "-hide_banner",
+                "-loglevel",
+                "info",
+                "-nostats",
+                "-nostdin",
+                "-ss",
+                f"{start_seconds:.6f}",
+                "-t",
+                f"{clip_duration:.6f}",
+                "-i",
+                video_path,
+                "-map",
+                "0:v:0",
+                "-vf",
+                f"{_periodic_select_filter(sample_rate_fps, clip_duration)},showinfo,{_REFINED_FRAME_FILTER}",
+                "-fps_mode",
+                "passthrough",
+                "-q:v",
+                "3",
+                "-an",
+                "-sn",
+                "-dn",
+                "-start_number",
+                "0",
+                output_pattern,
+            ],
+            origin_seconds=start_seconds,
+        )
+        timed_paths = self._extract_frames(
+            command,
+            [
+                _first_frame_command(
+                    self.ffmpeg_service.ffmpeg_path,
+                    video_path,
+                    output_pattern,
+                    _REFINED_FRAME_FILTER,
+                    start_seconds=start_seconds,
+                ),
+                # A final window can start after the last frame but before the container
+                # duration (within the last frame's display time): keep the displayed frame.
+                _displayed_frame_command(
+                    self.ffmpeg_service.ffmpeg_path,
+                    video_path,
+                    output_dir / "frame_00000000.jpg",
+                    _REFINED_FRAME_FILTER,
+                    start_seconds=start_seconds,
+                ),
+            ],
+            output_dir,
+            cancellation,
+        )
+        return [
+            SampledFrame(
+                timestamp_seconds=max(0.0, min(duration_seconds, seconds)),
+                path=path,
+                source="refined",
+            )
+            for path, seconds in timed_paths
+        ]
+
+    def _extract_frames(
+        self,
+        command: _FrameCommand,
+        fallback_commands: list[_FrameCommand],
+        output_dir: Path,
+        cancellation: CancellationToken,
+    ) -> list[tuple[Path, float]]:
+        """Run a periodic sampling command and return each written frame with its source time.
+
+        Every command places ``showinfo`` after the frame selection and before scaling, so the time
+        attached to a written frame is the presentation time of the source frame it shows, never an
+        index multiplied by a sampling period (FFmpeg's ``fps`` filter used to be the selector: it
+        rewrites timestamps to its own tick grid and showed content about half a period later).
+
+        The periodic selection keeps the first decoded frame, so it writes nothing only when the
+        sampled span decodes no frame at all: a final candidate window that starts after the last
+        frame but before the container duration. The image2 muxer then fails with "Nothing was
+        written into output file", and the fallback commands run in order until one writes the frame
+        shown at the start of the span. A command that wrote frames keeps its output (and its
+        failure, if any); media that cannot be decoded still raise, and cancellation is never turned
+        into a fallback.
+        """
+        failure: RuntimeError | None = None
+        result = None
+        try:
+            result = self.process_runner.run(command.arguments, cancellation=cancellation)
+        except AnalysisCancelled:
+            raise
+        except RuntimeError as error:
+            failure = error
+        paths = sorted(output_dir.glob("frame_*.jpg"))
+        if paths:
+            if failure is not None:
+                raise failure
+            return _timed_paths(command, paths, result.stderr)
+        for fallback_command in fallback_commands:
+            cancellation.raise_if_cancelled()
+            try:
+                result = self.process_runner.run(fallback_command.arguments, cancellation=cancellation)
+            except AnalysisCancelled:
+                raise
+            except RuntimeError as error:
+                failure = failure or error
+                continue
+            paths = sorted(output_dir.glob("frame_*.jpg"))
+            if paths:
+                return _timed_paths(fallback_command, paths, result.stderr)
+        raise failure or RuntimeError("FFmpeg did not produce any readable sampled frames")
+
+
+@dataclass(frozen=True)
+class _FrameCommand:
+    """An FFmpeg frame extraction whose ``showinfo`` log times the frames it writes.
+
+    ``origin_seconds`` is the input seek point, to which FFmpeg rebases timestamps. ``keep`` says which
+    timed frames were written: all of them, the first one (``-frames:v 1`` may filter a frame more
+    than it writes) or the last one (``-update 1`` overwrites a single image).
+    """
+
+    arguments: list
+    origin_seconds: float = 0.0
+    keep: Literal["all", "first", "last"] = "all"
+
+
+def _periodic_select_filter(sample_rate_fps: float, span_seconds: float | None = None) -> str:
+    """Select the first frame, then the first frame at or after each later tick of the grid.
+
+    Ticks are ``k / sample_rate_fps`` seconds after the (seek) origin of the input timeline. The
+    decision uses source timestamps only, so variable frame rates are handled and a frame held
+    across several ticks is written once; ``select`` never changes the timestamps that follow it.
+    With ``span_seconds`` only frames before the end of the span are kept: an input ``-t`` counts
+    from the first decoded frame, so it can let through a frame a few milliseconds past the end.
+    """
+    rate = f"{sample_rate_fps:.6f}"
+    previous_tick = f"floor(prev_selected_t*{rate}+{_GRID_EPSILON})"
+    periodic = f"if(isnan(prev_selected_t)\\,1\\,gte(t\\,({previous_tick}+1)/{rate}-{_GRID_EPSILON}))"
+    if span_seconds is None:
+        return f"select={periodic}"
+    return f"select=lt(t\\,{span_seconds:.6f})*{periodic}"
+
+
+def _showinfo_seconds(stderr: str) -> list[float]:
+    """Presentation times logged by ``showinfo``, computed exactly from integer pts and time base."""
+    time_base = _SHOWINFO_TIME_BASE_PATTERN.search(stderr or "")
+    seconds = []
+    for match in _SHOWINFO_FRAME_PATTERN.finditer(stderr or ""):
+        if time_base is not None and int(time_base.group(2)) > 0:
+            value = Fraction(int(match.group(1)) * int(time_base.group(1)), int(time_base.group(2)))
+            seconds.append(float(value))
+        else:
+            seconds.append(float(match.group(2)))
+    return seconds
+
+
+def _timed_paths(command: _FrameCommand, paths: list[Path], stderr: str) -> list[tuple[Path, float]]:
+    seconds = _showinfo_seconds(stderr)
+    if command.keep == "all" and len(seconds) == len(paths):
+        selected = seconds
+    elif command.keep != "all" and len(paths) == 1 and seconds:
+        selected = seconds[:1] if command.keep == "first" else seconds[-1:]
+    else:
+        # Never guess which source frame an image shows.
+        raise RuntimeError(
+            f"FFmpeg reported {len(seconds)} frame time(s) for {len(paths)} sampled frame(s)"
+        )
+    return [
+        (path, command.origin_seconds + value)
+        for path, value in zip(paths, selected, strict=True)
+    ]
+
+
+def _first_frame_command(
+    ffmpeg_path,
+    video_path: str | Path,
+    output_pattern: Path,
+    frame_filter: str,
+    *,
+    start_seconds: float | None = None,
+) -> _FrameCommand:
+    seek = ["-ss", f"{start_seconds:.6f}"] if start_seconds is not None else []
+    return _FrameCommand(
+        [
+            ffmpeg_path,
             "-hide_banner",
             "-loglevel",
-            "error",
+            "info",
+            "-nostats",
             "-nostdin",
-            "-ss",
-            f"{start_seconds:.6f}",
+            *seek,
             "-i",
             video_path,
-            "-t",
-            f"{clip_duration:.6f}",
             "-map",
             "0:v:0",
+            "-frames:v",
+            "1",
             "-vf",
-            f"fps={sample_rate_fps:.6f},{_REFINED_FRAME_FILTER}",
+            f"showinfo,{frame_filter}",
             "-q:v",
             "3",
             "-an",
@@ -296,21 +503,55 @@ class VisualSamplingService:
             "-start_number",
             "0",
             output_pattern,
-        ]
-        self.process_runner.run(command, cancellation=cancellation)
-        paths = sorted(output_dir.glob("frame_*.jpg"))
-        return [
-            SampledFrame(
-                timestamp_seconds=min(
-                    duration_seconds,
-                    end_seconds,
-                    start_seconds + index / sample_rate_fps,
-                ),
-                path=path,
-                source="refined",
-            )
-            for index, path in enumerate(paths)
-        ]
+        ],
+        origin_seconds=start_seconds or 0.0,
+        keep="first",
+    )
+
+
+def _displayed_frame_command(
+    ffmpeg_path,
+    video_path: str | Path,
+    output_path: Path,
+    frame_filter: str,
+    *,
+    start_seconds: float,
+    lookback_seconds: float = 1.0,
+) -> _FrameCommand:
+    """Keep the last frame decoded from shortly before ``start_seconds`` to the end of the stream.
+
+    Only used once no frame starts at or after ``start_seconds``, so that last frame is the one
+    displayed at ``start_seconds``; it is timed at its own presentation time, just before the span.
+    """
+    seek_seconds = max(0.0, start_seconds - lookback_seconds)
+    return _FrameCommand(
+        [
+            ffmpeg_path,
+            "-hide_banner",
+            "-loglevel",
+            "info",
+            "-nostats",
+            "-nostdin",
+            "-ss",
+            f"{seek_seconds:.6f}",
+            "-i",
+            video_path,
+            "-map",
+            "0:v:0",
+            "-vf",
+            f"showinfo,{frame_filter}",
+            "-update",
+            "1",
+            "-q:v",
+            "3",
+            "-an",
+            "-sn",
+            "-dn",
+            output_path,
+        ],
+        origin_seconds=seek_seconds,
+        keep="last",
+    )
 
 
 def _deduplicate_frames(frames: list[SampledFrame], tolerance: float = 0.2) -> list[SampledFrame]:

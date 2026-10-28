@@ -1,0 +1,39 @@
+{
+  "name": "NVIDIA cuBLAS for CUDA 12 (CUDA 12.8.1 redistributable)",
+  "version": "12.8.4.1",
+  "purpose": "Runtime for CTranslate2 (faster-whisper) GPU inference; PyTorch keeps its own CUDA 13 cuBLAS.",
+  "license": "NVIDIA CUDA Toolkit EULA (Attachment A lists cublas.dll and cublasLt.dll as distributable)",
+  "license_url": "https://docs.nvidia.com/cuda/eula/index.html",
+  "manifest_url": "https://developer.download.nvidia.com/compute/cuda/redist/redistrib_12.8.1.json",
+  "archive_name": "libcublas-windows-x86_64-12.8.4.1-archive.zip",
+  "archive_root": "libcublas-windows-x86_64-12.8.4.1-archive",
+  "archive_sha256": "57a470112cec7e112c95253dde8b3c7184d795dbd92b0bde77a4cb7f8c94c8aa",
+  "archive_size": 563660944,
+  "download_url": "https://developer.download.nvidia.com/compute/cuda/redist/libcublas/windows-x86_64/libcublas-windows-x86_64-12.8.4.1-archive.zip",
+  "download_url_note": "Not used by default; only with -AllowDownload. The archive and the extracted DLLs must still match the hashes below.",
+  "bundle_destination": "ctranslate2",
+  "bundle_destination_note": "ctranslate2/__init__.py adds its own package folder to the DLL search path, so no global search path is needed.",
+  "binaries": {
+    "cublas64_12.dll": {
+      "archive_path": "bin/cublas64_12.dll",
+      "sha256": "9513540e4ec4c51ee9e7304138c2cc255c29a8c181f9e80c38efa25738becd99",
+      "size": 113716224
+    },
+    "cublasLt64_12.dll": {
+      "archive_path": "bin/cublasLt64_12.dll",
+      "sha256": "b199d1ff892a81b7fd3d57ba1781549609b41500b36008fef326038393ad46c7",
+      "size": 674667520
+    }
+  },
+  "documents": {
+    "LICENSE": {
+      "archive_path": "LICENSE",
+      "target": "LICENSE.txt",
+      "sha256": "e2c71babfd18a8e69542dd7e9ca018f9caa438094001a58e6bc4d8c999bf0d07"
+    }
+  },
+  "notes": [
+    "The two DLLs in this archive carry no Authenticode signature; provenance rests on the HTTPS download and the SHA-256 published in the NVIDIA manifest.",
+    "cuDNN for CUDA 12 is deliberately not bundled: CTranslate2 4.8.1 does not reference it, and cudnn64_9.dll would collide with PyTorch's CUDA 13 cuDNN of the same name."
+  ]
+}

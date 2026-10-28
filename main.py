@@ -121,6 +121,8 @@ def main():
         keyframe_service=keyframe_service,
     )
     controller.setParent(app)
+    # Terminate any ffprobe still checking a selected video, so closing the window never waits for it.
+    app.aboutToQuit.connect(controller.shutdown)
     engine.rootContext().setContextProperty("appController", controller)
 
     settings_controller = SettingsController(

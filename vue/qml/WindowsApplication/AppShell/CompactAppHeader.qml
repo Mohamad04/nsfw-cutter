@@ -195,7 +195,7 @@ Item {
                 "reviewState": previousPick.reviewState
             })
         }
-        aiPicksModel.clear()
+        var rows = []
 
         var suggestions = appController.aiSuggestions
         for (var index = 0; index < suggestions.length; index += 1) {
@@ -226,7 +226,7 @@ Item {
                 break
             }
 
-            aiPicksModel.append({
+            rows.push({
                 "suggestionId": suggestionId,
                 "start": startTime,
                 "end": endTime,
@@ -239,6 +239,26 @@ Item {
                 "added": reviewState === "accepted"
             })
         }
+
+        // Same suggestions in the same order (an accept/reject decision): update the rows in place, so
+        // the open list keeps its scroll position instead of being rebuilt from the top.
+        var sameSuggestions = aiPicksModel.count === rows.length
+        for (var rowIndex = 0; sameSuggestions && rowIndex < rows.length; rowIndex += 1)
+            sameSuggestions = aiPicksModel.get(rowIndex).suggestionId === rows[rowIndex].suggestionId
+        if (sameSuggestions) {
+            for (var updateIndex = 0; updateIndex < rows.length; updateIndex += 1) {
+                var current = aiPicksModel.get(updateIndex)
+                for (var key in rows[updateIndex]) {
+                    if (current[key] !== rows[updateIndex][key])
+                        aiPicksModel.setProperty(updateIndex, key, rows[updateIndex][key])
+                }
+            }
+            return
+        }
+
+        aiPicksModel.clear()
+        for (var appendIndex = 0; appendIndex < rows.length; appendIndex += 1)
+            aiPicksModel.append(rows[appendIndex])
     }
 
     function displayAiTime(value) {
@@ -438,7 +458,7 @@ Item {
                 size: "md"
                 lightMode: root.lightMode
                 enabled: root.selectableSubtitleCount() > 0
-                Layout.preferredWidth: 184
+                Layout.preferredWidth: Math.max(184, labelFitWidth)
                 Layout.preferredHeight: 40
                 onClicked: subtitleSelector.showAt(subtitleButton)
             }
@@ -454,7 +474,7 @@ Item {
                 lightMode: root.lightMode
                 active: hovered || aiPicksPopup.opened
                 activeAccentColor: root.accentColor
-                Layout.preferredWidth: 138
+                Layout.preferredWidth: Math.max(138, labelFitWidth)
                 Layout.preferredHeight: 40
                 onClicked: aiPicksPopup.opened ? aiPicksPopup.closeAfterAction() : aiPicksPopup.showAt(aiPicksButton)
             }

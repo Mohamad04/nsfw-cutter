@@ -24,3 +24,5 @@ psutil == 7.2.2
 # Timestamped Whisper transcription and its directly imported inference runtime.
 faster-whisper == 1.2.1
 ctranslate2 == 4.8.1
+# faster-whisper 1.2.1 passes metadata_errors to av.open; PyAV 19 removed it.
+av < 19

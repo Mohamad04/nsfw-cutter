@@ -152,6 +152,49 @@ class MediaValidationServiceTests(_MediaFixtures):
             with self.subTest(name=name):
                 self.assert_rejected(self.derived(name, payload), "corrupted_media", "the end of the video is missing")
 
+    def test_inconclusive_tail_probe_is_settled_by_a_full_packet_scan(self):
+        # Reproduces the intermittent bounded read of ffprobe (exit code 0, no message, too few packets).
+        commands = []
+
+        def truncated_tail(command, **kwargs):
+            commands.append(command)
+            if any(str(part).endswith("%") and str(part) != "%+#1" for part in command):
+                return subprocess.CompletedProcess(command, 0, '{"packets": []}', "")
+            return _original_run(command, **kwargs)
+
+        for path in (self.valid_mp4, self.valid_mkv):
+            with self.subTest(path=path.name):
+                commands.clear()
+                with self.assertLogs("services.media.media_validation", "WARNING") as logs:
+                    validate_media_file(path, run=truncated_tail)
+                self.assertEqual(len(commands), 4)  # header, head, tail, then the confirming scan
+                self.assertNotIn("-read_intervals", commands[-1])
+                self.assertIn("Inconclusive tail probe", "\n".join(logs.output))
+
+    def test_truncated_files_are_still_rejected_after_the_full_scan(self):
+        commands = []
+
+        def recording_run(command, **kwargs):
+            commands.append(command)
+            return _original_run(command, **kwargs)
+
+        data = self.valid_mkv.read_bytes()
+        error = self.assert_rejected(self.derived("mkv_80.mkv", data[: int(len(data) * 0.8)]), "corrupted_media",
+                                     "the end of the video is missing", run=recording_run)
+        self.assertNotIn("-read_intervals", commands[-1])
+        self.assertIn("full scan packets=", error.detail)
+
+    def test_a_full_scan_timeout_keeps_the_incomplete_verdict(self):
+        def run(command, **kwargs):
+            if "-read_intervals" in command and "%+#1" not in command:
+                return subprocess.CompletedProcess(command, 0, '{"packets": []}', "")
+            if "-read_intervals" not in command and "-show_format" not in command:
+                raise subprocess.TimeoutExpired(command, kwargs["timeout"])
+            return _original_run(command, **kwargs)
+
+        error = self.assert_rejected(self.valid_mp4, "corrupted_media", "the end of the video is missing", run=run)
+        self.assertIn("full scan timed out", error.detail)
+
     def test_header_damage_is_rejected(self):
         data = self.valid_mkv.read_bytes()
         self.assert_rejected(self.derived("bad_header.mkv", b"\0" * 64 + data[64:]), "corrupted_media", "damaged")

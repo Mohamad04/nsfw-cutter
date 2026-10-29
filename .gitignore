@@ -1,5 +1,9 @@
 .idea/
 .venv/
+.venv312/
+.venv314-backup/
+.python/
+.uv-cache/
 .env
 .env.*
 !.env.example

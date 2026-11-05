@@ -86,34 +86,46 @@ def test_proposal_and_configuration(manifest):
 
 @pytest.mark.parametrize("change", ["label", "extra", "type", "url", "duplicate"])
 def test_strict_proposal(tmp_path, manifest, change):
-    if change == "label": manifest["ground_truth"]["nudity"] = "negative"
-    if change == "extra": manifest["clips"][0]["events"] = []
-    if change == "type": manifest["schema_version"] = True
-    if change == "url": manifest["clips"][0]["source_url"] = "https://example.com/a"
-    if change == "duplicate": manifest["clips"][1] = manifest["clips"][0]
+    if change == "label":
+        manifest["ground_truth"]["nudity"] = "negative"
+    if change == "extra":
+        manifest["clips"][0]["events"] = []
+    if change == "type":
+        manifest["schema_version"] = True
+    if change == "url":
+        manifest["clips"][0]["source_url"] = "https://example.com/a"
+    if change == "duplicate":
+        manifest["clips"][1] = manifest["clips"][0]
     p = tmp_path / "bad.json"
     b.write_new(p, manifest)
-    with pytest.raises(ValueError): b.proposal(p)
+    with pytest.raises(ValueError):
+        b.proposal(p)
 
 
 @pytest.mark.parametrize("operation", ["download", "prepare", "inference"])
 def test_authorization(operation, clearance):
-    with pytest.raises(ValueError): b.authorize(False, clearance, operation)
-    with pytest.raises(ValueError): b.authorize(True, None, operation)
+    with pytest.raises(ValueError):
+        b.authorize(False, clearance, operation)
+    with pytest.raises(ValueError):
+        b.authorize(True, None, operation)
     assert b.authorize(True, clearance, operation)["sha256"]
 
 
 def test_gates_before_side_effects(manifest, tmp_path):
-    with pytest.raises(ValueError): b.download(manifest, tmp_path / "d")
-    with pytest.raises(ValueError): b.prepare(manifest, tmp_path, tmp_path / "p")
-    with pytest.raises(ValueError): b.run(manifest, tmp_path / "absent", tmp_path / "r")
+    with pytest.raises(ValueError):
+        b.download(manifest, tmp_path / "d")
+    with pytest.raises(ValueError):
+        b.prepare(manifest, tmp_path, tmp_path / "p")
+    with pytest.raises(ValueError):
+        b.run(manifest, tmp_path / "absent", tmp_path / "r")
     assert not list(tmp_path.iterdir())
 
 
 def test_prepared_identity(manifest, prepared):
     data = b.load_prepared(prepared, manifest)
     Path(data.clips[0].evaluated_path).write_bytes(b"changed")
-    with pytest.raises(ValueError, match="SHA"): b.load_prepared(prepared, manifest)
+    with pytest.raises(ValueError, match="SHA"):
+        b.load_prepared(prepared, manifest)
 
 
 @pytest.mark.parametrize("field,value", [("duration_seconds", -1), ("duration_seconds", float("inf")),
@@ -121,20 +133,24 @@ def test_prepared_identity(manifest, prepared):
 def test_prepared_strict(field, value, prepared):
     payload = b.read(prepared)["clips"][0]
     payload[field] = value
-    with pytest.raises(ValueError): b.PreparedClip.model_validate(payload)
+    with pytest.raises(ValueError):
+        b.PreparedClip.model_validate(payload)
 
 
 def test_remux_checks():
     before, after = metadata(), metadata()
     b.verify_remux(before, after)
     after["packets"][0]["pts_time"] = "1"
-    with pytest.raises(ValueError): b.verify_remux(before, after)
+    with pytest.raises(ValueError):
+        b.verify_remux(before, after)
     after = metadata()
     after["packets"][0]["data_hash"] = "different"
-    with pytest.raises(ValueError): b.verify_remux(before, after)
+    with pytest.raises(ValueError):
+        b.verify_remux(before, after)
     after = metadata()
     after["streams"] = []
-    with pytest.raises(ValueError): b.verify_remux(before, after)
+    with pytest.raises(ValueError):
+        b.verify_remux(before, after)
 
 
 def test_prepare_with_mock_media(tmp_path, manifest, clearance):
@@ -144,7 +160,8 @@ def test_prepare_with_mock_media(tmp_path, manifest, clearance):
         c["http_content_length_bytes"] = len(payload)
         (tmp_path / c["source_filename"]).write_bytes(payload)
     def fake_remux(source, target):
-        with target.open("xb") as stream: stream.write(source.read_bytes())
+        with target.open("xb") as stream:
+            stream.write(source.read_bytes())
     directory = b.prepare(manifest, tmp_path, tmp_path / "out", allow=True, clearance=clearance,
                           probe_fn=lambda _: metadata(), remux_fn=fake_remux)
     data = b.load_prepared(directory / "prepared.json", manifest)
@@ -185,7 +202,8 @@ def test_interrupted_recovery(manifest, prepared, tmp_path, clearance):
     # Simulate process termination before summary publication (synthetic fixtures only).
     next((root / "attempts").glob("*/summary.json")).unlink()
     assert b.report(manifest, root)["status_counts"]["interrupted_unknown"] == 1
-    with pytest.raises(ValueError): run(manifest, prepared, root, clearance, pipeline_factory=factory())
+    with pytest.raises(ValueError):
+        run(manifest, prepared, root, clearance, pipeline_factory=factory())
     result = run(manifest, prepared, root, clearance, retry_incomplete=True, pipeline_factory=factory())
     assert result["interrupted_runtime_unknown"] and result["attempt_count"] == 26
 
@@ -193,27 +211,31 @@ def test_interrupted_recovery(manifest, prepared, tmp_path, clearance):
 def test_no_overwrite(tmp_path):
     path = tmp_path / "record.json"
     b.write_new(path, {"original": True})
-    with pytest.raises(FileExistsError): b.write_new(path, {})
+    with pytest.raises(FileExistsError):
+        b.write_new(path, {})
     assert b.read(path) == {"original": True}
 
 
 def test_union_and_invalid_intervals():
     assert b.flagged_seconds([{"start_seconds": 0, "end_seconds": 4},
                               {"start_seconds": 2, "end_seconds": 6}], 10) == 6
-    with pytest.raises(ValueError): b.flagged_seconds([{"start_seconds": 0, "end_seconds": 11}], 10)
+    with pytest.raises(ValueError):
+        b.flagged_seconds([{"start_seconds": 0, "end_seconds": 11}], 10)
 
 
 def test_record_tamper(manifest, prepared, tmp_path, clearance):
     root = tmp_path / "campaign"
     run(manifest, prepared, root, clearance, pipeline_factory=factory("partial"))
     next((root / "attempts").glob("*/record.json")).write_text("{}")
-    with pytest.raises(ValueError, match="integrity"): b.report(manifest, root)
+    with pytest.raises(ValueError, match="integrity"):
+        b.report(manifest, root)
 
 
 def test_exclusive_campaign_lock(tmp_path):
     with b.campaign_lock(tmp_path):
         with pytest.raises(OSError):
-            with b.campaign_lock(tmp_path): pass
+            with b.campaign_lock(tmp_path):
+                pass
 
 
 def test_report_weighted_runtime(monkeypatch, manifest, tmp_path):
@@ -232,7 +254,8 @@ def test_report_weighted_runtime(monkeypatch, manifest, tmp_path):
 
 
 def test_download_mock_only(manifest, tmp_path, clearance):
-    for c in manifest["clips"]: c["http_content_length_bytes"] = 4
+    for c in manifest["clips"]:
+        c["http_content_length_bytes"] = 4
     def opener(url, **kwargs):
         response = io.BytesIO(b"fake")
         response.geturl = lambda: url
@@ -256,14 +279,20 @@ def test_download_refuses_redirect(manifest, tmp_path, clearance):
 @pytest.mark.parametrize("change", ["url", "order", "metadata", "duration", "duplicate"])
 def test_prepared_provenance_changes(manifest, prepared, change):
     data = b.read(prepared)
-    if change == "url": data["clips"][0]["source_url"] = "https://other.invalid/a"
-    if change == "order": data["clips"].reverse()
-    if change == "metadata": data["clips"][0]["media"]["nsfw_label"] = "negative"
-    if change == "duration": data["clips"][0]["duration_seconds"] = 12.0
-    if change == "duplicate": data["clips"][1]["original_sha256"] = data["clips"][0]["original_sha256"]
+    if change == "url":
+        data["clips"][0]["source_url"] = "https://other.invalid/a"
+    if change == "order":
+        data["clips"].reverse()
+    if change == "metadata":
+        data["clips"][0]["media"]["nsfw_label"] = "negative"
+    if change == "duration":
+        data["clips"][0]["duration_seconds"] = 12.0
+    if change == "duplicate":
+        data["clips"][1]["original_sha256"] = data["clips"][0]["original_sha256"]
     alternate = prepared.with_name("alternate.json")
     b.write_new(alternate, data)
-    with pytest.raises(ValueError): b.load_prepared(alternate, manifest)
+    with pytest.raises(ValueError):
+        b.load_prepared(alternate, manifest)
 
 
 def test_pipeline_exception_is_saved(manifest, prepared, tmp_path, clearance):
@@ -297,10 +326,14 @@ def test_validation_does_not_import_ai_runtime():
 @pytest.mark.parametrize("operation", ["download", "prepare", "run"])
 def test_cli_authorization(operation, tmp_path):
     args = [operation, str(PROPOSAL)]
-    if operation != "run": args += ["--output", str(tmp_path / "out")]
-    if operation == "prepare": args += ["--media-root", str(tmp_path)]
-    if operation == "run": args += ["--campaign", str(tmp_path / "campaign"), "--prepared", str(tmp_path / "absent")]
-    with pytest.raises(SystemExit) as exc: main(args)
+    if operation != "run":
+        args += ["--output", str(tmp_path / "out")]
+    if operation == "prepare":
+        args += ["--media-root", str(tmp_path)]
+    if operation == "run":
+        args += ["--campaign", str(tmp_path / "campaign"), "--prepared", str(tmp_path / "absent")]
+    with pytest.raises(SystemExit) as exc:
+        main(args)
     assert exc.value.code == 2
     assert not list(tmp_path.iterdir())
 
@@ -308,7 +341,8 @@ def test_cli_authorization(operation, tmp_path):
 def test_duplicate_json_keys(tmp_path):
     p = tmp_path / "duplicate.json"
     p.write_text('{"x": 1, "x": 2}')
-    with pytest.raises(ValueError, match="Duplicate"): b.read(p)
+    with pytest.raises(ValueError, match="Duplicate"):
+        b.read(p)
 
 
 def test_partial_summary_recovery(manifest, prepared, tmp_path, clearance):

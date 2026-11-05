@@ -92,8 +92,9 @@ class SampledFrameTimestampTests(unittest.TestCase):
             raise unittest.SkipTest(str(exc))
         cls._tmp = tempfile.TemporaryDirectory()
         cls.root = Path(cls._tmp.name)
-        make = lambda name, rate, duration, **kw: TimestampFixture(cls.ffmpeg, cls.ffprobe, cls.root / f"{name}.mkv",
-                                                                   rate, duration, **kw)
+        def make(name, rate, duration, **kw):
+            return TimestampFixture(cls.ffmpeg, cls.ffprobe, cls.root / f"{name}.mkv", rate, duration, **kw)
+
         cls.ntsc = make("ntsc_23976", "24000/1001", 30.0)
         cls.pal = make("pal_25", "25", 30.0)
         cls.short = {d: make(f"short_{d:g}", "25", d) for d in (0.5, 1.0, 2.0, 3.0, 7.0, 10.0)}
@@ -345,7 +346,8 @@ class EndToEndTimestampTests(unittest.TestCase):
         from services.analysis.providers.qwen import _wire_response_to_review
 
         fixture, first, last = self.fixture, *self.EVENT
-        in_event = lambda index: first <= index <= last
+        def in_event(index):
+            return first <= index <= last
 
         class Prefilter:
             warnings = ()

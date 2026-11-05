@@ -109,7 +109,9 @@ def main(test_path, train_path, output_path):
     def count(predicate, source=rows):
         return sum(1 for r in source if predicate(r))
 
-    any_video = lambda r: any(r["video_labels"].values())
+    def any_video(r):
+        return any(r["video_labels"].values())
+
     proposal = {
         "schema": "nsfw-cutter.safesora-label.selection-proposal",
         "schema_version": 1,

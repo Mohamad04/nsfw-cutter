@@ -285,16 +285,20 @@ def main() -> int:
     archive_bytes = zip_path.stat().st_size
     installed_mib = installed_bytes / MIB
     archive_mib = archive_bytes / MIB
+    # Print both measured sizes before judging them, and report both overruns together.
+    print(f"Measured installed size: {installed_mib:.2f} MiB (budget {args.max_installed_mib:.2f} MiB)")
+    print(f"Measured archive size: {archive_mib:.2f} MiB (budget {args.max_archive_mib:.2f} MiB)")
+    overruns = []
     if installed_mib > args.max_installed_mib:
-        raise RuntimeError(
-            f"Installed size {installed_mib:.2f} MiB exceeds "
-            f"{args.max_installed_mib:.2f} MiB."
+        overruns.append(
+            f"Installed size {installed_mib:.2f} MiB exceeds {args.max_installed_mib:.2f} MiB."
         )
     if archive_mib > args.max_archive_mib:
-        raise RuntimeError(
-            f"Archive size {archive_mib:.2f} MiB exceeds "
-            f"{args.max_archive_mib:.2f} MiB."
+        overruns.append(
+            f"Archive size {archive_mib:.2f} MiB exceeds {args.max_archive_mib:.2f} MiB."
         )
+    if overruns:
+        raise RuntimeError(" ".join(overruns))
 
     verify_zip(zip_path, app_dir)
     print(f"Artifact verified: {app_dir}")

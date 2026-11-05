@@ -6,6 +6,13 @@ on:
       - main
       - master
   workflow_dispatch:
+    inputs:
+      max_installed_mib:
+        description: Installed size budget in MiB (measure with a large value, then set the real budget)
+        default: "1150"
+      max_archive_mib:
+        description: ZIP size budget in MiB
+        default: "450"
 
 permissions:
   contents: read
@@ -49,7 +56,7 @@ jobs:
 
       - name: Build Windows app
         shell: pwsh
-        run: ./scripts/build_windows.ps1 -AllowDownload
+        run: ./scripts/build_windows.ps1 -AllowDownload -MaxInstalledSizeMiB ${{ inputs.max_installed_mib || 1150 }} -MaxArchiveSizeMiB ${{ inputs.max_archive_mib || 450 }}
 
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v4

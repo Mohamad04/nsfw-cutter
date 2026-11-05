@@ -57,9 +57,17 @@ jobs:
           python -m pip install -r requirements-ai-production.txt
           python -m pip install -r requirements-dev.txt
 
+      - name: Cache pinned FFmpeg and cuBLAS
+        uses: actions/cache@v4
+        with:
+          path: |
+            vendor/ffmpeg
+            vendor/cuda12-cublas
+          key: vendor-${{ runner.os }}-${{ hashFiles('scripts/ffmpeg-pin.json', 'scripts/cuda12-cublas-pin.json') }}
+
       - name: Prepare FFmpeg
         shell: pwsh
-        run: ./scripts/prepare_ffmpeg.ps1
+        run: ./scripts/prepare_ffmpeg.ps1 -AllowDownload
 
       - name: Lint Python
         run: ruff check --isolated --select E4,E7,E9,F .
@@ -102,6 +110,7 @@ jobs:
           TAG_NAME: ${{ github.ref_name }}
         run: |
           ./scripts/build_windows.ps1 `
+            -AllowDownload `
             -ReleaseTag $env:TAG_NAME `
             -MaxInstalledSizeMiB ([int]$env:MAX_INSTALLED_SIZE_MIB) `
             -MaxArchiveSizeMiB ([int]$env:MAX_ARCHIVE_SIZE_MIB)

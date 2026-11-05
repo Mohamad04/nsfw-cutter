@@ -39,9 +39,17 @@ jobs:
           python -m pip install -r requirements.txt
           python -m pip install -r requirements-ai-production.txt
 
+      - name: Cache pinned FFmpeg and cuBLAS
+        uses: actions/cache@v4
+        with:
+          path: |
+            vendor/ffmpeg
+            vendor/cuda12-cublas
+          key: vendor-${{ runner.os }}-${{ hashFiles('scripts/ffmpeg-pin.json', 'scripts/cuda12-cublas-pin.json') }}
+
       - name: Build Windows app
         shell: pwsh
-        run: ./scripts/build_windows.ps1
+        run: ./scripts/build_windows.ps1 -AllowDownload
 
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v4

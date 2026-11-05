@@ -5,7 +5,10 @@ param(
     [string]$ReleaseTag = "",
     [int]$MaxInstalledSizeMiB = 1150,
     [int]$MaxArchiveSizeMiB = 450,
-    [switch]$Console
+    [switch]$Console,
+    # Lets the pinned FFmpeg and cuBLAS archives be downloaded (every file is still verified against its pin).
+    # Off by default so a local build never downloads anything implicitly; CI turns it on.
+    [switch]$AllowDownload
 )
 
 $ErrorActionPreference = "Stop"
@@ -55,14 +58,19 @@ if (-not (Test-Path -LiteralPath $verificationScript -PathType Leaf)) {
     throw "Artifact verification script not found: $verificationScript"
 }
 
+$prepareArguments = @("-ProjectRoot", $ProjectRoot)
+if ($AllowDownload) {
+    $prepareArguments += "-AllowDownload"
+}
+
 Write-Host "Preparing bundled FFmpeg"
-& powershell -NoProfile -ExecutionPolicy Bypass -File $prepareScript -ProjectRoot $ProjectRoot
+& powershell -NoProfile -ExecutionPolicy Bypass -File $prepareScript @prepareArguments
 if ($LASTEXITCODE -ne 0) {
     throw "FFmpeg preparation failed."
 }
 
 Write-Host "Preparing bundled CUDA 12 cuBLAS for CTranslate2"
-& powershell -NoProfile -ExecutionPolicy Bypass -File $prepareCublasScript -ProjectRoot $ProjectRoot
+& powershell -NoProfile -ExecutionPolicy Bypass -File $prepareCublasScript @prepareArguments
 if ($LASTEXITCODE -ne 0) {
     throw "CUDA 12 cuBLAS preparation failed."
 }

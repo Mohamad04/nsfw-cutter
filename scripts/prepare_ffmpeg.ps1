@@ -166,8 +166,9 @@ function Get-WinGetBuildRoots {
 }
 
 function Expand-PinnedArchive([string]$ZipPath) {
-    if (Test-Path -LiteralPath $workDir) { Remove-Item -LiteralPath $workDir -Recurse -Force }
+    # Clear only the extraction folder: with -AllowDownload the archive itself sits in $workDir.
     $extractDir = Join-Path $workDir "extract"
+    if (Test-Path -LiteralPath $extractDir) { Remove-Item -LiteralPath $extractDir -Recurse -Force }
     New-Item -ItemType Directory -Force -Path $extractDir | Out-Null
     Expand-Archive -LiteralPath $ZipPath -DestinationPath $extractDir -Force
     $binDir = Find-BinDir $extractDir

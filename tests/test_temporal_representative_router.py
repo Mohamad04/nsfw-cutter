@@ -2,6 +2,11 @@ from __future__ import annotations
 
 import pytest
 
+try:
+    import torch  # noqa: F401 - only probes availability; the helper imported below needs it
+except ImportError:  # CI installs no PyTorch: skip this module instead of failing collection.
+    pytest.skip("PyTorch is not installed", allow_module_level=True)
+
 from services.analysis.cancellation import AnalysisCancelled, CancellationToken
 from services.analysis.representative_fanout import FinalizableRepresentativeFanout
 from services.analysis.semantic_sampling_robustness import select_phase_offset_samples

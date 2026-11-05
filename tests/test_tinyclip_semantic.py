@@ -7,7 +7,12 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
-import torch
+
+try:
+    import torch
+except ImportError:  # CI installs no PyTorch: skip this module instead of failing collection.
+    pytest.skip("PyTorch is not installed", allow_module_level=True)
+
 from PIL import Image
 
 from services.analysis.cancellation import AnalysisCancelled, CancellationToken

@@ -1,3 +1,4 @@
+import importlib.util
 import os
 import tempfile
 import unittest
@@ -219,6 +220,13 @@ class _LoadedTestPrefilter(LocalNSFWPrefilter):
         )
 
 
+requires_torch = unittest.skipUnless(
+    importlib.util.find_spec("torch") is not None,
+    "PyTorch is not installed (CI deliberately does not install it)",
+)
+
+
+@requires_torch
 class LocalPrefilterInferenceTests(unittest.TestCase):
     def setUp(self):
         import torch

@@ -1,3 +1,4 @@
+import importlib.util
 import json
 import os
 import string
@@ -271,6 +272,12 @@ class _FakeGenerationModel:
         return [kwargs["input_ids"][0] + [20]]
 
 
+requires_torch = unittest.skipUnless(
+    importlib.util.find_spec("torch") is not None,
+    "PyTorch is not installed (CI deliberately does not install it)",
+)
+
+
 class StructuredOutputTests(unittest.TestCase):
     def test_wire_response_is_strict_and_references_only_batch_frames(self):
         response = _validate_wire_output(json.dumps(_wire_payload()), _batch())
@@ -337,6 +344,7 @@ class StructuredOutputTests(unittest.TestCase):
 
         self.assertIn(tokenizer.eos_token_id, allowed_tokens_fn(0, sequence))
 
+    @requires_torch
     def test_deadline_and_cancellation_are_both_generation_stop_conditions(self):
         cancellation = CancellationToken()
         criteria, deadline = _generation_stopping_criteria(cancellation, 0.0)
@@ -346,6 +354,7 @@ class StructuredOutputTests(unittest.TestCase):
         cancellation.cancel()
         self.assertTrue(criteria[0](None, None))
 
+    @requires_torch
     def test_invalid_visual_output_gets_one_text_only_constrained_repair(self):
         raw_output = '{"suggestions":['
         repaired_output = json.dumps(_wire_payload())

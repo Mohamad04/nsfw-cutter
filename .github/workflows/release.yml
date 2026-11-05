@@ -24,6 +24,9 @@ jobs:
     steps:
       - name: Checkout tagged source
         uses: actions/checkout@v4
+        with:
+          # Some benchmark tests diff two recorded commits, so they need the full history.
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5

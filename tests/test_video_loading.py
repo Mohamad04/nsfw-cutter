@@ -230,8 +230,10 @@ class VideoLoadingTests(unittest.TestCase):
         self.assertLess(max(gaps), 250, f"longest GUI-thread stall {max(gaps)} ms")
 
         # Baseline: the same validation run on the GUI thread blocks the event loop for its whole duration.
+        # Compare with the background run rather than a fixed 500 ms: a fast machine (a CI runner measured
+        # 115 ms) finishes the validation sooner, and the point is only that the GUI thread stalls longer.
         blocking = self.measure_event_loop_gaps(lambda: validate_media_file(self.mkv), lambda: True, settle_ms=300)
-        self.assertGreater(max(blocking), 500)
+        self.assertGreater(max(blocking), max(gaps))
         print(f"GUI-thread stall: background {max(gaps)} ms, on the GUI thread {max(blocking)} ms")
 
     def measure_event_loop_gaps(self, start, done, settle_ms=0):

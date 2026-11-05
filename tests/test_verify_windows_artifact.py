@@ -1,4 +1,4 @@
-"""The artifact check ignores the GitHub runner home only inside the known third-party binary."""
+"""The artifact check ignores the GitHub runner home only inside compiled third-party extensions."""
 
 from __future__ import annotations
 
@@ -13,7 +13,6 @@ verify = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(verify)
 
 RUNNER_HOME = verify.RUNNER_DEFAULT_HOME
-ALLOWED = "_internal/hf_xet/hf_xet.pyd"
 
 
 def _write(app_dir: Path, relative: str, content: bytes) -> None:
@@ -22,20 +21,28 @@ def _write(app_dir: Path, relative: str, content: bytes) -> None:
     target.write_bytes(content)
 
 
-def test_runner_home_is_accepted_in_the_listed_third_party_binary(tmp_path):
-    _write(tmp_path, ALLOWED, b"\x00panic at " + RUNNER_HOME.encode() + b"\\.cargo\\registry\x00")
+@pytest.mark.parametrize(
+    "relative",
+    ["_internal/hf_xet/hf_xet.pyd", "_internal/ormsgpack/ormsgpack.cp312-win_amd64.pyd", "_internal/a/b/Ext.PYD"],
+)
+def test_runner_home_is_accepted_in_compiled_third_party_extensions(tmp_path, relative):
+    _write(tmp_path, relative, b"\x00panic at " + RUNNER_HOME.encode() + b"\\.cargo\\registry\x00")
     verify.verify_no_developer_paths(tmp_path, [RUNNER_HOME])
 
 
-def test_runner_home_is_still_rejected_in_any_other_file(tmp_path):
-    _write(tmp_path, "_internal/other/module.pyd", RUNNER_HOME.encode())
+@pytest.mark.parametrize(
+    "relative",
+    ["_internal/pkg/module.py", "_internal/pkg/data.json", "_internal/pkg/lib.dll", "VideoCutter.exe", "extension.pyd"],
+)
+def test_runner_home_is_still_rejected_in_every_other_file(tmp_path, relative):
+    _write(tmp_path, relative, RUNNER_HOME.encode())
     with pytest.raises(RuntimeError, match="Developer path"):
         verify.verify_no_developer_paths(tmp_path, [RUNNER_HOME])
 
 
-def test_other_developer_paths_are_still_rejected_in_the_listed_binary(tmp_path):
+def test_other_developer_paths_are_still_rejected_in_a_compiled_extension(tmp_path):
     project_root = tmp_path / "project"
     project_root.mkdir()
-    _write(tmp_path, ALLOWED, RUNNER_HOME.encode() + b"|" + str(project_root).encode())
+    _write(tmp_path, "_internal/hf_xet/hf_xet.pyd", RUNNER_HOME.encode() + b"|" + str(project_root).encode())
     with pytest.raises(RuntimeError, match="Developer path"):
         verify.verify_no_developer_paths(tmp_path, [RUNNER_HOME, str(project_root)])

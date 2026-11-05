@@ -13,8 +13,10 @@ from pathlib import Path
 
 MIB = 1024 * 1024
 RUNNER_DEFAULT_HOME = r"C:\Users\runneradmin"
-# Wheels whose compiled extension carries the GitHub runner home folder (observed in hf_xet.pyd).
-THIRD_PARTY_RUNNER_HOME_FILES = frozenset({"_internal/hf_xet/hf_xet.pyd"})
+# Compiled extensions of third-party wheels (hf_xet, ormsgpack, pydantic_core, safetensors, tokenizers,
+# uuid_utils, ...) are built on GitHub-hosted runners and embed that runner's home folder in panic messages.
+def _may_embed_runner_home(relative: str) -> bool:
+    return relative.startswith("_internal/") and relative.lower().endswith(".pyd")
 REQUIRED_QML_MODULES = (
     "QtQuick/qmldir",
     "QtQuick/Controls/qmldir",
@@ -111,9 +113,9 @@ def _normalized(value: str) -> str:
 
 def verify_no_developer_paths(app_dir: Path, values: list[str]) -> None:
     patterns = forbidden_patterns(values)
-    # Third-party binaries compiled on a GitHub-hosted runner embed that runner's default home folder.
-    # On such a runner USERPROFILE is exactly that folder, so it is not a path of this build: only that
-    # one value is ignored, and only in the listed files (every other developer path is still rejected).
+    # On a GitHub-hosted runner USERPROFILE is exactly the folder that third-party extensions embed, so it
+    # is not a path of this build: only that one value is ignored, and only in compiled _internal/*.pyd files
+    # (every other developer path is still rejected there, and the runner home in every other file).
     runner_home = _normalized(RUNNER_DEFAULT_HOME)
     patterns_without_runner_home = forbidden_patterns(
         [value for value in values if value and _normalized(value) != runner_home]
@@ -122,8 +124,9 @@ def verify_no_developer_paths(app_dir: Path, values: list[str]) -> None:
         if not file_path.is_file():
             continue
         relative = file_path.relative_to(app_dir).as_posix()
-        allowed = relative in THIRD_PARTY_RUNNER_HOME_FILES
-        match = find_bytes(file_path, patterns_without_runner_home if allowed else patterns)
+        match = find_bytes(
+            file_path, patterns_without_runner_home if _may_embed_runner_home(relative) else patterns
+        )
         if match is not None:
             raise RuntimeError(
                 f"Developer path found in artifact file {file_path}: "

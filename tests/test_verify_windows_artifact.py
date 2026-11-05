@@ -40,6 +40,17 @@ def test_runner_home_is_still_rejected_in_every_other_file(tmp_path, relative):
         verify.verify_no_developer_paths(tmp_path, [RUNNER_HOME])
 
 
+def test_every_offending_file_is_reported_in_one_error(tmp_path):
+    for name in ("one.json", "two.json", "three.json"):
+        _write(tmp_path, f"_internal/pkg/{name}", RUNNER_HOME.encode())
+    _write(tmp_path, "_internal/pkg/clean.json", b"nothing to see")
+    with pytest.raises(RuntimeError, match=r"3 artifact file\(s\)") as error:
+        verify.verify_no_developer_paths(tmp_path, [RUNNER_HOME])
+    for name in ("one.json", "two.json", "three.json"):
+        assert name in str(error.value)
+    assert "clean.json" not in str(error.value)
+
+
 def test_other_developer_paths_are_still_rejected_in_a_compiled_extension(tmp_path):
     project_root = tmp_path / "project"
     project_root.mkdir()

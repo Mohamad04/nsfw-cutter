@@ -284,6 +284,23 @@ if (-not (Test-Path -LiteralPath $bundledLicense -PathType Leaf) -or
 Write-Host "Bundled FFmpeg verified: $($ffmpegPin.version), SHA-256 pinned, license included"
 
 $internalDir = Join-Path $appDistDir "_internal"
+
+# Package metadata (*.dist-info) is copied whole, including bytecode caches that pip compiled on the build
+# machine; they record its absolute install path (for example C:\hostedtoolcache\... on a CI runner), are never
+# imported, and would leak that path into the artifact.
+$metadataBytecodeCaches = @(
+    Get-ChildItem -LiteralPath $internalDir -Directory -Filter "*.dist-info" -ErrorAction SilentlyContinue |
+        ForEach-Object { Get-ChildItem -LiteralPath $_.FullName -Directory -Recurse -Filter "__pycache__" -ErrorAction SilentlyContinue }
+)
+foreach ($cacheDir in $metadataBytecodeCaches) {
+    if (Test-Path -LiteralPath $cacheDir.FullName) {
+        Remove-Item -LiteralPath $cacheDir.FullName -Recurse -Force
+    }
+}
+if ($metadataBytecodeCaches.Count -gt 0) {
+    Write-Host "Removed $($metadataBytecodeCaches.Count) bytecode cache folder(s) from package metadata"
+}
+
 foreach ($cublasName in $cublasPin.binaries.PSObject.Properties.Name) {
     # Dependency analysis (cublas64_12 -> cublasLt64_12, and the unused CUDA 12 bitsandbytes variants)
     # also copies the pinned DLL into the top-level _internal folder, which is on the DLL search path

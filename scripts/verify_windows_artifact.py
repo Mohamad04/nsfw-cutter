@@ -12,6 +12,7 @@ from pathlib import Path
 
 
 MIB = 1024 * 1024
+MAX_REPORTED_OFFENDERS = 40
 RUNNER_DEFAULT_HOME = r"C:\Users\runneradmin"
 # Compiled extensions of third-party wheels (hf_xet, ormsgpack, pydantic_core, safetensors, tokenizers,
 # uuid_utils, ...) are built on GitHub-hosted runners and embed that runner's home folder in panic messages.
@@ -120,6 +121,7 @@ def verify_no_developer_paths(app_dir: Path, values: list[str]) -> None:
     patterns_without_runner_home = forbidden_patterns(
         [value for value in values if value and _normalized(value) != runner_home]
     )
+    offenders: list[str] = []
     for file_path in app_dir.rglob("*"):
         if not file_path.is_file():
             continue
@@ -128,10 +130,16 @@ def verify_no_developer_paths(app_dir: Path, values: list[str]) -> None:
             file_path, patterns_without_runner_home if _may_embed_runner_home(relative) else patterns
         )
         if match is not None:
-            raise RuntimeError(
-                f"Developer path found in artifact file {file_path}: "
-                f"{match.decode('utf-8', errors='ignore')!r}"
-            )
+            offenders.append(f"{file_path}: {match.decode('utf-8', errors='ignore')!r}")
+    if offenders:
+        # Report every offending file at once: stopping at the first one costs a full build per file.
+        shown = offenders[:MAX_REPORTED_OFFENDERS]
+        more = len(offenders) - len(shown)
+        raise RuntimeError(
+            f"Developer path found in {len(offenders)} artifact file(s):\n  "
+            + "\n  ".join(shown)
+            + (f"\n  ... and {more} more" if more else "")
+        )
 
 
 def verify_zip(zip_path: Path, app_dir: Path) -> None:

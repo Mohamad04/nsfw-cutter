@@ -7,7 +7,7 @@ import pysubs2
 import pytest
 
 from schemas.video_cut_schema import VideoCutRequest, VideoCutSegment
-from services.editing.cut_execution_service import CutExecutionService
+from services.editing.cut_execution_service import CutExecutionService, FastCuttingAudioError
 from services.export.media_probe_service import MediaProbeService
 from services.export.smart_cutting_export_service import SmartCuttingExportService
 from services.infrastructure.ffmpeg.paths import get_ffmpeg_path, get_ffprobe_path
@@ -167,11 +167,58 @@ def test_internal_and_external_subtitles_are_discovered_and_readable(media_fixtu
     assert subtitle_text_at_position(external_cues, 3_000) == "Removed cue"
 
 
-def test_quick_cut_removes_interval_and_preserves_internal_streams(media_fixtures, tmp_path):
-    input_duration = MediaProbeService().probe(media_fixtures.internal_video).duration_seconds
-    expected_duration = input_duration - (FAST_DELETE_INTERVAL[1] - FAST_DELETE_INTERVAL[0])
+@pytest.fixture(scope="session")
+def silent_internal_video(media_fixtures) -> Path:
+    """The internal-subtitle source without its audio track: the only kind Fast Cutting accepts."""
+    silent = media_fixtures.root / "internal_source_silent.mkv"
+    _run_media_command(
+        [
+            str(media_fixtures.ffmpeg),
+            "-y",
+            "-hide_banner",
+            "-i",
+            str(media_fixtures.internal_video),
+            "-map",
+            "0:v:0",
+            "-map",
+            "0:s:0",
+            "-c",
+            "copy",
+            str(silent),
+        ]
+    )
+    return silent
+
+
+def test_quick_cut_refuses_a_source_with_audio_and_exports_nothing(media_fixtures, tmp_path):
+    output_dir = tmp_path / "quick_refused"
     request = VideoCutRequest(
         input_path=media_fixtures.internal_video,
+        output_dir=output_dir,
+        export_mode="remove_intervals",
+        cut_mode="stream_copy",
+        segments=[
+            VideoCutSegment(
+                index=1,
+                start_seconds=FAST_DELETE_INTERVAL[0],
+                end_seconds=FAST_DELETE_INTERVAL[1],
+                requested_start_seconds=FAST_DELETE_INTERVAL[0],
+                requested_end_seconds=FAST_DELETE_INTERVAL[1],
+            )
+        ],
+    )
+
+    with pytest.raises(FastCuttingAudioError, match="Smart Cutting"):
+        CutExecutionService(cache_dir=tmp_path / "quick_cache").export_segments(request)
+
+    assert not output_dir.exists() or not any(output_dir.iterdir())
+
+
+def test_quick_cut_removes_interval_and_preserves_internal_streams(media_fixtures, silent_internal_video, tmp_path):
+    input_duration = MediaProbeService().probe(silent_internal_video).duration_seconds
+    expected_duration = input_duration - (FAST_DELETE_INTERVAL[1] - FAST_DELETE_INTERVAL[0])
+    request = VideoCutRequest(
+        input_path=silent_internal_video,
         output_dir=tmp_path / "quick_output",
         export_mode="remove_intervals",
         cut_mode="stream_copy",
@@ -200,7 +247,7 @@ def test_quick_cut_removes_interval_and_preserves_internal_streams(media_fixture
 
     output_info = MediaProbeService().probe(output_path)
     assert output_info.video_streams
-    assert output_info.audio_streams
+    assert not output_info.audio_streams
     assert output_info.subtitle_streams
 
     subtitles = _extract_subtitles(media_fixtures, output_path, tmp_path / "quick_output.srt")
